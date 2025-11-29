@@ -133,8 +133,10 @@ Para ejecutar este proyecto en tu máquina local:
 
 ---
 
-## 6. Equipo Milan2025 🚀
-*   **Camilo:** Líder de Proyecto y Desarrollo.
-*   **Google Antigravity (Gemini 3):** Agente de Programación y Arquitectura.
+## 6. Equipo DG Capital 🚀
+*   **Juan Camilo Grajales:** Líder de Proyecto y Análisis de datos.
+*   **Sofia Grajales :** Desarrollo y Estadística.
+*   **Duván Grajales** Administración y Recursos.
+*   **Para este pproyecto usamos Google Antigravity (con Gemini 3):** Como agente de programación y arquitectura.
 
-> *"Transformando datos en decisiones para una Colombia más equitativa."*
+> *Queremos transformar la forma de usar y analizar datos para tomar mejores decisiones.*
