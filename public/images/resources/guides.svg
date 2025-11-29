@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="300" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Documento base -->
+  <path d="M100 50 L300 50 L300 250 L100 250 Z" fill="#FFFFFF" fill-opacity="0.2" />
+  
+  <!-- Esquina doblada -->
+  <path d="M300 50 L300 80 L270 50 Z" fill="#FFFFFF" fill-opacity="0.4" />
+  
+  <!-- Líneas de texto -->
+  <rect x="120" y="80" width="160" height="8" rx="4" fill="#FFFFFF" fill-opacity="0.8" />
+  <rect x="120" y="100" width="140" height="8" rx="4" fill="#FFFFFF" fill-opacity="0.7" />
+  <rect x="120" y="120" width="160" height="8" rx="4" fill="#FFFFFF" fill-opacity="0.6" />
+  <rect x="120" y="140" width="120" height="8" rx="4" fill="#FFFFFF" fill-opacity="0.7" />
+  
+  <!-- Viñetas -->
+  <circle cx="130" cy="170" r="4" fill="#FFFFFF" />
+  <rect x="140" y="166" width="140" height="8" rx="4" fill="#FFFFFF" fill-opacity="0.6" />
+  
+  <circle cx="130" cy="190" r="4" fill="#FFFFFF" />
+  <rect x="140" y="186" width="120" height="8" rx="4" fill="#FFFFFF" fill-opacity="0.6" />
+  
+  <circle cx="130" cy="210" r="4" fill="#FFFFFF" />
+  <rect x="140" y="206" width="130" height="8" rx="4" fill="#FFFFFF" fill-opacity="0.6" />
+  
+  <!-- Lupa de investigación -->
+  <circle cx="320" cy="230" r="25" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-opacity="0.8" />
+  <line x1="338" y1="248" x2="360" y2="270" stroke="#FFFFFF" stroke-width="6" stroke-opacity="0.8" />
+</svg>

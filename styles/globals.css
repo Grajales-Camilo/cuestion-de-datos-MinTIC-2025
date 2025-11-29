@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Estilos personalizados para la sección de recursos */
+.shadow-glow {
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+  transition: box-shadow 0.3s ease-in-out;
+}
+
+.shadow-glow:hover {
+  box-shadow: 0 0 25px rgba(255, 255, 255, 0.7);
+}
+
+/* Animación para elementos flotantes */
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+.float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.float-delay-1 {
+  animation-delay: 1s;
+}
+
+.float-delay-2 {
+  animation-delay: 2s;
+}
+
+/* Efecto de brillo para elementos interactivos */
+.glow-on-hover:hover {
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.6));
+}
+
+/* Estilos de accesibilidad */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  
+  .float, .float-delay-1, .float-delay-2 {
+    animation: none !important;
+  }
+}
+
+/* Mejora de la accesibilidad del foco */
+:focus {
+  outline: 2px solid #9b2c2c;
+  outline-offset: 2px;
+}
+
+/* Mejora del contraste para texto sobre fondos gradientes */
+.from-emerald-600 a,
+.from-amber-500 a,
+.from-sky-500 a,
+.from-violet-500 a,
+.from-blue-900 a {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* Estilos para mejorar la legibilidad en dispositivos móviles */
+@media (max-width: 640px) {
+  .backdrop-blur-sm {
+    backdrop-filter: blur(8px);
+  }
+  
+  input, select, textarea {
+    font-size: 16px; /* Prevenir zoom automático en iOS */
+  }
+}

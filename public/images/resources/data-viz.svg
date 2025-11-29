@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="300" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Elementos gráficos de visualización de datos -->
+  <circle cx="100" cy="150" r="60" fill="#FFFFFF" fill-opacity="0.3"/>
+  <circle cx="200" cy="150" r="80" fill="#FFFFFF" fill-opacity="0.2"/>
+  <circle cx="300" cy="150" r="40" fill="#FFFFFF" fill-opacity="0.4"/>
+  
+  <!-- Líneas de conexión -->
+  <line x1="100" y1="150" x2="200" y2="150" stroke="#FFFFFF" stroke-width="2" stroke-opacity="0.6"/>
+  <line x1="200" y1="150" x2="300" y2="150" stroke="#FFFFFF" stroke-width="2" stroke-opacity="0.6"/>
+  
+  <!-- Puntos de datos -->
+  <circle cx="100" cy="150" r="6" fill="#FFFFFF"/>
+  <circle cx="200" cy="150" r="6" fill="#FFFFFF"/>
+  <circle cx="300" cy="150" r="6" fill="#FFFFFF"/>
+  
+  <!-- Líneas de gráfico -->
+  <polyline points="50,250 100,180 150,220 200,100 250,150 300,80 350,200" 
+    stroke="#FFFFFF" stroke-width="3" fill="none" stroke-opacity="0.8"/>
+</svg>

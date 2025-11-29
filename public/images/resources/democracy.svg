@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800px" height="800px" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
+  <!-- Columnas del edificio gubernamental/cívico -->
+  <g>
+    <rect x="150" y="300" width="500" height="350" fill="#f8f8f8"/>
+    
+    <!-- Base y techo -->
+    <rect x="120" y="650" width="560" height="30" fill="#e0e0e0"/>
+    <path d="M400,200 L100,300 L700,300 Z" fill="#e0e0e0"/>
+    
+    <!-- Columnas -->
+    <rect x="175" y="310" width="40" height="340" fill="#f0f0f0"/>
+    <rect x="275" y="310" width="40" height="340" fill="#f0f0f0"/>
+    <rect x="375" y="310" width="40" height="340" fill="#f0f0f0"/>
+    <rect x="475" y="310" width="40" height="340" fill="#f0f0f0"/>
+    <rect x="575" y="310" width="40" height="340" fill="#f0f0f0"/>
+    
+    <!-- Escaleras -->
+    <rect x="200" y="650" width="400" height="20" fill="#d0d0d0"/>
+    <rect x="220" y="670" width="360" height="20" fill="#c0c0c0"/>
+    <rect x="240" y="690" width="320" height="20" fill="#b0b0b0"/>
+  </g>
+  
+  <!-- Elementos de datos y gráficos superpuestos -->
+  <g>
+    <!-- Gráfico de barras -->
+    <rect x="200" y="400" width="30" height="80" fill="#9a2222" opacity="0.8"/>
+    <rect x="240" y="400" width="30" height="120" fill="#9a2222" opacity="0.8"/>
+    <rect x="280" y="400" width="30" height="60" fill="#9a2222" opacity="0.8"/>
+    
+    <!-- Gráfico circular -->
+    <path d="M530,410 L530,350 A60,60 0 0,1 578,380 Z" fill="#9a2222" opacity="0.8"/>
+    <path d="M530,410 L578,380 A60,60 0 0,1 562,440 Z" fill="#c42222" opacity="0.8"/>
+    <path d="M530,410 L562,440 A60,60 0 0,1 490,435 Z" fill="#e04444" opacity="0.8"/>
+    <path d="M530,410 L490,435 A60,60 0 0,1 485,360 Z" fill="#ff6666" opacity="0.8"/>
+    <path d="M530,410 L485,360 A60,60 0 0,1 530,350 Z" fill="#ff8888" opacity="0.8"/>
+    
+    <!-- Líneas de conexión (representando datos) -->
+    <line x1="180" y1="500" x2="620" y2="500" stroke="#9a2222" stroke-width="2" opacity="0.5"/>
+    <line x1="180" y1="520" x2="620" y2="520" stroke="#9a2222" stroke-width="2" opacity="0.5"/>
+    <line x1="180" y1="540" x2="620" y2="540" stroke="#9a2222" stroke-width="2" opacity="0.5"/>
+    
+    <!-- Puntos de datos -->
+    <circle cx="250" cy="500" r="5" fill="#9a2222"/>
+    <circle cx="350" cy="520" r="5" fill="#9a2222"/>
+    <circle cx="450" cy="500" r="5" fill="#9a2222"/>
+    <circle cx="550" cy="540" r="5" fill="#9a2222"/>
+  </g>
+  
+  <!-- Texto "CIVITAS" en la parte superior -->
+  <text x="400" y="270" font-family="Arial, sans-serif" font-size="28" font-weight="bold" text-anchor="middle" fill="#9a2222">CIVITAS</text>
+</svg>

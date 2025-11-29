@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="400" height="300" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Datos abiertos: mundo conectado -->
+  <circle cx="200" cy="150" r="80" fill="#FFFFFF" fill-opacity="0.1" />
+  
+  <!-- Red de conexiones -->
+  <line x1="150" y1="100" x2="250" y2="200" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.7" />
+  <line x1="250" y1="100" x2="150" y2="200" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.7" />
+  <line x1="200" y1="70" x2="200" y2="230" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.7" />
+  <line x1="120" y1="150" x2="280" y2="150" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.7" />
+  
+  <!-- Nodos de datos -->
+  <circle cx="150" cy="100" r="10" fill="#FFFFFF" fill-opacity="0.8" />
+  <circle cx="250" cy="100" r="6" fill="#FFFFFF" fill-opacity="0.8" />
+  <circle cx="150" cy="200" r="8" fill="#FFFFFF" fill-opacity="0.8" />
+  <circle cx="250" cy="200" r="12" fill="#FFFFFF" fill-opacity="0.8" />
+  <circle cx="200" cy="70" r="7" fill="#FFFFFF" fill-opacity="0.8" />
+  <circle cx="200" cy="230" r="9" fill="#FFFFFF" fill-opacity="0.8" />
+  <circle cx="120" cy="150" r="10" fill="#FFFFFF" fill-opacity="0.8" />
+  <circle cx="280" cy="150" r="6" fill="#FFFFFF" fill-opacity="0.8" />
+  
+  <!-- Símbolo de datos abiertos -->
+  <circle cx="200" cy="150" r="30" fill="#FFFFFF" fill-opacity="0.3" stroke="#FFFFFF" stroke-width="2" stroke-opacity="0.9" />
+  <path d="M185 140 L215 140 L215 160 L185 160 Z" fill="#FFFFFF" fill-opacity="0.7" />
+  <rect x="190" y="135" width="20" height="5" fill="#FFFFFF" fill-opacity="0.9" />
+  <rect x="190" y="160" width="20" height="5" fill="#FFFFFF" fill-opacity="0.9" />
+  
+  <!-- Conexiones externas -->
+  <line x1="40" y1="50" x2="120" y2="150" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.5" />
+  <line x1="360" y1="50" x2="280" y2="150" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.5" />
+  <line x1="40" y1="250" x2="120" y2="150" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.5" />
+  <line x1="360" y1="250" x2="280" y2="150" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.5" />
+  
+  <circle cx="40" cy="50" r="5" fill="#FFFFFF" fill-opacity="0.6" />
+  <circle cx="360" cy="50" r="5" fill="#FFFFFF" fill-opacity="0.6" />
+  <circle cx="40" cy="250" r="5" fill="#FFFFFF" fill-opacity="0.6" />
+  <circle cx="360" cy="250" r="5" fill="#FFFFFF" fill-opacity="0.6" />
+</svg>
