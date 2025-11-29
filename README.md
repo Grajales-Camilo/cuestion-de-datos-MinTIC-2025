@@ -47,22 +47,22 @@ El proyecto sigue una arquitectura moderna **ReAct (Reason + Act)** implementada
 
 ```mermaid
 graph TD
-    User[Usuario / Funcionario] -->|Escribe Hipótesis| UI[Policy Canvas UI]
-    UI -->|Solicita Evidencia| Agent[Agente AI (Gemini Pro)]
+    User["Usuario / Funcionario"] -->|Escribe Hipótesis| UI["Policy Canvas UI"]
+    UI -->|Solicita Evidencia| Agent["Agente AI (Gemini Pro)"]
     
     subgraph "Cerebro del Agente (Backend)"
-        Agent -->|1. Razona| Planner[Planificador de Consultas]
-        Planner -->|2. Genera SoQL| SocrataAdapter[Adaptador Socrata API]
+        Agent -->|"1. Razona"| Planner["Planificador de Consultas"]
+        Planner -->|"2. Genera SoQL"| SocrataAdapter["Adaptador Socrata API"]
     end
     
     subgraph "Ecosistema de Datos (MinTIC)"
-        SocrataAdapter -->|GET Request| DatosGov[www.datos.gov.co]
-        DatosGov -->|JSON Response| SocrataAdapter
+        SocrataAdapter -->|"GET Request"| DatosGov["www.datos.gov.co"]
+        DatosGov -->|"JSON Response"| SocrataAdapter
     end
     
-    SocrataAdapter -->|3. Retorna Datos| Agent
-    Agent -->|4. Analiza y Resume| UI
-    UI -->|5. Inserta Evidencia| Documento[Borrador de Política]
+    SocrataAdapter -->|"3. Retorna Datos"| Agent
+    Agent -->|"4. Analiza y Resume"| UI
+    UI -->|"5. Inserta Evidencia"| Documento["Borrador de Política"]
 ```
 
 ### Componentes Clave:
@@ -107,7 +107,7 @@ Para ejecutar este proyecto en tu máquina local:
 ### Pasos
 1.  **Clonar el repositorio:**
     ```bash
-    git clone https://github.com/Grajales-Camilo/cuestion-de-datos.git
+    git clone https://github.com/Grajales-Camilo/cuestion-de-datos-MinTIC-2025.git
     cd cuestion-de-datos
     ```
 
