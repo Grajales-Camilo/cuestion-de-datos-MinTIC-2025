@@ -1,4 +1,4 @@
-# Cuestión de Datos: Policy Canvas 🇨🇴
+# Cuestión de Datos: Policy Canvas
 > **Plataforma de Inteligencia Artificial para el Diseño de Políticas Públicas Basadas en Evidencia**
 > *Proyecto participante en el concurso "Datos al Ecosistema 2025" - MinTIC Colombia*
 
@@ -137,6 +137,6 @@ Para ejecutar este proyecto en tu máquina local:
 *   **Juan Camilo Grajales:** Líder de Proyecto y Análisis de datos.
 *   **Sofia Grajales :** Desarrollo y Estadística.
 *   **Duván Grajales** Administración y Recursos.
-*   **Para este pproyecto usamos Google Antigravity (con Gemini 3):** Como agente de programación y arquitectura.
+*   **Para este proyecto usamos Google Antigravity (con Gemini 3):** Como agente de programación y arquitectura.
 
 > *Queremos transformar la forma de usar y analizar datos para tomar mejores decisiones.*
