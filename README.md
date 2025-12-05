@@ -136,8 +136,9 @@ Para ejecutar este proyecto en tu máquina local:
 ## 6. 📑 Presentación y documentación
 
 La presentación oficial del proyecto está disponible en formato PDF:  
-[Ver presentación](docs/Pitch_Cuestion_de_Datos.pdf)
-[Ver documentación](docs/Docu_Cuestion_de_Datos.pdf)
+[Ver presentación](docs/Pitch_Cuestion_de_Datos.pdf). ||
+
+[Ver documentación](docs/Docu_Cuestion_de_Datos.pdf).
 
 
 ## 7. Equipo DG Capital 🚀
