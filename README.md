@@ -133,10 +133,19 @@ Para ejecutar este proyecto en tu máquina local:
 
 ---
 
-## 6. Equipo DG Capital 🚀
+## 6. 📑 Presentación y documentación
+
+La presentación y la documentación oficial del proyecto está disponible en formato PDF:
+
+| [Ver presentación](docs/Pitch_Cuestion_de_Datos.pdf).|
+
+| [Ver documentación](docs/Docu_Cuestion_de_Datos.pdf).| 
+
+
+## 7. Equipo DG Capital 🚀
 *   **Juan Camilo Grajales:** Líder de Proyecto y Análisis de datos.
 *   **Sofia Grajales :** Desarrollo y Estadística.
 *   **Duván Grajales** Administración y Recursos.
-*   **Para este proyecto usamos Google Antigravity (con Gemini 3):** Como agente de programación y arquitectura.
+*   Para este proyecto usamos Google Antigravity (con Gemini 3 Pro) como agente de programación y arquitectura.
 
 > *Queremos transformar la forma de usar y analizar datos para tomar mejores decisiones.*
