@@ -1,0 +1,30 @@
+[
+  {
+    "fecha_revisi_n": "2025-12-26T11:34:44.190",
+    "criterio_de_priorizaci_n": "Our Data Index 2025",
+    "id": "1",
+    "categoria": "AGRICULTURA Y DESARROLLO RURAL",
+    "entidades_responsables": "Ministerio de Agricultura y Desarrollo Rural",
+    "conjunto_datos_priorizados": "Agricultura",
+    "descripcion": "Informaci\u00f3n sobre producci\u00f3n agr\u00edcola, pol\u00edticas, subsidios, extensi\u00f3n rural.",
+    "dato_abierto": "SI",
+    "enlace_portal_dato_abierto": "https://www.datos.gov.co/Agricultura-y-Desarrollo-Rural/Evaluaciones-Agropecuarias-Municipales-EVA/2pnw-mmge/data_preview",
+    "estado": "APERTURADO",
+    "sistema_informacion": "Evaluaciones Agropecuarias Municipales - EVA",
+    "recomendaciones": "ACTUALIZAR"
+  },
+  {
+    "fecha_revisi_n": "2025-12-26T11:34:44.190",
+    "criterio_de_priorizaci_n": "Our Data Index 2025",
+    "id": "2",
+    "categoria": "AGRICULTURA Y DESARROLLO RURAL",
+    "entidades_responsables": "Ministerio de Agricultura y Desarrollo Rural",
+    "conjunto_datos_priorizados": "Cobertura del suelo",
+    "descripcion": "Cobertura f\u00edsica y biol\u00f3gica del terreno, incluyendo \u00e1reas artificiales, agr\u00edcolas, forestales, humedales y cuerpos de agua.",
+    "dato_abierto": "SI",
+    "enlace_portal_dato_abierto": "https://www.datos.gov.co/dataset/Coberturas-de-la-Tierra-2023-SII-Escala-1-25000/3t8i-d3rr/about_data",
+    "estado": "APERTURADO",
+    "sistema_informacion": "Datos Abiertos - Instituto SINCHI",
+    "observaciones": "Actualizado 2025"
+  }
+]

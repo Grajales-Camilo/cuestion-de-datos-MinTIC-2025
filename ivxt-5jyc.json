@@ -1,0 +1,119 @@
+{
+  "id" : "ivxt-5jyc",
+  "name" : "1. Hoja de Ruta Nacional de Datos Abiertos 2025 -2026",
+  "assetType" : "story",
+  "averageRating" : 0,
+  "category" : "Ciencia, Tecnología e Innovación",
+  "createdAt" : 1733154507,
+  "description" : "Dando continuidad a la Hoja de Ruta Nacional 2021 en el cumplimiento de lo establecido en la Resolución 1519 del 2020, la Dirección de Gobierno Digital del Ministerio de las Tecnologías de la Información y las Comunicaciones MinTIC, presenta la Hoja de Ruta Nacional de Datos Abiertos Estratégicos para el Estado Colombiano mediante la cual, se catalogaron los datos abiertos que resultan estratégicos para el país y que se alinean con las prioridades y objetivos contemplados tanto en el Plan Nacional de Desarrollo 2022-2026 como en los índices internacionales de referencia, con el fin de asegurar su permanente disponibilidad pública y su respectiva actualización, por parte de los sujetos obligados de niveles nacional, territorial y órganos autónomos, en el Portal de Datos Abiertos www.datos.gov.co, o el que haga sus veces.\nDe este modo, MinTIC desarrolló el presente documento que tiene por objeto presentar la actualización de los datos abiertos estratégicos priorizados por la Hoja de Ruta Nacional 2025, identificar las entidades que lideran su ejecución y definir las acciones que se desarrollarán para apoyar a las entidades públicas en su implementación.",
+  "diciBackend" : false,
+  "displayType" : "story",
+  "downloadCount" : 0,
+  "hideFromCatalog" : false,
+  "hideFromDataJson" : false,
+  "locked" : false,
+  "newBackend" : false,
+  "numberOfComments" : 0,
+  "oid" : 40989751,
+  "provenance" : "official",
+  "publicationAppendEnabled" : false,
+  "publicationDate" : 1733247649,
+  "publicationGroup" : 19704996,
+  "publicationStage" : "published",
+  "rowsUpdatedAt" : 1733154507,
+  "tableId" : 19704996,
+  "totalTimesRated" : 0,
+  "viewCount" : 4454,
+  "viewLastModified" : 1771523223,
+  "viewType" : "story",
+  "approvals" : [ {
+    "reviewedAt" : 1733434524,
+    "reviewedAutomatically" : false,
+    "state" : "approved",
+    "submissionId" : 6646475,
+    "submissionObject" : "public_audience_request",
+    "submissionOutcome" : "change_audience",
+    "submittedAt" : 1733434500,
+    "targetAudience" : "public",
+    "workflowId" : 2188,
+    "reviewer" : {
+      "id" : "r4qn-dwdd",
+      "displayName" : "Ministerio de Tecnologías de la Información y las Comunicaciones - Datos Abiertos"
+    },
+    "submissionDetails" : {
+      "permissionType" : "read"
+    },
+    "submissionOutcomeApplication" : {
+      "endedAt" : 1733434524,
+      "failureCount" : 0,
+      "startedAt" : 1733434524,
+      "status" : "success"
+    },
+    "submitter" : {
+      "id" : "r4qn-dwdd",
+      "displayName" : "Ministerio de Tecnologías de la Información y las Comunicaciones - Datos Abiertos"
+    }
+  } ],
+  "clientContext" : {
+    "clientContextVariables" : [ ],
+    "inheritedVariables" : { }
+  },
+  "columns" : [ ],
+  "grants" : [ {
+    "inherited" : false,
+    "type" : "viewer",
+    "flags" : [ "public" ]
+  } ],
+  "metadata" : {
+    "isStorytellerAsset" : true,
+    "tileConfig" : {
+      "description" : "",
+      "title" : "Hoja de Ruta Nacional de Datos Abiertos 2025 2026"
+    },
+    "custom_fields" : {
+      "Información de la Entidad" : {
+        "Municipio" : "Bogotá D.C.",
+        "Nombre de la Entidad" : "Ministerio De Tecnologías De La Información Y Las Comunicaciones - MinTIC, Bogotá D.C.",
+        "DIVIPOLA Municipio" : "11001",
+        "Orden" : "Nacional",
+        "Área o dependencia" : "Gobierno digital - Datos Abiert",
+        "Departamento" : "Bogotá D.C."
+      },
+      "Información de Datos" : {
+        "Cobertura Geográfica" : "Nacional",
+        "Idioma" : "Español",
+        "Frecuencia de Actualización" : "Mensual"
+      }
+    },
+    "initialized" : false,
+    "availableDisplayTypes" : [ "story" ],
+    "renderTypeConfig" : {
+      "visible" : {
+        "story" : true
+      }
+    }
+  },
+  "owner" : {
+    "id" : "r4qn-dwdd",
+    "displayName" : "Ministerio de Tecnologías de la Información y las Comunicaciones - Datos Abiertos",
+    "profileImageUrlLarge" : "/api/users/r4qn-dwdd/profile_images/LARGE",
+    "profileImageUrlMedium" : "/api/users/r4qn-dwdd/profile_images/THUMB",
+    "profileImageUrlSmall" : "/api/users/r4qn-dwdd/profile_images/TINY",
+    "screenName" : "Ministerio de Tecnologías de la Información y las Comunicaciones - Datos Abiertos",
+    "type" : "interactive",
+    "flags" : [ "acceptedEula", "mayBeStoriesCoOwner" ]
+  },
+  "query" : { },
+  "rights" : [ "read" ],
+  "tableAuthor" : {
+    "id" : "r4qn-dwdd",
+    "displayName" : "Ministerio de Tecnologías de la Información y las Comunicaciones - Datos Abiertos",
+    "profileImageUrlLarge" : "/api/users/r4qn-dwdd/profile_images/LARGE",
+    "profileImageUrlMedium" : "/api/users/r4qn-dwdd/profile_images/THUMB",
+    "profileImageUrlSmall" : "/api/users/r4qn-dwdd/profile_images/TINY",
+    "screenName" : "Ministerio de Tecnologías de la Información y las Comunicaciones - Datos Abiertos",
+    "type" : "interactive",
+    "flags" : [ "acceptedEula", "mayBeStoriesCoOwner" ]
+  },
+  "flags" : [ "default", "ownerMayBeContacted", "restorable", "restorePossibleForType" ]
+}

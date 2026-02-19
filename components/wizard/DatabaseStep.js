@@ -17,12 +17,20 @@ export default function DatabaseStep({ onNext, onPrev }) {
     useEffect(() => {
         const fetchDatasets = async () => {
             try {
-                const res = await fetch('https://www.datos.gov.co/api/v3/views/v8aw-jabd/query.json', {
+                // El dataset v8aw-jabd fue descontinuado, se reemplaza por el actualizado de la Hoja de Ruta Nacional 2025: fn2v-r4gu
+                const res = await fetch('https://www.datos.gov.co/resource/fn2v-r4gu.json?$limit=1000', {
                     headers: {
                         'X-App-Token': '10zQS6qOBoGXQeOSYQ7KfeSAZ'
                     }
                 });
-                const data = await res.json();
+                let data = await res.json();
+
+                // Si la API no contesta un arreglo (ej. error de socrata), se pasa un arreglo vacío para prevenir "n.map is not a function"
+                if (!Array.isArray(data)) {
+                    console.error("Error devuelto por la API:", data);
+                    data = [];
+                }
+
                 setDatasets(data);
             } catch (error) {
                 console.error("Error fetching datasets list:", error);
@@ -37,13 +45,13 @@ export default function DatabaseStep({ onNext, onPrev }) {
 
     const isUsedDataset = (ds) => {
         // Check by ID in the URL or content if available, or strict match on known IDs
-        const link = ds.enlace_portal_de_datos || "";
+        const link = ds.enlace_portal_de_datos || ds.enlace_portal_dato_abierto || "";
         const idMatch = USED_DATASETS_IDS.some(id => link.includes(id));
 
         // Check for Sisbén specifically by name since the URL might not contain the ID
         const nameMatch = SISBEN_KEYWORDS.some(keyword =>
-            (ds.conjunto_de_datos || "").toLowerCase().includes(keyword) &&
-            (ds.conjunto_de_datos || "").toLowerCase().includes("beneficiarios")
+            (ds.conjunto_de_datos || ds.conjunto_datos_priorizados || "").toLowerCase().includes(keyword) &&
+            (ds.conjunto_de_datos || ds.conjunto_datos_priorizados || "").toLowerCase().includes("beneficiarios")
         );
 
         return idMatch || nameMatch;
@@ -90,9 +98,14 @@ export default function DatabaseStep({ onNext, onPrev }) {
                                     const isOnline = ds.dato_abierto === 'SI';
                                     const used = isUsedDataset(ds);
 
+                                    const datasetName = ds.conjunto_de_datos || ds.conjunto_datos_priorizados || "Sin Nombre";
+                                    const datasetDesc = ds.descripci_n || ds.descripcion;
+                                    const datasetEntity = ds.nombre_entidades_responsables || ds.entidades_responsables || "N/A";
+                                    const datasetCategory = ds.categor_a || ds.categoria || "General";
+
                                     return (
                                         <motion.tr
-                                            key={ds[':id'] || i}
+                                            key={ds[':id'] || ds.id || i}
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={{ delay: i * 0.02 }}
@@ -103,20 +116,20 @@ export default function DatabaseStep({ onNext, onPrev }) {
                                             </td>
                                             <td className="p-4">
                                                 <div className={`font-semibold transition-colors ${used ? 'text-cyan-300' : 'text-slate-200 group-hover:text-cyan-400'}`}>
-                                                    {ds.conjunto_de_datos || "Sin Nombre"}
+                                                    {datasetName}
                                                 </div>
-                                                {ds.descripci_n && (
+                                                {datasetDesc && (
                                                     <div className="text-xs text-slate-500 mt-1 line-clamp-1 max-w-md">
-                                                        {ds.descripci_n}
+                                                        {datasetDesc}
                                                     </div>
                                                 )}
                                             </td>
                                             <td className="p-4 text-sm text-slate-400">
-                                                {ds.nombre_entidades_responsables || "N/A"}
+                                                {datasetEntity}
                                             </td>
                                             <td className="p-4">
                                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-900/30 text-blue-400 border border-blue-800/50">
-                                                    {ds.categor_a || "General"}
+                                                    {datasetCategory}
                                                 </span>
                                             </td>
                                             <td className="p-4 text-right">
