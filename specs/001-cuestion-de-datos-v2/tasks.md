@@ -1,0 +1,156 @@
+# Plan de Trabajo Ejecutable — Cuestión de Datos v2.0
+
+**Versión:** 1.0.0 · **Fecha:** 2026-07-06
+**Fuente:** [`plan.md`](./plan.md) §8 · Los IDs de requisitos (`RF-###`, `RNF-###`) vienen de [`spec.md`](./spec.md)
+
+> **Cómo leer este archivo (para Camilo):** las tareas están en orden de ejecución. Cada una dice *qué* se hace, *por qué*, *qué necesitas hacer tú manualmente* (cuentas, claves, decisiones) y *cómo verificar que quedó bien* antes de pasar a la siguiente. Las marcadas 🧑 requieren acción humana tuya; las demás las puede ejecutar un agente de desarrollo. Marca `[x]` al completar. No saltes fases: cada una asume la anterior verificada.
+
+---
+
+## FASE 0 — Preparación de cuentas y herramientas externas
+
+*Objetivo: tener todas las credenciales e infraestructura gratuita lista ANTES de escribir código, para que ninguna tarea posterior se bloquee esperando un registro.*
+
+- [ ] **T-001 🧑 Preparar las bases de datos (local y despliegue).**
+  *El desarrollo diario usa PostgreSQL LOCAL en Docker (Constitución Art. II.2); el servicio gestionado es solo para DESPLIEGUE y puede crearse más tarde (se necesita a partir de T-206/T-701).*
+  1. **Local (requisito para desarrollar):** instala [Docker Desktop](https://www.docker.com/products/docker-desktop/). La base local se levantará con el `compose.yaml` que se crea en T-105 — aquí solo asegura que `docker compose version` funciona.
+  2. **Despliegue (puede diferirse):** regístrate en [supabase.com](https://supabase.com) (o [neon.tech](https://neon.tech), equivalente) con tu cuenta de GitHub; crea el proyecto `cuestion-de-datos`; en el editor SQL ejecuta `CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;`; guarda la cadena de conexión (`postgresql://usuario:clave@host-remoto:5432/base`) en tu gestor de contraseñas.
+  - ✅ *Verificación:* `docker compose version` responde; y, cuando crees la gestionada, `SELECT extname FROM pg_extension;` lista `vector` y `pg_trgm`.
+
+- [ ] **T-002 🧑 Verificar/crear las API keys de los modelos.**
+  1. **Gemini (defecto):** ya tienes `GOOGLE_API_KEY` en `.env.local` de v1.0. Confirma en [aistudio.google.com](https://aistudio.google.com) que sigue activa y revisa los límites del tier actual (necesitamos ~10 llamadas por investigación).
+  2. **Anthropic (comparativa OE3):** crea una key en [console.anthropic.com](https://console.anthropic.com) → `ANTHROPIC_API_KEY`. Carga el crédito mínimo (USD 5 basta para las corridas de evaluación). *Solo se usa en la Fase 6.*
+  3. **Socrata:** confirma tu `SOCRATA_APP_TOKEN` actual en [datos.gov.co](https://www.datos.gov.co/profile/edit/developer_settings) (aumenta los límites de tarifa de la API).
+  - ✅ *Verificación:* cada key responde a una llamada mínima de prueba (`curl` de ejemplo en quickstart.md §7).
+
+- [ ] **T-003 🧑 Crear el servicio de hosting del backend.**
+  1. Regístrate en [railway.app](https://railway.app) (o render.com) con GitHub.
+  2. Todavía NO despliegues nada; solo confirma que la cuenta puede crear servicios web con Python. El despliegue real es T-701.
+  - ✅ *Verificación:* panel accesible, plan y límites anotados.
+
+- [ ] **T-004 Preparar el repositorio.**
+  1. Crear rama `v2` en el repo actual (`cuestion-de-datos-MinTIC-2025`). Todo el trabajo v2.0 ocurre en ramas hijas de `v2` con PRs.
+  2. Añadir `LICENSE` (MIT — compromiso de software libre de la propuesta) y `CHANGELOG.md` con la entrada `2.0.0-dev`.
+  3. Actualizar `.gitignore`: añadir `backend/.env`, `__pycache__/`, `.venv/`, `*.pyc`.
+  - ✅ *Verificación:* rama `v2` existe; `git log` limpio; ningún secreto en el historial.
+
+## FASE 1 — Reorganización del repositorio (sin cambios funcionales)
+
+*Objetivo: estructura de plan.md §3 con la v1.0 funcionando igual que antes. Hacerlo primero evita mezclar refactor con features nuevos.*
+
+- [ ] **T-101 Mover el frontend a `frontend/`.** Mover `components/`, `pages/`, `styles/`, `public/`, `data/`, `utils/`, configs de Next/Tailwind/PostCSS y `package.json` a `frontend/`. Actualizar rutas relativas si alguna se rompe.
+  - ✅ `cd frontend && npm install && npm run dev` sirve la app idéntica a v1.0 en `localhost:3000`.
+- [ ] **T-102 Crear el esqueleto de `backend/`.** Estructura de carpetas de plan.md §3, `pyproject.toml` (Python 3.12; dependencias: fastapi, uvicorn, langgraph, langchain-core, langchain-google-genai, langchain-anthropic, sqlalchemy, alembic, pgvector, httpx, pydantic-settings, pytest, pytest-asyncio, respx, ruff — las dependencias de embeddings, como sentence-transformers, se añaden SOLO tras la decisión de T-205), `app/main.py` con `GET /v2/health` (checks en `degraded` por ahora) y `.env.example` con todas las variables de quickstart.md §2.
+  - ✅ `uvicorn app.main:app` responde en `/v2/health`.
+- [ ] **T-103 Configurar CI básico.** `.github/workflows/ci.yml`: jobs `backend` (ruff + pytest) y `frontend` (build de Next). Debe correr en cada PR a `v2`.
+  - ✅ El primer PR muestra los dos checks en verde.
+- [ ] **T-104A Migraciones iniciales (SIN la tabla vectorial definitiva).** Alembic configurado; migración 001 crea todas las tablas de `data-model.md` EXCEPTO `catalog_embeddings`, cuya dimensión depende del benchmark de embeddings (T-205 → T-104B). Modelos SQLAlchemy en `app/db/models.py` espejando el documento exactamente (nombres y constraints), incluidos los campos de token, retención y eventos (`agent_run_events`, `quantitative_claims`).
+  - ✅ `alembic upgrade head` contra la base local de T-105 crea las tablas; `\dt` las lista; NO existe aún `catalog_embeddings`.
+- [ ] **T-105 Crear `compose.yaml` en la raíz del repositorio.** Define, como mínimo: servicio PostgreSQL con extensión pgvector con **versión fijada** (p. ej. `pgvector/pgvector:pg16`, con tag de versión específico o digest — nunca `latest`), volumen persistente, healthcheck y variables configurables vía `.env` (usuario, clave, base, puerto). Documentar en el README del repo el comando `docker compose up -d db`. Este archivo es la vía oficial de desarrollo local (Constitución Art. II.2); Supabase/Neon quedan solo para despliegue.
+  - ✅ `docker compose up -d db` deja Postgres sano (healthcheck OK); `psql postgresql://usuario:clave@localhost:5432/cuestion_de_datos -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;"` funciona; los datos sobreviven a `docker compose restart`.
+
+## FASE 2 — Índice semántico del catálogo (RF-301…304, RNF-010)
+
+*Objetivo: pasar de 5 datasets hardcodeados a ~8.000 buscables semánticamente. Es el cimiento del agente: sin esto no hay v2.0.*
+
+- [ ] **T-201 Cliente de la Discovery API.** `scripts/ingest_catalog.py`: pagina `https://api.us.socrata.com/api/catalog/v1?domains=www.datos.gov.co&only=dataset` (respetando límites de tarifa), filtra tabulares con API activa y normaliza según plan.md §5. Upsert en `catalog_datasets` + `catalog_columns`. Registra `ingest_runs`.
+  - ✅ Correr el script llena ≥ 7.000 datasets; re-correrlo no duplica nada (RF-304).
+- [ ] **T-202 Carga del maestro DIVIPOLA.** Script que descarga el dataset oficial DIVIPOLA de datos.gov.co (dataset del DANE, id `gdxc-w37w` o su vigente — confirmar en el portal) y llena `divipola_entries` con `name_normalized` y `alt_names`.
+  - ✅ `SELECT count(*) FROM divipola_entries WHERE level='municipality';` ≥ 1.100; buscar `carmen viboral` con trigram devuelve `05148`.
+- [ ] **T-205 🧑 Benchmark de embeddings y decisión (ANTES de crear la tabla vectorial).** Notebook `notebooks/01_benchmark_embeddings.ipynb`: comparar `intfloat/multilingual-e5-large` (local), `gemini-embedding-2` (gestionado) y, si se justifica en `research.md`, otro modelo multilingüe actual, sobre una muestra de los metadatos ya ingeridos (T-201) con 30+ consultas de prueba. Evaluar TODOS los criterios de `research.md` §1: recuperación en español, calidad en consultas territoriales colombianas, dimensión de vectores, latencia, costo, ejecución local, dependencia de proveedor, reproducibilidad, tamaño del índice y compatibilidad pgvector. **Tú decides** el modelo y con él la dimensión; registrar la decisión y su justificación en `research.md` §1 (no en plan.md).
+  - ✅ Decisión y dimensión documentadas en `research.md` §1 con la evidencia del benchmark.
+- [ ] **T-104B Migración definitiva de `catalog_embeddings`.** Con el modelo y la dimensión decididos en T-205: migración Alembic que crea `catalog_embeddings` con `vector(<dimensión elegida>)` y el índice HNSW (`vector_cosine_ops`). Actualizar `data-model.md` reemplazando `<DIM>` por el valor real en el mismo PR.
+  - ✅ `alembic upgrade head` crea la tabla e índice; `data-model.md` ya no contiene `<DIM>` sin resolver.
+- [ ] **T-203 Generación de embeddings.** `scripts/build_embeddings.py`: construye `embedding_text` (plan.md §5.4), genera embeddings por lotes con el modelo seleccionado y hace upsert en `catalog_embeddings`.
+  - ✅ 100% de datasets activos con embedding; `model` homogéneo en toda la tabla.
+- [ ] **T-204 Endpoint de búsqueda.** `GET /v2/catalog/search` según `contracts/api-rest.md` §8.
+  - ✅ "deserción escolar" retorna datasets del MEN en el top-5; latencia < 1 s.
+- [ ] **T-206 Cron de ingesta.** `.github/workflows/ingest-cron.yml` semanal (domingo 3:00 UTC) que ejecuta T-201+T-203 contra la base productiva usando secrets del repo. También `POST /v2/admin/ingest` (RF-701).
+  - ✅ Ejecución manual del workflow termina en verde y crea un `ingest_runs` nuevo.
+
+## FASE 3 — Agente multi-paso (RF-201…209)
+
+*Objetivo: el grafo LangGraph con sus herramientas reemplaza el bucle manual de v1.0, con durabilidad desde el primer día.*
+
+- [ ] **T-300 Prueba de concepto de durabilidad (ANTES de construir el grafo completo).** Prototipo mínimo (un endpoint + un grafo de juguete de 3 nodos) que demuestre de punta a punta la semántica única de plan.md §11: eventos SSE numerados persistidos en `agent_run_events`, reconexión con `Last-Event-ID` sin pérdida ni duplicación, y reinicio del proceso ⇒ corrida marcada `interrupted` (terminal) con su evento `RUN_INTERRUPTED` persistido y los resultados parciales recuperables. Si algo del diseño no funciona en la práctica, se corrige plan.md/contratos AQUÍ, no en la Fase 5.
+  - ✅ Demo reproducible documentada: iniciar corrida → recibir 2+ eventos → matar el proceso → reiniciar → reconectar con `Last-Event-ID` → recibir los eventos faltantes y un estado terminal coherente.
+- [ ] **T-301 Capa multi-proveedor LLM.** `app/llm/factory.py`: devuelve el chat model según `LLM_PROVIDER`/`LLM_MODEL` (google | anthropic), con structured output y conteo de tokens unificado (RF-206).
+  - ✅ Prueba unitaria instancia ambos proveedores (con mock) y el conteo de tokens/costo funciona.
+- [ ] **T-302 Implementar las herramientas T1–T5** (las ÚNICAS invocables por el enrutador LLM, `contracts/agent-tools.md`) en `app/tools/`, cada una con esquema Pydantic, sanitización (T4), guardia SoQL estructural (T5) y pruebas unitarias con HTTP mockeado (respx). Los nodos deterministas T6 y T7 NO van aquí: se implementan en T-401 y T-403.
+  - ✅ Suite de pruebas de contrato en verde (casos de pruebas.md §4.1).
+- [ ] **T-401 Implementar `app/quality/` (nodo determinista T6).** Exactamente según `contracts/validacion-calidad.md`: 4 dimensiones, pesos, reglas duras (incluida fuente no oficial ⇒ rechazo), mensajes en `messages_es.py`, `validator_version`. Módulo puro, probado en aislamiento — no requiere el grafo.
+  - ✅ Los casos de prueba obligatorios del contrato (§5) pasan.
+- [ ] **T-403 Módulo de afirmaciones cuantitativas (nodo determinista T7, RF-208).** `app/quality/claims.py` según `contracts/agent-tools.md` T7: evaluador seguro de fórmulas, formato es-CO de `display_value`, `source_hash`, persistencia en `quantitative_claims`, y el verificador de cifras huérfanas para el texto del sintetizador. Módulo puro, probado en aislamiento.
+  - ✅ Casos de pruebas.md §2.1 (claims) en verde, incluido el detector de cifras huérfanas.
+- [ ] **T-303 Integrar el grafo del agente.** `app/agent/graph.py` según plan.md §1: planificador → enrutador → herramientas T1–T5 (T-302) → nodo validador T6 (T-401) → nodo constructor de afirmaciones T7 (T-403) → sintetizador restringido (solo `display_value` de claims; cifras huérfanas bloquean y fuerzan re-síntesis, máx. 2 intentos, luego `failed`), con presupuestos del contrato de tools, checkpointer PostgreSQL, heartbeat, eventos numerados en `agent_run_events` y persistencia de `agent_runs`/`agent_steps` (RF-703, RF-209), sobre la base del PoC de T-300. Prompts en `app/agent/prompts/`, versionados.
+  - ✅ En consola: la pregunta de ESC-02 produce respuesta con evidencias reales, `claims[]` completos y cero cifras huérfanas en ≤ 10 pasos; matar el proceso a mitad de corrida deja estado `interrupted` coherente al reiniciar.
+- [ ] **T-304 Endpoints del agente.** `POST /v2/agent/query` (emite `run_access_token` una sola vez, guarda solo el hash con expiración — RF-801), `GET /v2/agent/stream/{run_id}` (SSE con `id:` de secuencia, `Last-Event-ID`, autorización Bearer), `GET /v2/agent/runs/{run_id}` (Bearer) y `DELETE /v2/agent/runs/{run_id}` (borrado RF-803), según el contrato REST; rate limiting por IP; barrido de corridas huérfanas con timeouts configurables (plan.md §11).
+  - ✅ `curl -N` con Bearer muestra eventos en vivo y termina con `answer`; sin token → 401; reconexión con `Last-Event-ID` no pierde ni duplica; `DELETE` borra y el `GET` posterior da 404.
+- [ ] **T-305 Casos de honestidad.** Probar manualmente ESC-03 (pregunta sin respuesta en el catálogo): el agente debe producir `no_evidence_report` sin cifras inventadas.
+  - ✅ 3 preguntas negativas manuales pasan; se registran como semillas del golden set (T-601).
+
+## FASE 4 — Verificación integrada de las capas deterministas (RF-401…404, RF-208)
+
+*Nota de reordenamiento: T-401 y T-403 se ejecutan dentro de la Fase 3 (antes de T-303) porque el grafo los integra; se conservan sus IDs. Esta fase verifica la integración de punta a punta con datos reales.*
+
+- [ ] **T-402 Verificación integrada de calidad y claims.** Con el grafo completo (T-303): el nodo `quality_validator` corre SIEMPRE tras cada `ejecutar_soql` (imposible saltarlo); el objeto `quality` viaja en cada Evidencia; el sintetizador ajusta la narrativa según la clasificación (`baja` ⇒ mencionar limitación; `no_recomendada` ⇒ evidencia no elegible como sustento); los claims heredan las advertencias de su evidencia fuente.
+  - ✅ ESC-05 reproducido con un dataset viejo real: advertencia visible en la respuesta; una respuesta real de ESC-01 muestra `claims[]` y cero cifras huérfanas; un dataset de publicador no oficial es rechazado con explicación clara.
+
+## FASE 5 — Frontend v2 (RF-101…104, RF-501…503, RNF-007/008, Art. V)
+
+- [ ] **T-501 Sistema de diseño azul.** Aplicar los tokens de plan.md §7 en `tailwind.config.js`; refactorizar componentes a la paleta; eliminar colores fuera de paleta salvo semánticos. Objetivo de accesibilidad: WCAG 2.2 nivel AA.
+  - ✅ Revisión visual página por página + captura de pantalla en el PR; Lighthouse/axe accesibilidad ≥ 95 como puerta parcial (RNF-007) — la conformidad se completa con la revisión manual de T-505.
+- [ ] **T-502 Conectar el copiloto al backend v2.** Reemplazar el fetch a `/api/consultar_v2` por el flujo `query` → SSE consumido con fetch-stream (el token Bearer viaja por encabezado; `EventSource` nativo no sirve — plan.md §11): pasos del agente renderizados en vivo como línea de tiempo en lenguaje claro, con detalle técnico expandible (ESC-04); reconexión automática con `Last-Event-ID`; el `run_access_token` se guarda junto al historial local de la sesión. Aviso de consentimiento ANTES de la primera investigación (RF-802: qué se guarda, para qué, por cuánto tiempo, cómo borrarlo) y acción "borrar esta investigación" que llama al `DELETE` (RF-803). Historial de sesión con re-ejecución/refinado de consultas anteriores (RF-502); todos los textos en español (RNF-012). Conexión DIRECTA del navegador al backend vía `NEXT_PUBLIC_BACKEND_URL` (sin proxy en Next.js); configurar `CORSMiddleware` en FastAPI restringido a los orígenes del frontend (plan.md §11).
+  - ✅ RNF-008 medido: primer feedback < 500 ms, primer paso < 2 s; cortar la red a mitad de corrida y recuperarla continúa el stream sin duplicar pasos; el aviso de consentimiento aparece antes de la primera investigación.
+- [ ] **T-503 Tarjetas de evidencia v2.** Mostrar tabla + badge de calidad + advertencias + narrativa citable + botón "insertar en sección" y descarga CSV (RF-501). Gráfica simple cuando `chart_suggestion` no es null (RF-503). Flujo de confirmación para `no_recomendada` (RF-404).
+  - ✅ ESC-01 completo de punta a punta en local.
+- [ ] **T-504 Citas y persistencia del documento.** Extensión Tiptap "cita de evidencia" que fija el objeto `citation` al fragmento insertado (RF-103); autoguardado en localStorage ≤ 5 s (RF-102); exportación a `.docx` con citas al pie (RF-102/103).
+  - ✅ ESC-08: cerrar y reabrir el navegador conserva documento y citas; el .docx exportado muestra las citas.
+- [ ] **T-505 Pruebas E2E y revisión de accesibilidad.** Playwright: ESC-01 feliz, ESC-03 sin evidencia, navegación por teclado del flujo principal. Además, revisión MANUAL de accesibilidad WCAG 2.2 AA según la lista de pruebas.md §5 (teclado, orden y visibilidad de foco, lector de pantalla, zoom y reflujo a 320 px, anuncios de contenido SSE con `aria-live` sin saturar, reducción de movimiento, no depender solo del color). Las herramientas automáticas son auxiliares (RNF-007).
+  - ✅ Suite E2E en CI (con backend mockeado por fixtures) + acta de revisión manual archivada en `docs/`.
+
+## FASE 6 — Evaluación técnica OE3 (RF-601…603)
+
+*Objetivo: la batería que produce las métricas del working paper (Producto 3 de la propuesta).*
+
+- [ ] **T-601 🧑 Construir el golden set v1.** 50 casos en `backend/eval/golden/golden-v1.yaml`: ~40 positivos (pregunta + `expected_dataset_ids` + hechos verificados a mano contra el portal) y ~10 negativos (RNF-005). **Requiere tu criterio de politólogo:** las preguntas deben representar necesidades reales de funcionarios (usa los hallazgos del OE1 cuando existan). Documentar cada caso en `notes`.
+  - ✅ Revisión cruzada: cada `expected_dataset_id` verificado manualmente en datos.gov.co.
+- [ ] **T-602 Runner de evaluación.** CLI `python -m eval.run --suite golden-v1 --provider google --model gemini-2.5-flash`: ejecuta cada caso contra el grafo real, calcula recall@10, éxito, **groundedness por verificación de claims** (cada cifra del texto tiene claim; operandos existen en las filas fuente; la fórmula re-ejecutada reproduce `raw_value`; el redondeo produce `display_value`; el texto coincide con `display_value` — la coincidencia literal por regex queda solo como detector auxiliar de cifras huérfanas, pruebas.md §4.2), fabricaciones en negativos, latencias y costo; persiste `eval_runs`/`eval_case_results` y emite reporte Markdown en `backend/eval/reports/`.
+  - ✅ Corrida completa contra Gemini termina y el reporte muestra las métricas de RNF-001…005.
+- [ ] **T-603 🧑 Corridas comparativas.** Ejecutar la batería con ≥ 2 configuraciones (p. ej. Gemini 2.5 Flash vs Claude vs Gemini Pro). **Tú decides** las configuraciones finales según presupuesto. Analizar en `notebooks/02_analisis_eval.ipynb`.
+  - ✅ Tabla comparativa lista para el working paper; configuración ganadora fijada como default.
+- [ ] **T-604 Puerta de regresión en CI.** Subconjunto rápido del golden set (10 casos) corre semanalmente en CI; si `success_rate` < 80% (RNF-002), el workflow falla y abre un issue.
+  - ✅ Workflow visible en Actions con umbral configurado.
+
+## FASE 7 — Endurecimiento y despliegue
+
+- [ ] **T-701 🧑 Desplegar el backend.** Railway/Render: servicio desde `backend/` con las variables de `.env.example` como secrets (usa los valores reales de la Fase 0). Conectar dominio `api.cuestiondedatos.com` (añadir CNAME en tu DNS).
+  - ✅ `https://api.cuestiondedatos.com/v2/health` responde `ok` desde internet.
+- [ ] **T-702 🧑 Desplegar el frontend.** En Vercel, apuntar el proyecto existente a `frontend/` de la rama `v2` con `NEXT_PUBLIC_BACKEND_URL=https://api.cuestiondedatos.com` como variable de entorno; verificar que el CORS del backend incluye el dominio del preview de Vercel durante las pruebas. Probar en preview antes de promover a producción (cuestiondedatos.com).
+  - ✅ ESC-01 funciona en el dominio de preview y luego en producción.
+- [ ] **T-703 🧑 Monitoreo.** UptimeRobot sobre `/v2/health` cada 5 min con alerta a tu correo (RNF-006); revisar `GET /v2/admin/metrics` tras la primera semana para verificar RNF-001/009 con tráfico real.
+  - ✅ Monitor activo; primer reporte semanal de métricas archivado en `docs/`.
+- [ ] **T-704 Retirar el endpoint v1.** Eliminar `pages/api/consultar_v2.js`, `utils/systemPrompt.js` y `utils/maestro_divipola.js` (ya reemplazados). Actualizar README.md raíz con la arquitectura v2.0 y CHANGELOG a `2.0.0`.
+  - ✅ Sin referencias muertas (`grep` de los archivos borrados no encuentra imports).
+- [ ] **T-705 🧑 Cierre documental.** Verificar los criterios de cierre de plan.md §10; capturar evidencia (reportes, métricas, screenshots) en `docs/`; preparar la actualización del registro en herramientas.datos.gov.co con la documentación de los nuevos componentes.
+  - ✅ Checklist de plan.md §10 completo y archivado.
+
+---
+
+## Dependencias entre fases
+
+```
+F0 ──▶ F1 ──▶ F2 ──▶ F3 ──▶ F4 ──▶ F5 ──▶ F7
+                      └────────────▶ F6 ──▶ F7   (F6 puede iniciar al terminar F3/F4)
+```
+
+## Resumen de acciones humanas (🧑) para planear tu agenda
+
+| Tarea | Qué haces tú | Tiempo estimado |
+|---|---|---|
+| T-001/002/003 | Instalar Docker Desktop y crear cuentas/claves (Anthropic; Supabase y Railway solo para despliegue) | 1–2 h |
+| T-205 | Decidir modelo de embeddings y dimensión con el benchmark (research.md §1) | 2–3 h |
+| T-601 | Construir y verificar el golden set (criterio experto) | 2–3 días |
+| T-603 | Decidir configuraciones comparativas y analizar | 1 día |
+| T-701/702/703 | Despliegues, DNS y monitoreo | 2–4 h |
+| T-705 | Cierre documental y registro MinTIC | 1 día |
