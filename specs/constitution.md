@@ -1,6 +1,6 @@
 # Constitución del Proyecto — Cuestión de Datos
 
-**Versión:** 1.1.0 · **Ratificada:** 2026-07-06 · **Última enmienda:** 2026-07-06 (revisión documental: Art. II.2 reproducibilidad local acotada a componentes propios, Art. V.3 WCAG 2.2, Art. V.4 transparencia observable, Art. VI.2 excepción del token de corrida, jerarquía normativa completa)
+**Versión:** 1.2.0 · **Ratificada:** 2026-07-06 · **Última enmienda:** 2026-07-06 (revisión documental focalizada de backend: `research.md` incorporado a la jerarquía normativa, Art. IV.2 alineado con puertas RNF-002 por PR/semanal/release, y obligación de configuración completa antes de implementar backend)
 
 Este documento define los principios que **ninguna funcionalidad, refactor ni decisión técnica puede violar**. Aplica a todo el código del repositorio (frontend, backend, scripts de datos, pruebas y documentación) y a todo agente de IA o humano que contribuya.
 
@@ -29,7 +29,7 @@ Este documento define los principios que **ninguna funcionalidad, refactor ni de
 ## Artículo IV — Calidad verificada por pruebas
 
 1. **Toda lógica de negocio del backend tiene pruebas.** Los módulos de validación de calidad, construcción de SoQL, herramientas del agente y endpoints REST no se consideran terminados sin pruebas automatizadas (ver `pruebas.md`).
-2. Las pruebas de comportamiento del agente usan un conjunto dorado (*golden set*) de preguntas versionado en el repositorio; una regresión en la tasa de éxito por debajo del umbral definido en `spec.md` (RNF-002) bloquea el merge.
+2. Las pruebas de comportamiento del agente se verifican en tres niveles compatibles con RNF-002: (a) cada PR ejecuta pruebas deterministas con LLM guionado y un smoke reducido sin costo ni inestabilidad excesiva, y estas pruebas sí bloquean el merge; (b) semanalmente se ejecuta el conjunto dorado con LLM real y se abre alerta o issue ante regresión; (c) antes de cada release se ejecuta el conjunto dorado completo con LLM real y una tasa de éxito inferior al umbral definido en `spec.md` bloquea el release. Esta enmienda reemplaza la regla anterior que hacía depender todo merge de la batería completa con LLM real, porque no era viable ni estable para cada PR.
 3. CI obligatorio: lint + pruebas unitarias + pruebas de contrato se ejecutan en cada PR. Un PR con CI en rojo no se mergea.
 4. Los errores de las APIs externas (Socrata, LLM) se manejan explícitamente: timeout, reintento acotado y mensaje de error claro al usuario. Nunca un `500` sin contexto.
 
@@ -58,7 +58,7 @@ Este documento define los principios que **ninguna funcionalidad, refactor ni de
 
 ## Gobernanza
 
-- **Jerarquía normativa:** constitution.md > spec.md > plan.md > contracts/ > data-model.md > pruebas.md > tasks.md > quickstart.md > código.
+- **Jerarquía normativa:** constitution.md > spec.md > research.md > plan.md > contracts/ > data-model.md > pruebas.md > tasks.md > quickstart.md > código.
 - **Enmiendas:** cualquier cambio a esta constitución requiere (a) justificación escrita en el PR, (b) incremento de versión semántica del documento, y (c) revisión de impacto sobre spec.md y plan.md en el mismo PR.
 - **Verificación de cumplimiento:** todo PR debe declarar en su descripción qué artículos constitucionales toca. El revisor (humano o agente) verifica el cumplimiento antes de aprobar.
 - **Conflictos:** ante ambigüedad entre documentos, gana el de mayor jerarquía; ante ambigüedad dentro de un documento, se pregunta al responsable del proyecto (Juan Camilo Grajales) antes de asumir.

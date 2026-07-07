@@ -57,7 +57,7 @@ entrada ─▶ planificador ─▶ enrutador ─┬─▶ buscar_catalogo ──
 - **constructor_afirmaciones:** nodo determinista (sin LLM) que materializa las **afirmaciones cuantitativas** (claims, RF-208): calcula toda cifra derivada (porcentajes, sumas, promedios) con la herramienta T7 de `contracts/agent-tools.md` y las registra en `quantitative_claims`.
 - **sintetizador:** redacta la respuesta final y la narrativa citable usando EXCLUSIVAMENTE los `display_value` de claims validados y evidencia cualitativa trazable; NO PUEDE calcular ni introducir cifras propias (RNF-003, RF-208).
 - Cada transición emite un evento SSE (RF-204) con número de secuencia persistente y se persiste como `agent_step` + `agent_run_events` (RF-703, RF-209).
-- El grafo usa el **checkpointer PostgreSQL de LangGraph**: el estado de la corrida sobrevive a reinicios del proceso (§11).
+- El grafo usa el **checkpointer PostgreSQL de LangGraph** solo para inspección y diagnóstico: ante reinicio del proceso, la corrida activa termina como `interrupted`; no hay reanudación automática del grafo (§11).
 
 ## 2. Stack y dependencias
 
@@ -66,11 +66,12 @@ entrada ─▶ planificador ─▶ enrutador ─┬─▶ buscar_catalogo ──
 |---|---|---|
 | Lenguaje | Python 3.12 | Ecosistema de agentes/embeddings; alineado con la maestría y los libros guía. |
 | API | FastAPI + Uvicorn | Estándar de la industria, tipado con Pydantic, SSE nativo. |
-| Orquestación | LangGraph (+ LangChain Core) | Grafo de estados con checkpoints; patrón recomendado por los libros guía. |
+| Orquestación | LangGraph (+ LangChain Core) + `langgraph-checkpoint-postgres` | Grafo de estados con checkpoints PostgreSQL; `thread_id = run_id`, `.setup()` idempotente y borrado con `adelete_thread(run_id)` (research.md §10). |
 | Capa LLM | `langchain-google-genai` (default) + `langchain-anthropic` (comparativa OE3) | RF-206: intercambio por configuración `LLM_PROVIDER`/`LLM_MODEL`. |
 | Embeddings | **DECISIÓN PENDIENTE** (ver [`research.md`](./research.md) §1). Candidatos: `intfloat/multilingual-e5-large` (local), `gemini-embedding-2` (gestionado) u otro modelo multilingüe actual justificado en research.md | La selección DEBE salir del benchmark reproducible de T-205; ningún candidato es ganador todavía. La dimensión vectorial y la migración definitiva dependen de esta decisión (T-104B). |
 | Validación datos | Pydantic + módulo propio `quality/` | La capa de calidad es lógica determinista propia (Art. I.4); no requiere framework pesado. |
 | HTTP externo | `httpx` (async, timeouts, retries) | Consultas Socrata concurrentes. |
+| Persistencia | SQLAlchemy async + `psycopg[binary,pool]` | Una sola estrategia asíncrona para FastAPI, repositorios y jobs; evita mezclar drivers. |
 | Pruebas | pytest + pytest-asyncio + respx (mocks HTTP) | Ver `pruebas.md`. |
 | Lint/formato | ruff | Un solo binario para lint+format. |
 
@@ -86,10 +87,11 @@ entrada ─▶ planificador ─▶ enrutador ─┬─▶ buscar_catalogo ──
 
 ### Base de datos
 - **PostgreSQL 15+ con `pgvector`**, en dos modalidades (Constitución Art. II.2):
-  - **Desarrollo local:** contenedor Docker definido en `compose.yaml` (raíz del repo, tarea T-105): PostgreSQL + pgvector, volumen persistente, healthcheck y variables por `.env`. `DATABASE_URL=postgresql://usuario:clave@localhost:5432/cuestion_de_datos`.
+  - **Desarrollo local:** contenedor Docker definido en `compose.yaml` (raíz del repo, tarea T-105): PostgreSQL + pgvector, volumen persistente, healthcheck y variables por `.env`. La imagen debe fijarse con tag completo o digest, no `latest` ni un alias flotante. Las extensiones `vector` y `pg_trgm` se crean mediante script `init` del contenedor local; no por comando manual ni por Alembic. `DATABASE_URL=postgresql://usuario:clave@localhost:5432/cuestion_de_datos`.
+  - **CI:** el job backend de GitHub Actions usa un servicio PostgreSQL+pgvector equivalente al local cuando ejecute pruebas de contrato o integración con DB. Exporta un `DATABASE_URL` de CI y valida extensiones antes de correr migraciones/pruebas. Las pruebas unitarias puras no necesitan el servicio.
   - **Despliegue:** servicio gestionado compatible (Supabase, Neon u otro; tier gratuito suficiente para el piloto). `DATABASE_URL=postgresql://usuario:clave@host-remoto:5432/base`.
-- Esquema completo en [`data-model.md`](./data-model.md). Migraciones con **Alembic**. La migración definitiva de `catalog_embeddings` se crea DESPUÉS del benchmark de embeddings (orden T-104A → T-205 → T-104B, ver tasks.md).
-- Índice vectorial HNSW sobre `catalog_embeddings.embedding` (RNF-010: búsqueda ≤ 1 s p95), creado en T-104B con la dimensión seleccionada.
+- Esquema completo en [`data-model.md`](./data-model.md). Migraciones con **Alembic**. La base local se crea y levanta en T-105; luego T-102 puede inicializar backend/checkpointer, T-104A configura Alembic y crea las tablas iniciales sin `catalog_embeddings`; la migración definitiva de `catalog_embeddings` se crea DESPUÉS del benchmark de embeddings (orden T-105 → T-102 → T-104A → T-205 → T-104B, ver tasks.md).
+- T-104B es condicional al resultado de T-205: si la dimensión elegida es `<= 2000`, crea `vector(<DIM>)` + HNSW con `vector_cosine_ops`; si es `> 2000`, debe cambiar explícitamente a `halfvec(<DIM>)` y su clase de operador correspondiente, documentando la decisión en `research.md`, `data-model.md`, `.env.example`, `plan.md` y `quickstart.md` en el mismo PR.
 
 ### Plataformas externas
 | Servicio | Uso | Plan |
@@ -150,24 +152,29 @@ cuestion-de-datos/
 
 1. **Descubrimiento:** paginar la Discovery API de Socrata filtrando dominio `www.datos.gov.co`, tipo `dataset`.
 2. **Filtrado:** conservar datasets tabulares con API activa; descartar mapas/archivos sin API (quedan fuera del alcance RNF-010).
-3. **Normalización:** limpiar HTML de descripciones, truncar a 2.000 caracteres, extraer columnas (nombre, tipo, descripción), entidad, categoría, `rowsUpdatedAt`.
+3. **Normalización:** limpiar HTML de descripciones, truncar a 2.000 caracteres, extraer columnas (nombre, tipo, descripción), entidad, categoría y `rowsUpdatedAt` como `data_updated_at`. `metadata_synced_at` se asigna al momento de la ingesta. `latest_observed_cutoff_at` permanece `null` salvo que existan observaciones previas de evidencias.
+3b. **Elegibilidad de datos personales:** marcar `pii_risk_level` por dataset/columna usando metadatos, nombres de columnas y fixture de patrones (`quality/pii_patterns.yaml`). Política normativa: `high` o `contains_personal_data=true` ⇒ no elegible; `unknown` ⇒ no elegible para consultar Socrata hasta clasificación; `medium` ⇒ solo elegible para consultas agregadas que cumplan agregación mínima y no devuelvan filas individuales; `low` ⇒ elegible si también pasa publicador y API activa. No se contempla revisión manual ad hoc en runtime; cualquier reclasificación manual debe quedar como metadato versionado (`pii_reviewed_by`, `pii_reviewed_at`, `pii_review_source`, `pii_review_notes`) en el catálogo.
+3c. **Publicador oficial:** normalizar el publicador del catálogo contra `official_publishers` y `official_publisher_aliases` (fixture versionado cargado en T-106). Guardar `official_publisher_id` y `publisher_verification_status` (`verified` | `unknown` | `private_or_non_official`). Los alias no únicos se registran con `ambiguous=true`, pero el dataset queda `unknown` y no elegible. Los datasets no verificados pueden indexarse para diagnóstico, pero no son elegibles como evidencia hasta resolver el publicador.
+3d. **Estado de elegibilidad:** calcular `eligibility_status` y `eligibility_reasons` por dataset y columna antes de permitir T5. `eligible` significa que puede consultarse como evidencia; `diagnostic_only` significa que puede aparecer en búsqueda con advertencia pero no ejecutarse; `blocked` significa que el agente debe descartarlo y buscar alternativa.
 4. **Texto de embedding por dataset:** `título + descripción + entidad + categoría + nombres de columnas` (estrategia de compensación de metadatos pobres: si la descripción < 100 caracteres, se pesa más el título y las columnas).
 5. **Embeddings por lotes** → upsert en `catalog_datasets` + `catalog_embeddings` (idempotencia por `dataset_id`, RF-304).
 6. **Reporte:** filas nuevas/actualizadas/fallidas → tabla `ingest_runs` (RF-701).
 7. **Programación:** GitHub Actions cron semanal + ejecución manual por CLI.
 8. **Ventana de obsolescencia (RF-303):** un dataset cuyo `metadata_synced_at` sea más antiguo que `CATALOG_STALE_AFTER_DAYS` (default 8 días = ingesta semanal + 1 de margen) se marca `index_stale = true` en las respuestas de búsqueda (`/v2/catalog/search`) y se lista en `/v2/admin/metrics`.
+9. **Corte estadístico:** cada `evidence_results` infiere su propio `data_cutoff_at` exclusivamente desde las filas de esa evidencia, con `data_cutoff_method`, `data_cutoff_column`, `data_cutoff_confidence`, `data_cutoff_basis` y `data_cutoff_inferred_at`. `catalog_datasets.latest_observed_cutoff_at` es solo una pista agregada actualizada desde evidencias, nunca la base normativa de calidad. La interfaz nunca usa `data_updated_at` como reemplazo silencioso de corte estadístico.
 
 ## 6. Rendimiento y presupuesto de latencia (RNF-001)
 
 | Fase | Presupuesto p95 |
 |---|---|
-| Búsqueda semántica (pgvector HNSW) | ≤ 1 s |
+| Búsqueda semántica (pgvector/HNSW) | ≤ 1 s p95 medido sobre distribución de al menos 100 consultas representativas; además reporta cobertura real del índice sobre datasets tabulares activos |
 | Llamada LLM por paso (Gemini Flash) | ≤ 6 s |
 | Consulta Socrata | ≤ 5 s (timeout 10 s, 1 reintento) |
 | Validación de calidad | ≤ 500 ms (determinista) |
-| Investigación completa (≤ 10 pasos, típica 4–6) | ≤ 75 s |
+| Consulta simple (1 dataset, 1 SoQL, sin perfilado extenso) | ≤ 20 s p95 |
+| Investigación multi-paso completa (≤ 10 pasos, típica 4–6) | ≤ 75 s p95 |
 
-Mitigaciones: consultas Socrata paralelas cuando el plan lo permita; `LIMIT` obligatorio (máx. 1.000 filas por consulta); streaming SSE para percepción de progreso (RNF-008).
+Mitigaciones: consultas Socrata paralelas cuando el plan lo permita; `LIMIT` obligatorio; `SELECT *` prohibido; máximo 50 filas entran al contexto LLM; máximo 1.000 filas en `evidence_results.rows` solo cuando el usuario necesita descarga; presupuesto duro de evidencia serializada: `rows` ≤ 1 MB por evidencia, `tool_output_summary` ≤ 20 KB por paso y evento SSE `evidence` ≤ 256 KB salvo descarga explícita; streaming SSE para percepción de progreso (RNF-008). `perfilar_dataset` debe usar una o pocas consultas agregadas/concurrentes y no puede ejecutar una cascada secuencial que rompa RNF-001.
 
 ## 7. Diseño visual (Constitución Art. V)
 
@@ -220,23 +227,68 @@ v2.0 se declara terminada cuando: (1) todos los RF de spec.md están implementad
 
 **Durabilidad (un solo worker):**
 - El backend corre como **un único worker** durante el piloto; las corridas se ejecutan como tareas asíncronas dentro del proceso, pero TODO estado relevante vive en PostgreSQL, nunca solo en memoria.
+- Al iniciar, el proceso genera un `worker_instance_id` único y registra/renueva una lease en `worker_instances`. TTL normativo: `WORKER_LEASE_TTL_S = RUN_HEARTBEAT_TIMEOUT_S` y renovación cada `RUN_HEARTBEAT_TIMEOUT_S / 3` mientras el proceso acepte trabajo. Si la renovación falla, la instancia deja de aceptar nuevas corridas y las activas terminarán por heartbeat/lease.
+- **Arranque idempotente:** antes de aceptar tráfico, el backend marca como `interrupted` solo las corridas `running` asociadas a un `worker_instance_id` cuya lease esté vencida, persiste un único evento terminal `error` con código `RUN_INTERRUPTED` o `WORKER_LOST` y conserva evidencias/claims parciales ya validados. Repetir el arranque no duplica eventos terminales. Si existe una instancia anterior con lease vigente, sus corridas no se interrumpen.
 - **Estado de corrida** en `agent_runs.status` (+ `heartbeat_at` actualizado periódicamente por la corrida activa).
 - **Checkpoints de LangGraph** persistidos en PostgreSQL (checkpointer oficial): se usan para inspección y diagnóstico del estado de una corrida. En el piloto NO existe reanudación automática del trabajo del agente.
 - **Eventos numerados:** cada evento SSE se persiste en `agent_run_events` con secuencia monotónica por corrida ANTES de emitirse. Los eventos terminales (`answer`/`error`) se conservan siempre.
 - **Reconexión SSE:** el cliente reanuda enviando el encabezado estándar `Last-Event-ID` con el último `seq` recibido; el servidor reenvía los eventos persistidos con `seq` mayor y continúa en vivo. Sin pérdida ni duplicación (prueba de integración en pruebas.md §2.3). El token de acceso viaja SIEMPRE por encabezado `Authorization`, nunca en la URL.
-- **Corridas huérfanas:** un barrido periódico detecta corridas `running` con `heartbeat_at` vencido (> `RUN_HEARTBEAT_TIMEOUT`, default 120 s) o duración > `RUN_MAX_DURATION` (default 10 min) y las transiciona a `interrupted` o `failed`, emitiendo el evento terminal correspondiente.
-- **Semántica única de recuperación (sin ambigüedad):**
-  1. La desconexión del navegador NO interrumpe la ejecución: la corrida continúa en el servidor.
-  2. Los eventos ya emitidos se recuperan siempre con `Last-Event-ID`.
-  3. Un reinicio del proceso SÍ interrumpe la corrida activa: al arrancar, el backend marca `interrupted` (estado TERMINAL) toda corrida `running` sin heartbeat vigente y persiste el evento terminal `RUN_INTERRUPTED`.
-  4. Los eventos y resultados parciales de una corrida `interrupted` permanecen disponibles vía `GET /v2/agent/runs/{run_id}`.
-  5. No hay reanudación automática: el usuario simplemente vuelve a ejecutar la consulta (una investigación cuesta centavos y < 75 s; reanudar un grafo a mitad de camino no justifica su complejidad en el piloto).
+- **Corridas huérfanas:** un barrido periódico detecta corridas `running` con `heartbeat_at` vencido (> `RUN_HEARTBEAT_TIMEOUT_S`, default 120 s) y las transiciona a `interrupted`; si la duración excede `RUN_MAX_DURATION_S` (default 600 s), transiciona a `failed` con código `RUN_TIMEOUT`.
+- **Semántica normativa única (sin ambigüedad):**
+
+| Caso | Estado final | Evento terminal | Código | Parciales | `GET /runs/{run_id}` | ¿Puede re-ejecutar? | ¿Reanudación automática? |
+|---|---|---|---|---|---|---|---|
+| Desconexión del navegador | No cambia; sigue `running` hasta terminar | Ninguno por la desconexión | — | Se siguen conservando | Si aún corre, devuelve estado actual + pasos/eventos persistidos | Sí, como nueva corrida si quiere | No aplica |
+| Reconexión con `Last-Event-ID` | No cambia | Reenvía eventos `seq > Last-Event-ID` | — | Se conservan | Igual al estado actual | Sí | No |
+| Reinicio del backend | `interrupted` | `error` | `RUN_INTERRUPTED` | Sí: evidencias y claims validados hasta el corte | `RespuestaFinal` persistida con `status=interrupted` + pasos | Sí | No |
+| Proceso o worker desaparecido | `interrupted` | `error` | `WORKER_LOST` | Sí | Igual que `interrupted` | Sí | No |
+| Heartbeat vencido | `interrupted` | `error` | `HEARTBEAT_EXPIRED` | Sí | Igual que `interrupted` | Sí | No |
+| Duración máxima excedida | `failed` | `error` | `RUN_TIMEOUT` | Sí, para diagnóstico; no se presenta como respuesta completa | Error persistido + pasos/evidencias parciales | Sí | No |
+| Error definitivo del proveedor LLM | `failed` | `error` | `LLM_PROVIDER_ERROR` | Sí | Error persistido + pasos parciales | Sí | No |
+| Error definitivo de Socrata | `failed` | `error` | `SOCRATA_ERROR` o `SOCRATA_TIMEOUT` | Sí | Error persistido + pasos parciales | Sí | No |
+| Agotamiento del presupuesto de pasos | `no_evidence` si no hay evidencia suficiente; `completed` si los parciales bastan para responder con claims válidos | `answer` | `STEP_BUDGET_EXCEEDED` solo en `usage.termination_reason` | Sí | `RespuestaFinal` normal (`no_evidence` o `completed`) | Sí | No |
+| Borrado solicitado por el usuario | La corrida deja de existir | Ninguno adicional; operación HTTP `204` | — | No: se borran corrida, eventos, evidencias, claims y checkpoints (`adelete_thread(run_id)`) | `404` tras el borrado | Sí, como nueva corrida | No |
+| DELETE sobre corrida activa | La corrida se cancela por borrado y deja de existir | Ninguno visible adicional; se detiene la tarea antes del borrado | — | No: se borra completo | `404` tras el borrado | Sí, como nueva corrida | No |
+
+- **Objeto persistido `RespuestaFinal` para `interrupted`:** `summary: string | null` (mensaje diagnóstico breve si pudo construirse), `narrative: null`, `evidence: Evidencia[]` (puede ser `[]`, solo evidencias ya validadas), `claims: Claim[]` (puede ser `[]`, solo claims ya validados), `no_evidence_report: null`, `usage: {steps_used: int, latency_ms: int | null, estimated_cost_usd: number | null, termination_reason: "RUN_INTERRUPTED" | "WORKER_LOST" | "HEARTBEAT_EXPIRED"}`.
 - **Idempotencia:** todas las herramientas del agente son de solo lectura; repetir un paso tras recuperación es seguro por diseño (contracts/agent-tools.md, reglas comunes).
+- **Checkpointer:** se usa `AsyncPostgresSaver` de `langgraph-checkpoint-postgres`; la inicialización del backend ejecuta `.setup()` de forma idempotente. Cada invocación del grafo usa `config={"configurable": {"thread_id": run_id}}`. RF-803 y la retención purgan checkpoints con `adelete_thread(run_id)`.
 
 **Acceso a corridas (RF-801):**
-- Al crear la corrida se genera un `run_access_token` aleatorio (≥ 256 bits), se entrega UNA vez en la respuesta `202` y se almacena solo su hash (SHA-256). **El token vive exactamente lo que viven los datos:** su expiración es igual a la retención de la clase `user` (`RUN_TOKEN_TTL_DAYS = RETENTION_USER_DAYS`, default 90 días) y al vencer la retención la corrida se elimina (data-model.md §7). Sin cuentas de usuario no existe mecanismo seguro de renovación, así que no se ofrece.
+- Al crear la corrida se genera un `run_access_token` aleatorio (≥ 256 bits), se entrega UNA vez en la respuesta `202` y se almacena solo su hash (SHA-256). **El token vive exactamente lo que viven los datos de su clase:** `user` ⇒ `created_at + RETENTION_USER_DAYS` (default 90 días); `eval` ⇒ `created_at + RETENTION_EVAL_MONTHS` (default 24 meses). Al vencer la retención, la corrida se elimina según data-model.md §7. Sin cuentas de usuario no existe mecanismo seguro de renovación, así que no se ofrece.
+- `POST /v2/agent/query` crea siempre `retention_class=user`. Las corridas `eval` se crean solo desde el runner OE3 mediante servicio interno del backend con `EVAL_MODE=true`; el backend público mantiene `EVAL_MODE=false`.
 - Toda lectura, streaming, reanudación o borrado exige `Authorization: Bearer <run_access_token>`; la comparación de hashes es en tiempo constante. El `run_id` solo identifica, no autoriza.
 - Como `EventSource` nativo no admite encabezados, el frontend consume SSE mediante **fetch con stream de lectura** (patrón estándar), enviando el header. Los tokens NUNCA van en URLs ni en logs.
 - **CORS:** FastAPI (`CORSMiddleware`) con orígenes tomados de la variable `CORS_ALLOWED_ORIGINS` (lista separada por comas). Valores base: producción (`https://cuestiondedatos.com`, `https://www.cuestiondedatos.com`) y desarrollo (`http://localhost:3000`). **Previews de Vercel:** se añade temporalmente el origen EXACTO del preview a la variable durante las pruebas; PROHIBIDO el comodín `*.vercel.app` o `*`. Métodos permitidos: `GET, POST, DELETE`; encabezados permitidos: `Authorization`, `Content-Type`, `Last-Event-ID`. La conexión navegador→backend es directa; no hay proxy en Next.js.
 
 **Consentimiento y borrado (RF-802/803):** la UI informa antes de la primera investigación qué se almacena (pregunta, contexto acotado, trazas), con qué fin (funcionamiento y evaluación técnica), por cuánto tiempo (según `retention_class`, data-model.md §7) y cómo borrarlo (`DELETE /v2/agent/runs/{run_id}`).
+
+**Retención (RF-804):** además del borrado por usuario, un job periódico ejecuta el barrido de retención al menos cada 6 horas. SLA: toda corrida vencida se borra físicamente en máximo 24 horas. Si cualquier acceso encuentra una corrida vencida, ejecuta borrado oportunista antes de responder. La operación es transaccional e idempotente: copiar métricas no identificables → asegurar snapshot eval si aplica → borrar checkpoints con `adelete_thread(run_id)` → borrar corrida y relaciones. `technical_metrics` se purga por `RETENTION_TECH_MONTHS`.
+
+## 12. Configuración del backend (T-102, RF/RNF relacionados)
+
+Estas variables son la fuente para construir `backend/.env.example`. No se fijan secretos reales. `EMBEDDING_MODEL` queda sin valor por defecto hasta T-205.
+
+| Variable | Propósito | Tipo | Default documental | Obligatoria | Entornos | Validaciones | Requisitos |
+|---|---|---|---|---|---|---|---|
+| `DATABASE_URL` | Conexión PostgreSQL local, CI o desplegada | URL PostgreSQL | ninguno | Sí | dev/test/prod | Se acepta `postgresql://` o `postgres://`; la app normaliza internamente a driver async `postgresql+psycopg://` para SQLAlchemy. El checkpointer recibe una cadena compatible con psycopg v3 sin prefijo SQLAlchemy. Rechaza SQLite, URLs sin base, credenciales vacías en prod y parámetros inseguros; no se imprime en logs | DEP-01, RF-703, RF-804 |
+| `GOOGLE_API_KEY` | Proveedor Gemini por defecto | string secreto | ninguno | Sí si `LLM_PROVIDER=google` o embeddings gestionados Google | dev/prod/eval | No vacía; solo servidor | RF-206, RNF-011 |
+| `ANTHROPIC_API_KEY` | Proveedor comparativo OE3 | string secreto | ninguno | Sí si `LLM_PROVIDER=anthropic` o evaluación comparativa | eval/prod opcional | No vacía cuando se usa; solo servidor | RF-206, RF-601 |
+| `SOCRATA_APP_TOKEN` | Aumentar límites de datos.gov.co | string secreto | ninguno | Sí | dev/prod/eval | No se envía al cliente ni logs | RF-207, RNF-011 |
+| `LLM_PROVIDER` | Selección de proveedor LLM | enum `google`/`anthropic` | `google` | Sí | dev/prod/eval | Debe estar soportado por factory | RF-206 |
+| `LLM_MODEL` | Modelo del proveedor LLM | string | `gemini-2.5-flash` | Sí | dev/prod/eval | Compatible con `LLM_PROVIDER`; override por request solo con `EVAL_MODE=true` | RF-206, RF-601 |
+| `EMBEDDING_MODEL` | Modelo elegido para embeddings | string | PENDIENTE T-205 | Sí desde T-203 | dev/prod/eval | Debe coincidir con research.md §1 y dimensión migrada en T-104B | RF-301, T-205 |
+| `AGENT_MAX_STEPS` | Presupuesto máximo del agente | int | `10` | Sí | dev/prod/eval | `1 <= valor <= 25` | RF-201 |
+| `RUN_MAX_DURATION_S` | Duración máxima por corrida | int segundos | `600` | Sí | dev/prod/eval | Mayor que 0; al exceder termina `failed/RUN_TIMEOUT` | RF-209, RNF-001 |
+| `RUN_HEARTBEAT_TIMEOUT_S` | Umbral para worker muerto | int segundos | `120` | Sí | dev/prod/eval | Mayor que heartbeat emitido; al vencer termina `interrupted` | RF-209 |
+| `WORKER_LEASE_TTL_S` | TTL de lease de instancia | int segundos | igual a `RUN_HEARTBEAT_TIMEOUT_S` | Sí | dev/prod/eval | Mayor que intervalo de renovación; default derivado, no menor a 30 | RF-209 |
+| `DELETE_ACTIVE_GRACE_S` | Espera cooperativa al borrar corrida activa | int segundos | `5` | Sí | dev/prod/eval | `0 <= valor <= 30`; después del plazo el borrado continúa | RF-803 |
+| `RETENTION_USER_DAYS` | Retención y expiración token de corridas `user` | int días | `90` | Sí | dev/prod | Mayor que 0 | RF-801, RF-804 |
+| `RETENTION_EVAL_MONTHS` | Retención y expiración token de corridas `eval` | int meses | `24` | Sí | eval/prod | Mayor que 0 | RF-801, RF-804, RF-603 |
+| `RETENTION_TECH_MONTHS` | Retención de `technical_metrics` | int meses | `12` | Sí | prod/eval | Mayor que 0; sin contenido de usuario | RF-804 |
+| `CATALOG_STALE_AFTER_DAYS` | Marca `index_stale` | int días | `8` | Sí | dev/prod/eval | Mayor que 0 | RF-303 |
+| `PLACEHOLDER_MIN_RATIO` | Umbral contextual de placeholders | decimal 0-1 | `0.30` | Sí | dev/prod/eval | `0 <= valor <= 1` | RF-401 |
+| `MAX_CONCURRENT_RUNS` | Límite global de corridas activas por proceso | int | `3` | Sí | dev/prod | Mayor que 0; no persiste IP | RNF-009, RNF-011 |
+| `CORS_ALLOWED_ORIGINS` | Orígenes frontend permitidos | lista CSV de URLs | `http://localhost:3000` | Sí | dev/prod | Sin `*`; previews Vercel solo origen exacto temporal | RF-204, RNF-011 |
+| `ADMIN_TOKEN` | Token para endpoints administrativos | string secreto | ninguno | Sí en prod; opcional en dev local | dev/prod/eval | Longitud mínima 32 bytes aleatorios; header `X-Admin-Token` | RF-701, RF-702 |
+| `EVAL_MODE` | Habilita overrides de modelo y corridas `eval` | boolean | `false` | Sí | dev/prod/eval | `true` solo en entorno controlado de evaluación | RF-601, RF-603 |

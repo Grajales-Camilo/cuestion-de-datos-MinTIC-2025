@@ -1,12 +1,12 @@
 # Checklist de Verificación — Resolución de Bloqueos Documentales
 
-**Última revisión:** 2026-07-06 (ronda 2) · **Revisor:** editor SDD (sesión de revisión técnica)
+**Última revisión:** 2026-07-07 (ronda 4) · **Revisor:** editor SDD (sesión de revisión técnica)
 **Uso:** verificar que los bloqueos identificados quedaron resueltos de forma consistente en todo `specs/`. Re-ejecutar tras cualquier enmienda mayor.
 
 Comando de búsqueda sugerido (PowerShell, desde `specs/`):
 ```powershell
 Get-ChildItem . -Recurse -Filter *.md |
-    Select-String -Pattern 'text-embedding-004|WCAG 2\.1|vector\(1024\)|Supabase|Neon|Last-Event-ID|run_access_token|claim|interrupted'
+    Select-String -Pattern 'stable_id|data_cutoff_at|latest_observed_cutoff_at|HealthResponse|run_access_token|retention_class|interrupted|RUN_TIMEOUT|adelete_thread|SELECT \*'
 ```
 
 ---
@@ -35,7 +35,7 @@ Get-ChildItem . -Recurse -Filter *.md |
 ## Bloqueo 4 — `run_id` como credencial implícita
 - [x] RF-801…804 en spec.md (Grupo 800): token, consentimiento, borrado, retención diferenciada.
 - [x] Token entregado UNA vez; `Authorization: Bearer`; nunca en URL (api-rest.md §2, §3, §7, §7b).
-- [x] data-model.md: `run_access_token_hash`, `run_access_token_expires_at`, `retention_class`, `delete_requested_at`, `deleted_at`.
+- [x] data-model.md: `run_access_token_hash`, `run_access_token_expires_at`, `retention_class`, `worker_instance_id`, `terminal_error_code`, `terminal_event_written_at`; no quedan campos de ciclo indefinido (`delete_requested_at`, `deleted_at`) en `agent_runs`.
 - [x] Contrato `DELETE /v2/agent/runs/{run_id}` (api-rest.md §7b).
 - [x] Retención diferenciada con valores configurables.
 - [x] Consentimiento previo a persistir (RF-802; T-502).
@@ -71,7 +71,7 @@ Get-ChildItem . -Recurse -Filter *.md |
 
 - [x] **R2-1 Integridad de cifras 100%.** RNF-003 ya no admite 5% de cifras sin respaldo: cobertura de claims = 100%, reproducibles = 100%, huérfanas = 0, con bloqueo en runtime (re-síntesis o `failed`). El 80% de RNF-002 se conserva solo para la tasa general de éxito. Métricas de `eval_runs`: `claims_coverage`, `claims_reproducible`, `orphan_figures_count`.
 - [x] **R2-2 Orden de tareas ejecutable.** Fase 3: T-300 → T-301 → T-302 (T1–T5) → T-401 (nodo T6) → T-403 (nodo T7) → T-303 (integración) → T-304 → T-305; Fase 4 = verificación integrada (T-402). T6/T7 reclasificados como nodos deterministas del pipeline, NO herramientas invocables por el LLM (agent-tools.md).
-- [x] **R2-3 Token vive lo que viven los datos.** `RUN_TOKEN_TTL = RETENTION_USER_DAYS` (90 días); al vencer la retención se elimina la corrida; sin renovación (imposible sin cuentas). quickstart, plan §11, data-model y research §3 alineados.
+- [x] **R2-3 Token vive lo que viven los datos.** La expiración deriva de `retention_class`: `user = created_at + RETENTION_USER_DAYS`; `eval = created_at + RETENTION_EVAL_MONTHS`; al vencer la retención se elimina la corrida; sin renovación (imposible sin cuentas). quickstart, plan §11, data-model y research §3 alineados.
 - [x] **R2-4 Borrado ejecutable, no anonimización imposible.** Al vencer retención o ante RF-803: borrado COMPLETO de la corrida y relaciones (compatible con `NOT NULL`), tras copiar métricas no identificables a la nueva tabla `technical_metrics`. `retention_class` reducido a `user`|`eval`.
 - [x] **R2-5 Semántica única de durabilidad.** Desconexión NO interrumpe; reinicio SÍ; `interrupted` es TERMINAL; sin reanudación automática (checkpointer solo diagnóstico); el usuario re-ejecuta. RF-209, plan §11, data-model, T-300 y api-rest coherentes.
 
@@ -79,13 +79,46 @@ Get-ChildItem . -Recurse -Filter *.md |
 
 - [x] **R2-6 Reproducibilidad local bien formulada.** Art. II.2: "componentes propios" localmente; datos.gov.co y proveedores LLM son dependencias remotas declaradas. DEP-01 = "PostgreSQL 15+ con pgvector, local o gestionado".
 - [x] **R2-7 Fuente no oficial = regla dura.** `publisher_official` ya no puntúa: evidencia RECHAZADA (no elegible), coherente con Art. I. Puntos de D4 redistribuidos (60/40). Caso de prueba §5.8.
-- [x] **R2-8 Temporalidad corregida.** Base preferida `data_cutoff_at` (corte inferido de los datos) con fallback explícito a `data_updated_at` declarando `basis`; advertencia cuando D3 ≤ 70; ejemplo del contrato con fechas coherentes (corte 2025-03-15 ≈ 16 meses).
+- [x] **R2-8 Temporalidad corregida.** Base preferida `data_cutoff_at` (corte inferido de los datos) con fallback explícito a `data_updated_at` declarando `basis`; advertencia cuando D3 ≤ 70; ejemplo del contrato con fechas coherentes (corte 2025-03-15 ≈ 16 meses). Ver R3-1 para la reubicación normativa al nivel de evidencia.
 - [x] **R2-9 Placeholders contextuales.** Patrón configurado por dataset/columna + codebook/descripción + proporción mínima (`PLACEHOLDER_MIN_RATIO`); casos de falsos positivos ("Total" legítimo, `9` real) en la suite.
 - [x] **R2-10 Guardia SoQL estructural.** Parseo a gramática + listas blancas de cláusulas/funciones + columnas contra `catalog_columns` + complejidad máxima; lista negra solo defensa en profundidad. Nuevo error `SOQL_UNKNOWN_COLUMN`.
 - [x] **R2-11 CORS completo.** Headers `Authorization`, `Content-Type`, `Last-Event-ID`; orígenes por `CORS_ALLOWED_ORIGINS`; previews de Vercel con origen exacto temporal, sin comodines.
 - [x] **R2-12 RF-303 con ventana real.** `CATALOG_STALE_AFTER_DAYS=8` (plan §5.8); `metadata_synced_at` + `index_stale` en `/v2/catalog/search`.
 - [x] **R2-13 Orden de lectura del README** alineado con la jerarquía normativa; research.md antes del plan.
-- [x] **R2-14 Menores.** Constitución 1.1.0 con nota de enmienda; plan §3 referencia T-101 (no T-103); quickstart describe el sistema completo y activa el venv con `Activate.ps1`; `sentence-transformers` no es dependencia obligatoria pre-T-205; `agent_steps.node` incluye `claim_builder`; imagen pgvector con versión fijada; Art. V.4 habla de acciones observables, no "pasos de razonamiento".
+- [x] **R2-14 Menores.** Constitución 1.2.0 con nota de enmienda; plan §3 referencia T-101 (no T-103); quickstart describe el sistema completo y activa el venv con `Activate.ps1`; `sentence-transformers` no es dependencia obligatoria pre-T-205; `agent_steps.node` incluye `claim_builder`; imagen pgvector con versión fijada; Art. V.4 habla de acciones observables, no "pasos de razonamiento".
+
+---
+
+# Ronda 3 — Bloqueos de implementación backend (2026-07-07)
+
+- [x] **R3-1 Temporalidad al nivel correcto.** `catalog_datasets.latest_observed_cutoff_at` queda solo como pista; el corte normativo vive en `evidence_results.data_cutoff_at` y se calcula exclusivamente sobre las filas de esa evidencia. El fallback a `data_updated_at` debe decir "fecha de actualización del portal; corte estadístico desconocido".
+- [x] **R3-2 Dependencias backend completas.** T-102 fija SQLAlchemy asíncrono, `psycopg[binary,pool]`, `langgraph-checkpoint-postgres`, `AsyncPostgresSaver.setup()`, `thread_id=run_id`, purga con `adelete_thread(run_id)` y `pip-audit`.
+- [x] **R3-3 Retención implementable.** T-306 define job periódico, SLA máximo 24 h, borrado oportunista, copia atómica de métricas, snapshot eval, purga de checkpoints y purga de `technical_metrics`; pruebas de concurrencia e idempotencia.
+- [x] **R3-4 RF-803 sin anonimización.** RF-803 elimina la alternativa "anonimizar" y exige borrado completo e irreversible de la corrida operativa y relaciones.
+- [x] **R3-5 Publicadores oficiales normalizados.** Contratos y modelo usan `official_publishers.id`; alias viven en `official_publisher_aliases`; alias ambiguos producen `unknown`; entidades históricas tienen vigencia y sucesor; T-106/T-201 exigen cobertura verificable.
+- [x] **R3-6 Corridas `eval` internas.** El endpoint público crea solo `user`; `retention_class` no entra por JSON público; el runner OE3 crea `eval` mediante servicio interno con `EVAL_MODE=true`.
+- [x] **R3-7 `/health` sin contrato doble.** `/v2/health` usa `HealthResponse` tanto en 200 como en 503; es la única excepción al sobre estándar de errores.
+- [x] **R3-8 Estados de corridas cerrados.** `GET /v2/agent/runs/{id}` define respuestas para `running`, `completed`, `no_evidence`, `interrupted` y `failed`; timeout = `failed/RUN_TIMEOUT`; reinicio/worker/heartbeat = `interrupted`.
+- [x] **R3-9 Worker lease.** El arranque solo interrumpe corridas de instancias cuya lease venció; una instancia nueva no cancela corridas sanas durante despliegues solapados.
+- [x] **R3-10 Límite de concurrencia viable.** `MAX_CONCURRENT_RUNS` es global por proceso; no se persiste IP ni hash de IP en v2.0.
+- [x] **R3-11 PII y minimización.** La validación rechaza evidencia con datos personales identificables; T-201 clasifica riesgo PII; T5 prohíbe `SELECT *`; pruebas cubren rechazo y volumetría.
+- [x] **R3-12 Parser SoQL definido.** T-302 implementa gramática restringida propia, canonicalización, listas blancas, alias/literales, `OFFSET <= 5000` y funciones permitidas.
+- [x] **R3-13 Dimensión de embeddings acotada.** T-205 debe aceptar `vector(<DIM>)` solo con `DIM <= 2000`; dimensiones mayores requieren cambiar explícitamente a `halfvec`.
+- [x] **R3-14 Quickstart PowerShell.** El POST del agente ya no usa continuaciones Bash; búsqueda de catálogo habla de `latest_observed_cutoff_at`; el modelo de embeddings queda como valor decidido por T-205 en el sistema completo.
+
+---
+
+# Ronda 4 — Auditoría de ejecución T-101 a T-300 (2026-07-07)
+
+- [x] **R4-1 Estructura inicial desbloqueada.** T-105 queda antes de T-102; T-102 usa la base local ya creada; T-103 define servicio PostgreSQL+pgvector en CI cuando las pruebas tocan DB.
+- [x] **R4-2 `DATABASE_URL` ejecutable.** plan.md §12 define formatos aceptados, transformación a SQLAlchemy async y cadena compatible con psycopg para checkpointer.
+- [x] **R4-3 Modelo cerrado antes de T-104A.** `technical_metrics.source_run_hash` es clave idempotente; `eval_runs`/`eval_cases` tienen semilla/configuración; se agrega `socrata_success_rate`; T-104A incluye elegibilidad, PII y constraints.
+- [x] **R4-4 Publicadores sin circularidad.** T-106 carga fixture inicial; T-201 ingesta con ese fixture; T-201A mide cobertura y propone mantenimiento. Alias no único produce `unknown`, nunca asignación automática.
+- [x] **R4-5 Privacidad antes de Socrata.** PII `unknown` y `high` bloquean antes de T5; `medium` exige agregación mínima y ausencia de filas individuales; `sample_values` queda restringido a columnas `low`.
+- [x] **R4-6 T6/T7 deterministas.** T6 separa elegibilidad de calidad y amplía salida; T7 usa DSL JSON, definición normativa de cifra y `source_hash` canónico.
+- [x] **R4-7 Corridas sin ambigüedad operacional.** Token vencido converge a borrado oportunista + `404`; DELETE sobre corrida activa tiene gracia cooperativa; errores SSE terminales incluyen `status`.
+- [x] **R4-8 Durabilidad y embeddings cerrados.** Lease tiene TTL/renovación; T-104B es condicional `vector`/`halfvec`; T-205 debe propagar modelo/dimensión a modelo, dependencias, `.env.example`, plan y quickstart.
+- [x] **R4-9 Pruebas y trazabilidad.** Endpoints admin tienen dueño; pruebas cubren RF-403, CSV, gráficas, RNF-001 simple/multi-paso, RNF-010 p95/cobertura real y presupuestos de bytes.
 
 ## Pendientes (sin cambios)
 

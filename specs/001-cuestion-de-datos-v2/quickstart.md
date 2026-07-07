@@ -14,9 +14,11 @@
 | Python | 3.12 | `python --version` |
 | Git | 2.40 | `git --version` |
 | Docker Desktop (PostgreSQL local vía `compose.yaml`) | Compose v2 | `docker compose version` |
+| Cliente PostgreSQL `psql` | 15 | `psql --version` |
 | `GOOGLE_API_KEY`, `SOCRATA_APP_TOKEN` | — | tasks.md T-002 |
 
 > **Nota:** el desarrollo local NO requiere Supabase ni Neon. Los servicios gestionados son solo para **despliegue** (tasks.md T-701); si vas a probar contra una base remota, usa `DATABASE_URL=postgresql://usuario:clave@host-remoto:5432/base`.
+> Si no tienes `psql` instalado en Windows, puedes ejecutar las comprobaciones de base con `docker compose exec db psql ...` una vez levantado el contenedor.
 
 ## 2. Clonar y configurar
 
@@ -27,7 +29,7 @@ git checkout v2
 ```
 
 **Backend:**
-```bash
+```powershell
 cd backend
 python -m venv .venv
 # Windows (PowerShell):
@@ -41,24 +43,32 @@ copy .env.example .env        # (cp en Linux/Mac)
 ```
 Edita `backend/.env` con tus valores reales:
 ```env
-DATABASE_URL=postgresql://usuario:clave@localhost:5432/cuestion_de_datos   # local (compose.yaml); en despliegue: host remoto
+DATABASE_URL=postgresql://usuario:clave@localhost:5432/cuestion_de_datos   # la app normaliza internamente para SQLAlchemy async/psycopg
 GOOGLE_API_KEY=...                  # T-002
+ANTHROPIC_API_KEY=...               # requerido solo si LLM_PROVIDER=anthropic o evaluación comparativa
 SOCRATA_APP_TOKEN=...               # T-002
 LLM_PROVIDER=google
 LLM_MODEL=gemini-2.5-flash
-EMBEDDING_MODEL=<el decidido en T-205 — ver research.md §1>
+EMBEDDING_MODEL=<modelo decidido en T-205>
 AGENT_MAX_STEPS=10
 RUN_MAX_DURATION_S=600
 RUN_HEARTBEAT_TIMEOUT_S=120
-RETENTION_USER_DAYS=90                             # el token de corrida expira junto con esta retención
+WORKER_LEASE_TTL_S=120
+DELETE_ACTIVE_GRACE_S=5
+RETENTION_USER_DAYS=90                             # token user expira junto con esta retención
+RETENTION_EVAL_MONTHS=24                           # token eval expira junto con esta retención
+RETENTION_TECH_MONTHS=12                           # métricas no identificables
 CATALOG_STALE_AFTER_DAYS=8                         # marca index_stale si un dataset no se sincroniza en esta ventana
+PLACEHOLDER_MIN_RATIO=0.30                         # umbral contextual de placeholders
+MAX_CONCURRENT_RUNS=3
 CORS_ALLOWED_ORIGINS=http://localhost:3000         # producción: dominios de cuestiondedatos.com; previews: origen exacto, sin comodines
 ADMIN_TOKEN=elige-un-token-largo-aleatorio
 EVAL_MODE=false
 ```
+> Antes de T-205, `.env.example` puede dejar `EMBEDDING_MODEL` vacío o documentado como pendiente para tareas que no construyen embeddings. En el sistema completo descrito por este quickstart, T-205 ya debe haber elegido el modelo y, si usa `vector(<DIM>)`, `DIM <= 2000` salvo que T-205 haya cambiado explícitamente a `halfvec`.
 
 **Frontend:**
-```bash
+```powershell
 cd ../frontend
 npm install
 copy .env.example .env.local
@@ -67,60 +77,65 @@ copy .env.example .env.local
 
 ## 3. Base de datos e índice del catálogo
 
-Primero levanta PostgreSQL local (desde la raíz del repo; extensiones `vector` y `pg_trgm` incluidas en la imagen/init):
-```bash
+Primero levanta PostgreSQL local (desde la raíz del repo; extensiones `vector` y `pg_trgm` creadas por el script `init` del contenedor definido en T-105):
+```powershell
 docker compose up -d db
 docker compose ps                         # espera el healthcheck "healthy"
 ```
 Luego:
-```bash
+```powershell
 cd backend
 alembic upgrade head                      # crea todas las tablas (la de embeddings existe tras T-104B)
+python scripts/load_official_publishers.py # carga fixture versionado de publicadores oficiales
 python scripts/ingest_catalog.py          # ~15-30 min: descarga metadatos del catálogo
 python scripts/load_divipola.py           # maestro de municipios
 python scripts/build_embeddings.py        # genera el índice semántico
 ```
 **Comprobación:**
-```bash
+```powershell
 python -c "from app.db.session import quick_counts; quick_counts()"
-# Esperado: catalog_datasets >= 7000, catalog_embeddings == datasets activos, divipola >= 1100
+# Esperado: official_publishers > 0, catalog_datasets >= 7000, catalog_embeddings == datasets activos, divipola >= 1100
 ```
 > Atajo: para probar sin ingesta completa, `python scripts/ingest_catalog.py --limit 200` indexa una muestra (suficiente para desarrollo, insuficiente para RNF-010).
 
 ## 4. Levantar los servicios
 
 Terminal 1 — backend:
-```bash
+```powershell
 cd backend && uvicorn app.main:app --reload --port 8000
 ```
 Terminal 2 — frontend:
-```bash
+```powershell
 cd frontend && npm run dev
 ```
 Abre `http://localhost:3000`.
 
 ## 5. Comprobaciones de humo (en orden)
 
-1. **Salud:** `curl http://localhost:8000/v2/health` → `"status": "ok"` con los 3 checks en `ok`.
-2. **Búsqueda semántica:** `curl "http://localhost:8000/v2/catalog/search?q=desercion%20escolar&k=5"` → datasets del sector educación en el top.
+1. **Salud:** PowerShell: `curl.exe http://localhost:8000/v2/health` → `"status": "ok"` con los 3 checks en `ok`. Si algún check falla, debe responder `503` con el mismo esquema `HealthResponse` y `"status": "degraded"`.
+2. **Búsqueda semántica:** `curl.exe "http://localhost:8000/v2/catalog/search?q=desercion%20escolar&k=5"` → datasets del sector educación en el top, `index_stale` explícito y `latest_observed_cutoff_at` presente solo como pista o `null`. El catálogo no devuelve `data_cutoff_at` como corte normativo de una evidencia.
 3. **Agente por API:**
-   ```bash
-   curl -X POST http://localhost:8000/v2/agent/query \
-     -H "Content-Type: application/json" \
-     -d '{"question": "¿Cuántos programas de educación para el trabajo hay registrados en Antioquia?"}'
-   # → {"run_id": "...", "run_access_token": "cdt_rt_...", "token_expires_at": "...", "stream_url": "..."}
+   ```powershell
+   $body = @{ question = "¿Cuántos programas de educación para el trabajo hay registrados en Antioquia?" } | ConvertTo-Json
+   $created = Invoke-RestMethod -Method Post -Uri "http://localhost:8000/v2/agent/query" -ContentType "application/json" -Body $body
+   $created
+   # → run_id, run_access_token, token_expires_at, stream_url
    # GUARDA el token: solo se entrega esta vez.
-   curl -N -H "Authorization: Bearer <run_access_token>" http://localhost:8000/v2/agent/stream/<run_id>
+   curl.exe -N -H "Authorization: Bearer $($created.run_access_token)" "http://localhost:8000/v2/agent/stream/$($created.run_id)"
    # → eventos id:/step ... y un evento answer final con evidence[], claims[] y quality
    ```
-3b. **Autorización y reconexión:** el mismo stream SIN el header → `401 UNAUTHORIZED`. Corta el `curl` a mitad de corrida y reconecta añadiendo `-H "Last-Event-ID: <último id recibido>"` → recibes los eventos faltantes sin duplicados (RF-209). Para borrar la corrida: `curl -X DELETE -H "Authorization: Bearer <token>" http://localhost:8000/v2/agent/runs/<run_id>` → `204`.
+3b. **Autorización y reconexión:** el mismo stream SIN el header → `401 UNAUTHORIZED`. Corta el `curl.exe` a mitad de corrida y reconecta añadiendo `-H "Last-Event-ID: <último id recibido>"` → recibes los eventos faltantes sin duplicados (RF-209). Para borrar la corrida:
+   ```powershell
+   curl.exe -X DELETE -H "Authorization: Bearer $($created.run_access_token)" "http://localhost:8000/v2/agent/runs/$($created.run_id)"
+   # → 204
+   ```
 4. **Honestidad:** pregunta algo sin respuesta en el catálogo (p. ej. "¿Cuál es el precio promedio del arriendo en Marte?") → `status: "no_evidence"`, sin cifras inventadas. Verifica además que toda cifra del `summary` de la comprobación 3 aparece como `display_value` en `claims[]` (RF-208).
 5. **UI completa (ESC-01):** en el navegador, elige la plantilla MGA, escribe un problema en "Identificación del Problema", presiona **Investigar** y verifica: línea de tiempo de pasos en vivo → tarjeta de evidencia con badge de calidad → botón insertar → la cita aparece en el documento.
 6. **Persistencia (ESC-08):** recarga el navegador; el documento y sus citas siguen ahí.
 
 ## 6. Ejecutar las pruebas
 
-```bash
+```powershell
 cd backend
 ruff check . && pytest                    # unitarias + contrato (rápidas, sin red)
 pytest -m integration                     # integración real con Socrata (requiere red)
@@ -133,12 +148,14 @@ Detalle completo de suites y umbrales: [`pruebas.md`](./pruebas.md).
 ## 7. Verificar credenciales sueltas (si algo falla)
 
 ```bash
-# Gemini
-curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GOOGLE_API_KEY" | head -c 200
-# Socrata
-curl -H "X-App-Token: $SOCRATA_APP_TOKEN" "https://www.datos.gov.co/resource/2d3i-f9wd.json?\$limit=1"
-# Postgres
-psql "$DATABASE_URL" -c "SELECT 1;"
+# Gemini (PowerShell)
+curl.exe "https://generativelanguage.googleapis.com/v1beta/models?key=$env:GOOGLE_API_KEY"
+# Socrata (PowerShell)
+curl.exe -H "X-App-Token: $env:SOCRATA_APP_TOKEN" "https://www.datos.gov.co/resource/2d3i-f9wd.json?`$limit=1"
+# Postgres (PowerShell, si tienes psql instalado)
+psql "$env:DATABASE_URL" -c "SELECT 1;"
+# Alternativa sin psql local
+docker compose exec db psql -U usuario -d cuestion_de_datos -c "SELECT 1;"
 ```
 
 ## 8. Problemas frecuentes
@@ -151,4 +168,4 @@ psql "$DATABASE_URL" -c "SELECT 1;"
 | `429` de Gemini en pruebas | Cuota del tier gratuito agotada | Espera la ventana o reduce `--limit` del eval. |
 | SSE no muestra pasos en el navegador | URL del backend o CORS mal configurados | Revisa `NEXT_PUBLIC_BACKEND_URL` en `frontend/.env.local` y que el origen `http://localhost:3000` esté permitido en el CORS del backend; recuerda que el consumo es con `fetch()` streaming, no `EventSource`. |
 | Socrata responde 403 | App token ausente/incorrecto | §7, segunda línea. |
-| `alembic upgrade` falla con `type "vector" does not exist` | Extensión no habilitada | T-001 paso 3. |
+| `alembic upgrade` falla con `type "vector" does not exist` | El contenedor local no ejecutó el script `init` de T-105 o estás usando una base remota sin extensión | En local, recrea el contenedor/volumen siguiendo T-105; en base gestionada, habilita `vector` y `pg_trgm` según T-001 despliegue. |

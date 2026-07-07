@@ -34,16 +34,22 @@ Búsqueda semántica de datasets (RF-203/302). Envuelve la consulta pgvector.
       "dataset_id": "2d3i-f9wd",
       "name": "Cooperación Internacional No Reembolsable",
       "publisher": "APC Colombia",
+      "official_publisher_id": "apc-colombia",
+      "publisher_verification_status": "verified",
       "description_snippet": "…primeros 300 chars…",
       "similarity": 0.84,
       "row_count": 15230,
       "data_updated_at": "2026-01-10T00:00:00Z",
+      "latest_observed_cutoff_at": null,
+      "pii_risk_level": "low",
+      "eligibility_status": "eligible",
+      "eligibility_reasons": [],
       "columns": [{"field_name": "monto_aporte_en_usd", "data_type": "number", "description": "Monto en USD"}]
     }
   ]
 }
 ```
-Límites: `k` ≤ 10; `columns` completo (el agente lo necesita para planear SoQL) pero `description` truncada.
+Límites: `k` ≤ 10; `columns` completo (el agente lo necesita para planear SoQL) pero `description` truncada. `data_updated_at` es actualización del portal; `latest_observed_cutoff_at` es solo una pista del catálogo y nunca debe presentarse como corte de la evidencia. Datasets `diagnostic_only` pueden aparecer con advertencia; el agente no debe pasar a T5 salvo que `eligibility_status="eligible"`.
 
 ## T2 — `perfilar_dataset`
 Perfilado en vivo de un dataset antes de consultarlo: confirma columnas y obtiene valores de ejemplo reales. Reemplaza la fe ciega en metadatos (mitiga metadatos pobres, plan.md §9).
@@ -58,6 +64,13 @@ Perfilado en vivo de un dataset antes de consultarlo: confirma columnas y obtien
   "ok": true,
   "dataset_id": "2d3i-f9wd",
   "total_rows_estimate": 15230,
+  "latest_observed_cutoff_hint": {
+    "latest_observed_cutoff_at": "2025-12-31T00:00:00Z",
+    "method": "max_temporal_column",
+    "column": "fecha_final",
+    "confidence": 0.85,
+    "inferred_at": "2026-07-06T14:22:31Z"
+  },
   "profile": [
     {"field_name": "estado_intervencion", "data_type": "text",
      "distinct_sample": ["Finalizado", "Ejecución", "Suspendido"],
@@ -65,7 +78,8 @@ Perfilado en vivo de un dataset antes de consultarlo: confirma columnas y obtien
   ]
 }
 ```
-Implementación: `SELECT count(*)`, `SELECT DISTINCT col LIMIT 15` y conteo de nulos por columna solicitada (máx. 5 columnas por llamada). Actualiza `catalog_columns.sample_values`/`null_ratio` como caché.
+Implementación: `SELECT count(*)`, `SELECT DISTINCT col LIMIT 15` y conteo de nulos por columna solicitada (máx. 5 columnas por llamada). Actualiza `catalog_columns.null_ratio` como caché y solo actualiza `sample_values` para columnas `pii_risk_level=low`; para `medium/high/unknown`, `sample_values=[]`.
+Debe implementarse con una o pocas consultas agregadas/concurrentes; no se permite una cascada secuencial que pueda romper RNF-001. Si identifica una columna temporal confiable, puede actualizar `catalog_datasets.latest_observed_cutoff_at` como pista; el corte normativo se calculará de nuevo sobre cada evidencia en T6. Si no hay pista, devuelve `latest_observed_cutoff_hint: null`.
 
 ## T3 — `resolver_geografia`
 Resuelve nombres de lugares a códigos DIVIPOLA y variantes seguras de búsqueda (RF-202, ESC-01). Sucesor del `maestro_divipola.js` de v1.0, ahora sobre la tabla completa `divipola_entries` con matching difuso.
@@ -122,12 +136,17 @@ Ejecuta la consulta final contra la SODA API (RF-207). **Única herramienta que 
 **Validación previa a la ejecución (guardia ESTRUCTURAL, RNF-011).** La guardia parsea la consulta a una representación estructurada (gramática SoQL) y valida contra lista blanca; una regex/lista negra puede complementarla como defensa en profundidad, pero NO es su núcleo:
 1. **Una sola consulta:** exactamente una sentencia; cualquier separador de sentencias o construcción no reconocida por la gramática ⇒ rechazo `SOQL_FORBIDDEN`.
 2. **Dataset autorizado:** `dataset_id` existe en `catalog_datasets` con `api_active = true`.
-3. **Columnas existentes:** toda columna referenciada (SELECT/WHERE/GROUP BY/ORDER BY) existe en `catalog_columns` para ese dataset ⇒ si no, rechazo `SOQL_UNKNOWN_COLUMN` (con la lista de columnas válidas para autocorrección del agente).
-4. **Cláusulas permitidas (lista blanca):** `SELECT`, `WHERE`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, `OFFSET`. Nada más.
-5. **Funciones permitidas (lista blanca):** agregación (`sum`, `avg`, `count`, `min`, `max`), texto (`upper`, `lower`, `like`), fecha (`date_extract_y`, `date_trunc_*`). Función fuera de lista ⇒ rechazo.
-6. **Límite de filas:** sin `LIMIT` se inyecta `LIMIT 1000`; `LIMIT > 1000` se reduce a 1000.
-7. **Complejidad máxima:** ≤ 15 condiciones en `WHERE`, ≤ 5 columnas de agrupación, sin subconsultas anidadas.
-8. **Defensa en profundidad (complementaria):** lista negra `INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT|;` como segundo cinturón tras el parseo.
+3. **Elegibilidad antes de Socrata:** `catalog_datasets.eligibility_status = "eligible"` y toda columna seleccionada tiene `eligibility_status="eligible"` o cumple la política `medium` agregada. Si el dataset/columna está `unknown`, `high`, `blocked` o requiere agregación y la consulta devuelve filas individuales ⇒ rechazo `EVIDENCE_NOT_ELIGIBLE` sin llamar a Socrata.
+4. **Columnas existentes:** toda columna referenciada (SELECT/WHERE/GROUP BY/ORDER BY) existe en `catalog_columns` para ese dataset ⇒ si no, rechazo `SOQL_UNKNOWN_COLUMN` (con la lista de columnas válidas para autocorrección del agente).
+5. **Cláusulas permitidas (lista blanca):** `SELECT`, `WHERE`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, `OFFSET`. Nada más.
+6. **Funciones permitidas (lista blanca):** agregación (`sum`, `avg`, `count`, `min`, `max`), texto (`upper`, `lower`, `like`), fecha (`date_extract_y`, `date_trunc_*`). Función fuera de lista ⇒ rechazo.
+7. **`SELECT *` prohibido:** el agente debe nombrar columnas explícitas para minimizar datos y permitir validación de PII.
+8. **Política `medium`:** si cualquier columna/dataset es `pii_risk_level="medium"`, el `SELECT` debe contener solo agregados y dimensiones no identificantes, incluir `count(*)` o agregado equivalente, y T6 verificará `aggregation_min_count >= 5` por fila. Sin eso ⇒ `PII_AGGREGATION_REQUIRED`.
+9. **Límites de filas y desplazamiento:** sin `LIMIT` se inyecta `LIMIT 1000`; `LIMIT > 1000` se reduce a 1000; `OFFSET > 5000` se rechaza.
+10. **Alias y literales:** alias permitidos solo en `SELECT` para expresiones/agregados y deben resolverse al validar `ORDER BY`; literales permitidos: strings escapados, números, booleanos y fechas ISO.
+11. **Complejidad máxima:** ≤ 15 condiciones en `WHERE`, ≤ 5 columnas de agrupación, sin subconsultas anidadas.
+12. **Canonicalización:** antes de persistir, la consulta se serializa en forma canónica (cláusulas en orden estándar, columnas validadas, `LIMIT` explícito, espacios y mayúsculas normalizados, alias resueltos).
+13. **Defensa en profundidad (complementaria):** lista negra `INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT|;` como segundo cinturón tras el parseo.
 
 **Salida**
 ```json
@@ -140,7 +159,7 @@ Ejecuta la consulta final contra la SODA API (RF-207). **Única herramienta que 
   "llm_view": {"rows_shown": 6, "note": "al contexto del LLM entran máx. 50 filas; el resto viaja directo a la Evidencia"}
 }
 ```
-**Errores específicos:** `SOQL_SYNTAX` (Socrata 400, incluye mensaje original para autocorrección del agente — máx. 2 autocorrecciones por consulta), `SOCRATA_TIMEOUT`, `DATASET_INACTIVE`.
+**Errores específicos:** `SOQL_SYNTAX` (Socrata 400, incluye mensaje original para autocorrección del agente — máx. 2 autocorrecciones por consulta), `SOCRATA_TIMEOUT`, `DATASET_INACTIVE`, `EVIDENCE_NOT_ELIGIBLE`, `PII_AGGREGATION_REQUIRED`.
 
 ---
 
@@ -150,7 +169,7 @@ Ejecuta la consulta final contra la SODA API (RF-207). **Única herramienta que 
 Invoca la capa de calidad sobre un resultado de T5 (RF-401). Nodo determinista: no usa LLM. Implementado por el módulo `app/quality/` (tarea T-401).
 
 **Entrada:** `{"evidence_draft": {…salida de T5 + dataset_id + soql…}}`
-**Salida:** objeto `quality` completo según [`validacion-calidad.md`](./validacion-calidad.md) §4.
+**Salida:** objeto `quality` completo según [`validacion-calidad.md`](./validacion-calidad.md) §4, incluyendo `eligibility_status`, `eligibility_reasons`, metadatos de corte inferido y política de filas/PII.
 
 - El grafo la ejecuta SIEMPRE después de cada `ejecutar_soql` exitoso, antes del sintetizador. No es opcional ni invocable a discreción del LLM.
 
@@ -167,7 +186,7 @@ Materializa las **afirmaciones cuantitativas** (claims, RF-208) a partir de evid
       "description": "Tasa de deserción 2025",
       "source_row_indexes": [0, 1],
       "columns": ["matriculados", "desertores"],
-      "formula": "desertores / matriculados * 100",
+      "formula": {"op": "mul", "args": [{"op": "div", "args": [{"col": "desertores"}, {"col": "matriculados"}]}, {"const": 100}]},
       "unit": "%",
       "rounding": 1
     },
@@ -189,7 +208,8 @@ Materializa las **afirmaciones cuantitativas** (claims, RF-208) a partir de evid
   "claims": [
     {"claim_id": "7c1d...", "claim_type": "derived", "raw_value": 8.3721,
      "display_value": "8,4 %", "unit": "%", "rounding": 1,
-     "formula": "desertores / matriculados * 100", "source_hash": "sha256:ab12...",
+     "formula": {"op": "mul", "args": [{"op": "div", "args": [{"col": "desertores"}, {"col": "matriculados"}]}, {"const": 100}]},
+     "source_hash": "sha256:ab12...",
      "evidence_id": "9a2b...", "source_row_indexes": [0, 1], "columns": ["matriculados", "desertores"]}
   ],
   "rejected": [
@@ -198,8 +218,11 @@ Materializa las **afirmaciones cuantitativas** (claims, RF-208) a partir de evid
 }
 ```
 **Reglas:**
-- Fórmulas: expresiones aritméticas sobre columnas y agregados (`sum()`, `avg()`, `count()`, `min()`, `max()`) evaluadas con un evaluador seguro (sin `eval` de Python arbitrario). Operandos inexistentes, no numéricos o nulos ⇒ claim rechazado con razón explícita.
+- DSL de fórmulas: JSON, no texto libre. Nodos permitidos: `{"col": "<columna>"}`, `{"const": number}`, `{"agg": "sum|avg|count|min|max", "col": "<columna>"}`, y operaciones `{"op": "add|sub|mul|div|ratio|pct_change", "args": [...]}`. No hay funciones arbitrarias ni referencias fuera de `evidence_results.rows`.
+- Operandos inexistentes, no numéricos, nulos o división por cero ⇒ claim rechazado con razón explícita.
 - `display_value` se genera con formato es-CO (coma decimal, separador de miles) a partir de `raw_value` + `rounding` + `unit`.
+- `source_hash` se calcula sobre JSON canónico UTF-8 con claves ordenadas y sin espacios: `{algorithm_version, evidence_id, dataset_id, canonical_soql, source_row_indexes, rows_subset, columns, formula_dsl, raw_value, unit, rounding}`. El prefijo visible es `sha256:<hex>`.
+- Se considera “cifra” cualquier token numérico visible en español o formato internacional: enteros, decimales con coma o punto, porcentajes, monedas, magnitudes con separador de miles, años usados como valor analítico, rangos numéricos y tasas. No se consideran cifras: IDs técnicos (`dataset_id`, UUID), fechas completas en citas, códigos DIVIPOLA y números de sección si no expresan un dato sustantivo.
 - **El sintetizador SOLO puede citar cifras a través de `display_value` de claims aceptados.** Una cifra en la narrativa sin `claim_id` asociado es un defecto bloqueante (verificado por el chequeo de groundedness, pruebas.md §4.2).
 
 ---
