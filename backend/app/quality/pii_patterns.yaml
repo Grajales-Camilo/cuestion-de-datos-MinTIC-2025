@@ -1,0 +1,111 @@
+# Fixture de patrones PII (T-201, plan.md §5.3b).
+#
+# Estrategia (decisión de producto, Art. VI.1 de la constitución: "prohibido
+# incorporar fuentes con datos personales identificables"): el DEFAULT de
+# cualquier columna que no matchee ningún patrón de esta lista es SIEMPRE
+# "unknown" (bloqueada hasta clasificación) -- nunca "low" por omisión. El
+# allowlist de "low" es deliberadamente generoso para reducir cuántas
+# columnas legítimamente no-personales quedan atascadas en "unknown", pero
+# el default seguro no se toca.
+#
+# Todos los patrones se evalúan sobre el texto normalizado (normalize_publisher_name:
+# trim, mayúsculas, sin tildes, espacios colapsados) de field_name + display_name
+# + description concatenados. Orden de evaluación: high -> medium -> low -> default.
+
+fixture_version: "1.0.0"
+updated_at: "2026-07-08T00:00:00Z"
+default_column_risk: unknown
+
+high_risk_column_patterns:
+  - id: identificacion_persona
+    pattern: 'CEDULA|C\.C\.|DOCUMENTO.*IDENTIDAD|\bNUIP\b|TARJETA.*IDENTIDAD|PASAPORTE|\bRC\b|NUMERO.*IDENTIFICACION.*PERSONAL'
+    reason: "Identificador nacional de persona natural"
+  - id: nombre_completo_persona
+    pattern: 'NOMBRE.*APELLIDO|NOMBRE.*COMPLETO|APELLIDOS?\s*Y\s*NOMBRES?|\bAFILIADO\b|\bPACIENTE\b|\bBENEFICIARIO\b(?!.*(TOTAL|CANTIDAD|NUMERO DE))'
+    reason: "Nombre propio identificable de persona"
+  - id: contacto_directo
+    pattern: 'TELEFONO|CELULAR|CORREO.*ELECTRONICO|\bEMAIL\b|WHATSAPP|\bCONTACTO\b'
+    reason: "Dato de contacto directo"
+  - id: direccion_domicilio
+    pattern: 'DIRECCION.*RESIDENCIA|DIRECCION.*DOMICILIO|\bDOMICILIO\b|DIRECCION.*NOTIFICACION'
+    reason: "Ubicacion exacta de residencia"
+  - id: salud_historia_clinica
+    pattern: 'HISTORIA.*CLINICA|DIAGNOSTICO|\bEPICRISIS\b|ANTECEDENTE.*MEDICO|RESULTADO.*PRUEBA.*(COVID|VIH|LABORATORIO)'
+    reason: "Dato sensible de salud (Ley 1581 de 2012, articulo 5)"
+  - id: biometrico
+    pattern: 'HUELLA|BIOMETRIC|RECONOCIMIENTO.*FACIAL|\bIRIS\b'
+    reason: "Dato biometrico"
+  - id: coordenadas_precisas_persona
+    pattern: 'LATITUD.*VIVIENDA|COORDENADA.*PREDIO|GEOLOCALIZACION.*PERSONA|UBICACION.*EXACTA.*VICTIMA'
+    reason: "Georreferenciacion precisa asociable a una persona"
+  - id: identificador_menor
+    pattern: 'NOMBRE.*MENOR|IDENTIFICACION.*MENOR|DATOS.*NIÑO|DATOS.*NNA\b'
+    reason: "Dato identificable de menor de edad"
+
+medium_risk_column_patterns:
+  - id: fecha_nacimiento_edad
+    pattern: 'FECHA.*NACIMIENTO|\bEDAD\b'
+    reason: "Cuasi-identificador demografico"
+  - id: genero_sexo
+    pattern: '\bGENERO\b|\bSEXO\b'
+    reason: "Cuasi-identificador demografico"
+  - id: ubicacion_barrio_vereda
+    pattern: '\bBARRIO\b|\bVEREDA\b|\bMANZANA\b|\bPREDIO\b'
+    reason: "Cuasi-identificador de ubicacion de grano fino"
+  - id: valor_individual_beneficio
+    pattern: 'VALOR.*PAGADO.*BENEFICIARIO|MONTO.*INDIVIDUAL|SALARIO.*INDIVIDUAL|INGRESO.*PERSONA'
+    reason: "Valor economico potencialmente asociable a un individuo"
+  - id: ocupacion_afiliacion
+    pattern: '\bOCUPACION\b|EPS\s*AFILIAD|REGIMEN.*AFILIAC'
+    reason: "Cuasi-identificador socioeconomico/de afiliacion"
+
+# Allowlist generoso (decision de producto): columnas administrativas,
+# geograficas o agregadas claramente no asociadas a una persona natural.
+# Cualquier cosa que NO matchee aqui (ni en high/medium) sigue cayendo en
+# "unknown" -- este allowlist solo AMPLIA cuanto puede resolver a "low", no
+# cambia el default.
+low_risk_column_allowlist:
+  - id: codigo_geografico_oficial
+    pattern: '^COD(IGO)?_?(DANE|DEPARTAMENTO|MUNICIPIO|DIVIPOLA)$|^DEPARTAMENTO$|^MUNICIPIO$|^ENTIDAD_TERRITORIAL$|^REGION$|^LOCALIDAD$|^COMUNA$'
+    reason: "Codigo o nombre de division politico-administrativa, no identifica personas"
+  - id: fecha_periodo_reporte
+    pattern: '^(FECHA_)?(CORTE|REPORTE|PERIODO|VIGENCIA|A[ÑN]O|MES|TRIMESTRE|SEMESTRE)$'
+    reason: "Fecha o periodo de reporte agregado"
+  - id: indicador_agregado
+    pattern: '^(TOTAL|CANTIDAD|NUMERO_DE|INDICADOR|TASA|PORCENTAJE|PROMEDIO|CONTEO|FRECUENCIA)_?'
+    reason: "Cifra agregada, no dato de fila individual identificable"
+  - id: identificador_administrativo_no_personal
+    pattern: '^COD(IGO)?_?(PROCESO|CONTRATO|TRAMITE|RADICADO|PROYECTO|LICENCIA|RESOLUCION|EXPEDIENTE)$'
+    reason: "Identificador de un tramite/proceso administrativo, no de una persona"
+  - id: valor_monetario_institucional_agregado
+    pattern: '^(VALOR|PRESUPUESTO|APROPIACION|MONTO)_?(TOTAL|CONTRATO|PROYECTO|ASIGNADO|EJECUTADO|PRESUPUESTAL)'
+    reason: "Valor monetario institucional agregado (contrato/presupuesto), no un ingreso individual"
+  - id: clasificador_categoria_estado
+    pattern: '^(CATEGORIA|TIPO|CLASE|ESTADO|SUBTIPO|MODALIDAD|SECTOR|CLASIFICACION)$'
+    reason: "Clasificador categorico administrativo"
+  - id: identificador_entidad_estatal
+    pattern: '^(NIT|CODIGO)_?(ENTIDAD|DEPENDENCIA|OFICINA)$'
+    reason: "Identificador de una entidad estatal, no de una persona natural"
+  - id: infraestructura_ambiental
+    pattern: '^(LATITUD|LONGITUD|COORDENADA)_?(ESTACION|PUNTO_MONITOREO|PREDIO_CATASTRAL|INFRAESTRUCTURA)$'
+    reason: "Coordenadas de infraestructura/estaciones de monitoreo, no de una persona"
+  - id: metrica_educativa_agregada
+    pattern: '^(MATRICULA|COBERTURA|DESERCION)_?(TOTAL|BRUTA|NETA)?$'
+    reason: "Metrica educativa agregada por institucion/territorio, no individual"
+
+# Señales a nivel de dataset completo (titulo/descripcion/categoria): si
+# aparecen, EMPUJAN el riesgo del dataset hacia arriba aunque los nombres de
+# columna por si solos no lo disparen (ej. "Historia clinica" en el titulo
+# con columnas genericas como "id", "fecha", "valor").
+dataset_level_keywords:
+  high:
+    - "SISBEN"
+    - "REGISTRO CIVIL"
+    - "HISTORIA CLINICA"
+    - "NOMINA"
+    - "PLANILLA.*EMPLEADOS"
+    - "VICTIMAS.*CONFLICTO"
+  medium:
+    - "BENEFICIARIOS"
+    - "ENCUESTA.*HOGARES"
+    - "CENSO.*POBLACIONAL"
