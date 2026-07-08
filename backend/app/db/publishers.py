@@ -1,9 +1,11 @@
-"""Registro canonico de publicadores oficiales: fixture, carga y resolucion (T-106, RF-401).
+"""Registro canonico de publicadores oficiales: fixture, carga y resolucion (T-106/T-201, RF-401).
 
-La resolucion aqui cubre solo lo que T-106 puede probar sin datasets reales
-(nombre canonico, alias unico, alias ambiguo, publicador privado conocido).
-T-201 extiende la resolucion con vigencia institucional y sucesor usando la
-fecha de publicacion del dataset, que no existe todavia en este alcance.
+`resolve_publisher()` acepta un `reference_date` opcional (T-201): sin el,
+el comportamiento es identico al de T-106 (nombre canonico, alias unico,
+alias ambiguo, publicador privado conocido). Con `reference_date`, aplica
+ademas vigencia institucional y resolucion a sucesor (data-model.md:
+"Entidades inactivas son elegibles solo si el dataset fue publicado dentro
+de su vigencia... o si existe successor_id documentado").
 """
 
 from __future__ import annotations
@@ -168,15 +170,68 @@ class PublisherResolution:
     reason: str | None = field(default=None)
 
 
+def is_publisher_valid_for_reference_date(
+    active: bool,
+    valid_from: date | None,
+    valid_until: date | None,
+    reference_date: date,
+) -> bool:
+    """Vigencia institucional (data-model.md linea 75): "Entidades activas
+    publican evidencia normal" (siempre validas); "Entidades inactivas son
+    elegibles solo si el dataset fue publicado dentro de su vigencia"."""
+
+    if active:
+        return True
+    if valid_from is not None and reference_date < valid_from:
+        return False
+    if valid_until is not None and reference_date > valid_until:
+        return False
+    return True
+
+
+async def _resolve_publisher_id_with_vigencia(
+    session: AsyncSession,
+    publisher_id: str,
+    reference_date: date,
+    _depth: int = 0,
+) -> PublisherResolution:
+    if _depth > 5:
+        return PublisherResolution(
+            official_publisher_id=None, status="unknown", reason="publisher_unknown"
+        )
+
+    publisher = await session.get(OfficialPublisher, publisher_id)
+    if publisher is None:
+        return PublisherResolution(
+            official_publisher_id=None, status="unknown", reason="publisher_unknown"
+        )
+
+    if is_publisher_valid_for_reference_date(
+        publisher.active, publisher.valid_from, publisher.valid_until, reference_date
+    ):
+        return PublisherResolution(official_publisher_id=publisher.id, status="verified")
+
+    if publisher.successor_id is not None:
+        return await _resolve_publisher_id_with_vigencia(
+            session, publisher.successor_id, reference_date, _depth + 1
+        )
+
+    return PublisherResolution(
+        official_publisher_id=None, status="unknown", reason="publisher_unknown"
+    )
+
+
 async def resolve_publisher(
     session: AsyncSession,
     raw_publisher_text: str,
     known_private_publishers: list[PrivatePublisherFixture] | None = None,
+    reference_date: date | None = None,
 ) -> PublisherResolution:
     """Resuelve texto crudo de publicador contra el registro oficial (RF-401).
 
-    No decide vigencia institucional ni sucesor: eso depende de la fecha de
-    publicacion del dataset y lo implementa T-201.
+    Sin `reference_date`, no decide vigencia institucional ni sucesor (T-106).
+    Con `reference_date` (T-201), aplica vigencia y resuelve hacia el sucesor
+    cuando el match historico ya no es valido en esa fecha.
     """
 
     normalized = normalize_publisher_name(raw_publisher_text)
@@ -187,7 +242,11 @@ async def resolve_publisher(
         )
     ).scalar_one_or_none()
     if canonical_match is not None:
-        return PublisherResolution(official_publisher_id=canonical_match.id, status="verified")
+        if reference_date is None:
+            return PublisherResolution(official_publisher_id=canonical_match.id, status="verified")
+        return await _resolve_publisher_id_with_vigencia(
+            session, canonical_match.id, reference_date
+        )
 
     alias_rows = (
         (
@@ -201,8 +260,12 @@ async def resolve_publisher(
         .all()
     )
     if len(alias_rows) == 1 and not alias_rows[0].ambiguous:
-        return PublisherResolution(
-            official_publisher_id=alias_rows[0].publisher_id, status="verified"
+        if reference_date is None:
+            return PublisherResolution(
+                official_publisher_id=alias_rows[0].publisher_id, status="verified"
+            )
+        return await _resolve_publisher_id_with_vigencia(
+            session, alias_rows[0].publisher_id, reference_date
         )
     if alias_rows:
         return PublisherResolution(

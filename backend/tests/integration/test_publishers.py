@@ -1,7 +1,7 @@
 """Integracion T-106/RF-401: carga y resolucion de publicadores oficiales contra Postgres real."""
 
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import text
@@ -9,8 +9,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import normalize_database_url_for_sqlalchemy
-from app.db.models import OfficialPublisherAlias
-from app.db.publishers import load_fixture, reload_official_publishers, resolve_publisher
+from app.db.models import OfficialPublisher, OfficialPublisherAlias
+from app.db.publishers import (
+    load_fixture,
+    normalize_publisher_name,
+    reload_official_publishers,
+    resolve_publisher,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -125,3 +130,125 @@ async def test_duplicate_unambiguous_alias_violates_unique_index(engine, loaded_
         )
         with pytest.raises(IntegrityError):
             await session.commit()
+
+
+async def test_resolve_with_reference_date_inside_historical_vigencia(
+    engine, loaded_fixture
+) -> None:
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        session.add(
+            OfficialPublisher(
+                id="entidad-historica-vigente",
+                canonical_name="Entidad Historica Vigente",
+                normalized_name=normalize_publisher_name("Entidad Historica Vigente"),
+                entity_type="otra_estatal",
+                active=False,
+                valid_from=date(2000, 1, 1),
+                valid_until=date(2010, 12, 31),
+                verification_source="prueba sintetica T-201",
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+        resolution = await resolve_publisher(
+            session, "Entidad Historica Vigente", reference_date=date(2005, 6, 1)
+        )
+
+    assert resolution.status == "verified"
+    assert resolution.official_publisher_id == "entidad-historica-vigente"
+
+
+async def test_resolve_with_reference_date_outside_vigencia_and_no_successor(
+    engine, loaded_fixture
+) -> None:
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        session.add(
+            OfficialPublisher(
+                id="entidad-historica-sin-sucesor",
+                canonical_name="Entidad Historica Sin Sucesor",
+                normalized_name=normalize_publisher_name("Entidad Historica Sin Sucesor"),
+                entity_type="otra_estatal",
+                active=False,
+                valid_from=date(2000, 1, 1),
+                valid_until=date(2010, 12, 31),
+                verification_source="prueba sintetica T-201",
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+        resolution = await resolve_publisher(
+            session, "Entidad Historica Sin Sucesor", reference_date=date(2020, 1, 1)
+        )
+
+    assert resolution.status == "unknown"
+    assert resolution.reason == "publisher_unknown"
+
+
+async def test_resolve_with_reference_date_outside_vigencia_resolves_to_successor(
+    engine, loaded_fixture
+) -> None:
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        session.add(
+            OfficialPublisher(
+                id="entidad-sucesora",
+                canonical_name="Entidad Sucesora Actual",
+                normalized_name=normalize_publisher_name("Entidad Sucesora Actual"),
+                entity_type="otra_estatal",
+                active=True,
+                verification_source="prueba sintetica T-201",
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+        session.add(
+            OfficialPublisher(
+                id="entidad-historica-con-sucesor",
+                canonical_name="Entidad Historica Con Sucesor",
+                normalized_name=normalize_publisher_name("Entidad Historica Con Sucesor"),
+                entity_type="otra_estatal",
+                active=False,
+                valid_from=date(2000, 1, 1),
+                valid_until=date(2010, 12, 31),
+                successor_id="entidad-sucesora",
+                verification_source="prueba sintetica T-201",
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+        resolution = await resolve_publisher(
+            session, "Entidad Historica Con Sucesor", reference_date=date(2020, 1, 1)
+        )
+
+    assert resolution.status == "verified"
+    assert resolution.official_publisher_id == "entidad-sucesora"
+
+
+async def test_resolve_without_reference_date_ignores_historical_range(
+    engine, loaded_fixture
+) -> None:
+    """Sin reference_date, el comportamiento debe seguir siendo identico a T-106:
+    un match canonico resuelve `verified` sin importar vigencia."""
+
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        session.add(
+            OfficialPublisher(
+                id="entidad-historica-sin-fecha-referencia",
+                canonical_name="Entidad Historica Sin Fecha Referencia",
+                normalized_name=normalize_publisher_name("Entidad Historica Sin Fecha Referencia"),
+                entity_type="otra_estatal",
+                active=False,
+                valid_from=date(2000, 1, 1),
+                valid_until=date(2010, 12, 31),
+                verification_source="prueba sintetica T-201",
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+        resolution = await resolve_publisher(session, "Entidad Historica Sin Fecha Referencia")
+
+    assert resolution.status == "verified"
+    assert resolution.official_publisher_id == "entidad-historica-sin-fecha-referencia"
