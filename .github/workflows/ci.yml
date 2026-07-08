@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - v2
+  push:
+    branches:
+      - v2
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: usuario
+          POSTGRES_PASSWORD: clave
+          POSTGRES_DB: cuestion_de_datos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U usuario -d cuestion_de_datos"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://usuario:clave@localhost:5432/cuestion_de_datos
+      LLM_PROVIDER: google
+      LLM_MODEL: gemini-2.5-flash
+      AGENT_MAX_STEPS: "10"
+      RUN_MAX_DURATION_S: "600"
+      RUN_HEARTBEAT_TIMEOUT_S: "120"
+      WORKER_LEASE_TTL_S: "120"
+      DELETE_ACTIVE_GRACE_S: "5"
+      RETENTION_USER_DAYS: "90"
+      RETENTION_EVAL_MONTHS: "24"
+      RETENTION_TECH_MONTHS: "12"
+      RETENTION_HASH_SALT: ci-placeholder-retention-hash-salt-32-bytes
+      CATALOG_STALE_AFTER_DAYS: "8"
+      PLACEHOLDER_MIN_RATIO: "0.30"
+      MAX_CONCURRENT_RUNS: "3"
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      EVAL_MODE: "false"
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        working-directory: .
+
+      - name: Confirm PostgreSQL extensions
+        run: |
+          psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          psql "$DATABASE_URL" -c "SELECT extname FROM pg_extension WHERE extname IN ('vector', 'pg_trgm') ORDER BY extname;"
+
+      - name: Install backend dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Lint backend
+        run: ruff check .
+
+      - name: Test backend
+        run: pytest -m "not integration"
+
+      - name: Audit backend dependencies
+        continue-on-error: true
+        run: pip-audit --progress-spinner off
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build

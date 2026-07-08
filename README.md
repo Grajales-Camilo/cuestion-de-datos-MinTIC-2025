@@ -99,6 +99,20 @@ graph TD
 
 Para ejecutar este proyecto en tu máquina local:
 
+### Base de datos local para v2.0
+
+La rama `v2` usa PostgreSQL local con pgvector mediante Docker Compose para cumplir DEP-01, RF-301 y RF-703. Supabase, Neon u otro PostgreSQL gestionado quedan solo para despliegue.
+
+Desde la raíz del repositorio:
+
+```powershell
+docker compose up -d db
+docker compose ps
+docker compose exec db psql -U usuario -d cuestion_de_datos -c "SELECT extname FROM pg_extension WHERE extname IN ('vector', 'pg_trgm') ORDER BY extname;"
+```
+
+El servicio `db` usa la imagen versionada `pgvector/pgvector:0.8.0-pg16`, un volumen persistente y el script `db/init/01_extensions.sql` para crear `vector` y `pg_trgm` al inicializar la base. Si necesitas cambiar usuario, clave, base o puerto, copia `.env.example` como `.env` en la raíz y ajusta esos valores. No commits archivos `.env` reales.
+
 ### Prerrequisitos
 *   Node.js 18+ instalado.
 *   Una API Key de **Google Gemini** (AI Studio).
