@@ -23,3 +23,24 @@ class HealthResponse(BaseModel):
     status: Literal["ok", "degraded"]
     checks: dict[str, str | CatalogIndexCheck | LLMProviderCheck | dict[str, Any]]
     version: str
+
+
+class ErrorDetail(BaseModel):
+    code: str
+    status: str | None = None
+    message_user: str
+    message_dev: str | None = None
+    retryable: bool = False
+
+
+class ErrorEnvelope(BaseModel):
+    """Sobre de error estandar (contracts/api-rest.md §6). /v2/health es la unica excepcion."""
+
+    error: ErrorDetail
+
+
+class PublishersReloadSummary(BaseModel):
+    publishers_created: int
+    publishers_updated: int
+    aliases_created: int
+    ambiguous_aliases: int
