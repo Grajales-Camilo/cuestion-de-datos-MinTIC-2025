@@ -26,6 +26,8 @@ Verificación de vida (RF-702). Sin autenticación.
 **503 Service Unavailable**
 Mismo esquema `HealthResponse`, con `"status": "degraded"` y cada check fallido marcado en `checks`. No usa el sobre estándar de error; esta excepción existe para que monitores puedan leer degradación parcial. No se usa `500` para dependencias esperadamente degradables.
 
+**Comportamiento por fase:** antes de T-203/T-204, cuando `catalog_embeddings` todavía no existe o el índice no fue construido, `/v2/health` DEBE reportar la base de datos disponible y `catalog_index.status = "degraded"` con detalle equivalente a `not_initialized`; si el contrato exige todos los checks sanos para `200`, la respuesta global es `503 degraded`. El healthcheck nunca debe falsear que el índice está disponible. Después de T-203/T-204, si el índice existe, tiene conteos disponibles y las demás dependencias están sanas, `catalog_index.status = "ok"` y la respuesta global es `200 ok`.
+
 ## 2. `POST /v2/agent/query` — iniciar investigación
 Inicia una corrida del agente (RF-201). Respuesta inmediata con `run_id`; el progreso se consume por SSE (§3).
 
@@ -120,6 +122,7 @@ Reglas: primer evento ≤ 2 s tras la conexión (RNF-008); heartbeat `: ping` ca
 }
 ```
 - **Invariante (Art. I, RF-208):** toda cifra presente en `summary`, `narrative` o `evidence[].narrative` DEBE corresponder al `display_value` de un elemento de `claims`. El LLM NO calcula cifras: los claims `derived` los computa el módulo determinista (herramienta T7 de agent-tools.md). La coincidencia literal con `evidence[].rows` NO es suficiente por sí sola ni necesaria (los valores derivados no aparecen literalmente en las filas).
+- `source_hash` identifica el contenido canónico que sustenta el claim; NO incluye `run_id`, `evidence_id`, `claim_id` ni otros UUIDs de instancia. Dos corridas distintas con las mismas filas, fórmula, valor bruto, unidad y redondeo deben producir el mismo hash.
 - `status = "interrupted"`: la corrida fue cortada por reinicio, heartbeat vencido o worker desaparecido (plan.md §11); `summary` es `string | null`, `narrative` es `null`, `evidence` y `claims` contienen solo lo validado hasta ese punto y pueden ser `[]`, `no_evidence_report` es `null`, y `usage` incluye `termination_reason` (`RUN_INTERRUPTED` | `WORKER_LOST` | `HEARTBEAT_EXPIRED`) con `latency_ms`/`estimated_cost_usd` nullable si no se alcanzaron a calcular.
 - `status = "failed"`: `summary` es `string | null`, `narrative` es `null`, `evidence` y `claims` contienen solo parciales validados para diagnóstico y pueden ser `[]`, `no_evidence_report` es `null`, `usage.termination_reason` contiene el código terminal (`RUN_TIMEOUT`, `LLM_PROVIDER_ERROR`, `SOCRATA_ERROR`, `SOCRATA_TIMEOUT`, `INTERNAL`).
 

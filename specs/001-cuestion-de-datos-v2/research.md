@@ -29,7 +29,19 @@
 9. Tamaño del índice resultante (~8.000 vectores × dimensión).
 10. Compatibilidad con PostgreSQL + pgvector (límites de dimensión del índice HNSW).
 
-**Procedimiento de benchmark (T-205, reproducible):** notebook `notebooks/01_benchmark_embeddings.ipynb` versionado, con: (a) muestra fija de metadatos ya ingeridos (T-201), congelada como fixture; (b) ≥ 30 consultas de prueba en español con dataset esperado anotado a mano (incluidas ≥ 10 territoriales); (c) las mismas consultas contra cada candidato; (d) tabla comparativa contra los 10 criterios; (e) decisión razonada firmada por el responsable del proyecto.
+**Procedimiento de benchmark (T-205, reproducible):** notebook `notebooks/01_benchmark_embeddings.ipynb` versionado, con: (a) entorno instalado desde `backend/pyproject.toml` mediante el extra opcional de investigación `benchmark-embeddings`; (b) muestra fija de metadatos ya ingeridos (T-201) y maestro DIVIPOLA cargado (T-202), congelados como fixture; (c) ≥ 30 consultas de prueba en español con dataset esperado anotado a mano (incluidas ≥ 10 territoriales); (d) las mismas consultas contra cada candidato; (e) tabla comparativa contra los 10 criterios; (f) decisión razonada firmada por el responsable del proyecto.
+
+**Dependencias de investigación para T-205.** T-102 PUEDE preparar un grupo opcional en `backend/pyproject.toml` exclusivamente para ejecutar el benchmark, por ejemplo:
+
+```toml
+[project.optional-dependencies]
+benchmark-embeddings = [
+    "sentence-transformers==<VERSION_COMPATIBLE_PY312>",
+    "torch==<VERSION_COMPATIBLE_PY312>"
+]
+```
+
+T-205 debe comprobar y fijar versiones compatibles con Python 3.12 antes de ejecutar el benchmark local, registrar esas versiones y usar un comando reproducible equivalente a `pip install -e ".[dev,benchmark-embeddings]"`. Estas dependencias opcionales NO convierten al modelo local en decisión de runtime. La dependencia definitiva de runtime se incorpora solo después de que T-205 registre el modelo ganador, dimensión, tipo `vector`/`halfvec` y justificación.
 
 **Decisión:** _pendiente de T-205._
 
@@ -74,11 +86,15 @@
 
 **SLA de borrado:** una corrida vencida no debe permanecer accesible. Si una solicitud `GET`, `stream` o `DELETE` encuentra una corrida vencida, ejecuta borrado oportunista antes de responder (`404` posterior). El job periódico de retención debe borrar físicamente corridas vencidas en un máximo de 24 horas desde el vencimiento lógico; fallos se registran y reintentan sin duplicar métricas ni eventos.
 
+**Programación del job de retención (piloto).** La lógica vive en el backend como servicio/CLI idempotente reutilizado por el endpoint administrativo `POST /v2/admin/retention/run`. La ejecución periódica se programa fuera de FastAPI cada 6 horas mediante el scheduler del proveedor de despliegue o un workflow programado, autenticado con `ADMIN_TOKEN`. No se añade un scheduler persistente dentro del proceso ni servicios nuevos (Art. III). La implementación debe asegurar una única ejecución lógica por ventana ante despliegues solapados o reintentos, registrar métricas/logs de cada barrido y conservar el SLA de borrado físico dentro de las 24 horas posteriores al vencimiento lógico. En despliegue, el humano debe crear el cron externo, registrar el secreto, verificar la primera ejecución y revisar fallos.
+
 ## 5. Decisión registrada: modelo de afirmaciones cuantitativas — `DECIDIDA`
 
 **Problema.** Verificar groundedness por coincidencia literal de cifras (regex sobre `rows`) falla con porcentajes calculados, sumas, promedios, tasas, redondeos, conversiones de unidades, formatos de miles y fechas: ni valida lo derivado ni impide que el LLM "calcule" mal en la narrativa.
 
 **Decisión:** toda cifra presentada nace de un **claim** estructurado (`quantitative_claims`, RF-208): filas fuente + columnas + fórmula + valor bruto + valor presentado + unidad + redondeo + hash reproducible. Los claims `derived` los computa un evaluador determinista (herramienta T7), no el LLM; el sintetizador solo cita `display_value`. El verificador de groundedness re-ejecuta la cadena completa (pruebas.md §4.2); la regex sobrevive únicamente como detector auxiliar de cifras huérfanas.
+
+**Semántica única de `source_hash`.** `source_hash` es un hash de contenido reproducible entre corridas, no un identificador de instancia. Se calcula sobre una representación canónica que incluye, como mínimo: versión del algoritmo, `dataset_id`, consulta SoQL canonicalizada, filas fuente seleccionadas y ordenadas por una regla determinista documentada, columnas usadas, DSL de fórmula canonicalizada, `raw_value`, unidad y regla de redondeo. No se incluyen identificadores aleatorios o de instancia (`evidence_id`, `claim_id`, `run_id`) ni marcas de tiempo de ejecución. Cambiar fórmula, fila fuente, contenido de fila, `raw_value`, unidad o redondeo debe cambiar el hash; cambiar solo UUIDs de corrida/evidencia/claim no debe cambiarlo.
 
 **Alternativa descartada:** regex + normalización numérica como mecanismo principal — insuficiente por las razones del problema; se documenta para no reintroducirla.
 

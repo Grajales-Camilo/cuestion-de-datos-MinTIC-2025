@@ -85,13 +85,21 @@ Alias normalizados de publicadores oficiales. Evita arreglos sin unicidad y perm
 |---|---|---|
 | `id` | uuid PK | |
 | `publisher_id` | text FK → official_publishers ON DELETE CASCADE | |
-| `alias_normalized` | text NOT NULL | Alias normalizado. UNIQUE global para aliases no ambiguos. |
+| `alias_normalized` | text NOT NULL | Alias normalizado. UNIQUE global solo para aliases no ambiguos (`ambiguous=false`). |
 | `alias_raw` | text | Forma original documentada. |
 | `ambiguous` | boolean NOT NULL default false | Si true, este alias nunca asigna automáticamente. |
 | `verification_source` | text NOT NULL | Procedencia del alias. |
 | `created_at` | timestamptz NOT NULL | |
 
-**Reglas:** la ingesta resuelve publicadores contra `official_publishers.normalized_name` y `official_publisher_aliases.alias_normalized`. Si no hay coincidencia única, o si el alias está marcado ambiguo, `catalog_datasets.publisher_verification_status = "unknown"` y `eligibility_reasons` incluye `publisher_unknown` o `publisher_alias_ambiguous`. Publicadores privados o no oficiales quedan `private_or_non_official` y sus datasets no son elegibles como evidencia. Un alias no único nunca asigna automáticamente: debe desambiguarse en el fixture con un alias más específico o quedar ambiguo.
+**Reglas:** la ingesta resuelve publicadores contra `official_publishers.normalized_name` y `official_publisher_aliases.alias_normalized`. La migración debe implementar unicidad con un índice parcial o mecanismo equivalente:
+
+```sql
+CREATE UNIQUE INDEX uq_official_alias_unambiguous
+ON official_publisher_aliases(alias_normalized)
+WHERE ambiguous = false;
+```
+
+Se permite registrar más de un alias ambiguo con el mismo `alias_normalized` si el fixture necesita conservar las entidades candidatas y todas tienen `ambiguous=true`. Si no hay coincidencia única, o si el alias está marcado ambiguo, `catalog_datasets.publisher_verification_status = "unknown"` y `eligibility_reasons` incluye `publisher_unknown` o `publisher_alias_ambiguous`. Publicadores privados o no oficiales quedan `private_or_non_official` y sus datasets no son elegibles como evidencia. Un alias no único nunca asigna automáticamente: debe desambiguarse en el fixture con un alias más específico o quedar ambiguo.
 
 ### `catalog_columns`
 | Campo | Tipo | Reglas |
@@ -167,6 +175,8 @@ Una investigación completa (RF-703). **No almacena el documento del usuario** (
 | `final_answer` | jsonb | Respuesta sintetizada (estructura del contrato REST). |
 | `created_at` | timestamptz NOT NULL | Retención según `retention_class` (§7, regla 1). |
 
+**Regla de secuencia SSE:** reservar el siguiente `last_event_seq` y crear el registro correspondiente en `agent_run_events` forman una única transacción coherente. La reserva se hace con actualización atómica de la fila de `agent_runs` (`UPDATE ... SET last_event_seq = last_event_seq + 1 ... RETURNING last_event_seq`) y luego se inserta el evento con ese `seq`. Si la transacción revierte, también revierte el incremento; no debe quedar un evento emitido sin persistencia previa. La unicidad `(run_id, seq)` protege contra duplicados si un reintento confirma dos veces. Eventos terminales usan además `terminal_event_written_at` y estado terminal para garantizar escritura única ante timeout, worker perdido, reinicio o competencia con un evento normal.
+
 ### `agent_steps`
 | Campo | Tipo | Reglas |
 |---|---|---|
@@ -189,7 +199,7 @@ Registro durable de TODOS los eventos SSE de una corrida (RF-209, plan.md §11).
 | `payload` | jsonb NOT NULL | Cuerpo exacto emitido al cliente. |
 | `created_at` | timestamptz NOT NULL | |
 
-**Reglas:** los eventos terminales (`answer`/`error`) se conservan mientras exista la corrida; en el borrado RF-803 se eliminan con ella. La emisión SSE lee de esta tabla para reenviar `seq > Last-Event-ID` sin pérdida ni duplicación.
+**Reglas:** los eventos terminales (`answer`/`error`) se conservan mientras exista la corrida; en el borrado RF-803 se eliminan con ella. La emisión SSE lee de esta tabla para reenviar `seq > Last-Event-ID` sin pérdida ni duplicación. Dos emisores concurrentes sobre la misma corrida deben serializar por la fila de `agent_runs`; no se permite calcular `MAX(seq)+1` fuera de una transacción como fuente de verdad.
 
 ### `technical_metrics`
 Métricas agregadas **no identificables**, copiadas de una corrida justo antes de su borrado (por retención vencida o por RF-803). Sin FK a `agent_runs` (la corrida ya no existe) y sin ningún contenido de usuario.
@@ -271,9 +281,9 @@ Afirmaciones cuantitativas trazables (RF-208). Toda cifra presentada al usuario 
 | `display_value` | text NOT NULL | Valor exactamente como se presenta ("8,4 %"). |
 | `unit` | text | `%`, `COP`, `personas`, `casos/100k`… |
 | `rounding` | int | Decimales de la regla de redondeo aplicada. |
-| `source_hash` | text NOT NULL | Hash SHA-256 canónico: JSON con versión de algoritmo, `evidence_id`, `dataset_id`, `soql_query` canonicalizada, filas fuente ordenadas por índice, columnas usadas, DSL de fórmula normalizada, `raw_value`, `unit` y `rounding`. |
+| `source_hash` | text NOT NULL | Hash SHA-256 canónico de contenido: JSON con versión de algoritmo, `dataset_id`, `soql_query` canonicalizada, filas fuente seleccionadas y ordenadas por regla determinista, columnas usadas, DSL de fórmula normalizada, `raw_value`, `unit` y `rounding`. No incluye `evidence_id`, `claim_id`, `run_id` ni timestamps. |
 
-**Reglas:** `raw_value` DEBE ser reproducible re-aplicando `formula` sobre las filas referenciadas (verificado en pruebas.md §4.2); `display_value` DEBE derivarse de `raw_value` + `rounding` + `unit`; el verificador de groundedness comprueba que ninguna cifra del texto final carece de claim.
+**Reglas:** `raw_value` DEBE ser reproducible re-aplicando `formula` sobre las filas referenciadas (verificado en pruebas.md §4.2); `display_value` DEBE derivarse de `raw_value` + `rounding` + `unit`; el verificador de groundedness comprueba que ninguna cifra del texto final carece de claim. La canonicalización de filas debe ser explícita: usa `source_row_indexes` ordenados de forma ascendente sobre el arreglo de `evidence_results.rows`, que a su vez proviene de una consulta SoQL canonicalizada con orden determinista cuando el orden afecte el claim. Cambiar contenido de fila, fórmula, columnas, `raw_value`, unidad o redondeo cambia el hash; cambiar únicamente UUIDs de corrida/evidencia/claim no lo cambia.
 
 ## 5. Entidades de evaluación (OE3)
 

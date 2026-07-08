@@ -41,6 +41,12 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 copy .env.example .env        # (cp en Linux/Mac)
 ```
+Para ejecutar T-205 antes de decidir el modelo de embeddings, usa el extra opcional de investigación una vez que T-205 haya fijado versiones compatibles con Python 3.12:
+```powershell
+pip install -e ".[dev,benchmark-embeddings]"
+```
+Ese extra no instala dependencias definitivas de runtime; solo habilita el benchmark local.
+
 Edita `backend/.env` con tus valores reales:
 ```env
 DATABASE_URL=postgresql://usuario:clave@localhost:5432/cuestion_de_datos   # la app normaliza internamente para SQLAlchemy async/psycopg
@@ -93,9 +99,12 @@ python scripts/build_embeddings.py        # genera el índice semántico
 ```
 **Comprobación:**
 ```powershell
-python -c "from app.db.session import quick_counts; quick_counts()"
-# Esperado: official_publishers > 0, catalog_datasets >= 7000, catalog_embeddings == datasets activos, divipola >= 1100
+docker compose exec db psql -U usuario -d cuestion_de_datos -c "SELECT count(*) AS official_publishers FROM official_publishers;"
+docker compose exec db psql -U usuario -d cuestion_de_datos -c "SELECT count(*) AS catalog_datasets FROM catalog_datasets;"
+docker compose exec db psql -U usuario -d cuestion_de_datos -c "SELECT count(*) AS catalog_embeddings FROM catalog_embeddings;"
+docker compose exec db psql -U usuario -d cuestion_de_datos -c "SELECT count(*) AS divipola_municipalities FROM divipola_entries WHERE level = 'municipality';"
 ```
+Esperado en el sistema completo: `official_publishers > 0`, `catalog_datasets >= 7000`, `catalog_embeddings` cubre los datasets activos definidos por RNF-010 y `divipola_municipalities >= 1100`.
 > Atajo: para probar sin ingesta completa, `python scripts/ingest_catalog.py --limit 200` indexa una muestra (suficiente para desarrollo, insuficiente para RNF-010).
 
 ## 4. Levantar los servicios
@@ -112,7 +121,7 @@ Abre `http://localhost:3000`.
 
 ## 5. Comprobaciones de humo (en orden)
 
-1. **Salud:** PowerShell: `curl.exe http://localhost:8000/v2/health` → `"status": "ok"` con los 3 checks en `ok`. Si algún check falla, debe responder `503` con el mismo esquema `HealthResponse` y `"status": "degraded"`.
+1. **Salud:** PowerShell: `curl.exe http://localhost:8000/v2/health` → en el sistema completo, `"status": "ok"` con los 3 checks en `ok`. En fases anteriores a T-203/T-204, si la base responde pero el índice aún no existe, debe devolver `503` con el mismo esquema `HealthResponse`, `"status": "degraded"` y `catalog_index` degradado o no inicializado; nunca debe fingir que el índice está disponible.
 2. **Búsqueda semántica:** `curl.exe "http://localhost:8000/v2/catalog/search?q=desercion%20escolar&k=5"` → datasets del sector educación en el top, `index_stale` explícito y `latest_observed_cutoff_at` presente solo como pista o `null`. El catálogo no devuelve `data_cutoff_at` como corte normativo de una evidencia.
 3. **Agente por API:**
    ```powershell
@@ -133,12 +142,18 @@ Abre `http://localhost:3000`.
 5. **UI completa (ESC-01):** en el navegador, elige la plantilla MGA, escribe un problema en "Identificación del Problema", presiona **Investigar** y verifica: línea de tiempo de pasos en vivo → tarjeta de evidencia con badge de calidad → botón insertar → la cita aparece en el documento.
 6. **Persistencia (ESC-08):** recarga el navegador; el documento y sus citas siguen ahí.
 
+7. **Retención manual local:** para probar el barrido sin esperar al cron externo:
+   ```powershell
+   curl.exe -X POST -H "X-Admin-Token: $env:ADMIN_TOKEN" "http://localhost:8000/v2/admin/retention/run"
+   ```
+   En despliegue, este mismo endpoint lo invoca un scheduler externo cada 6 horas con el secreto de administración.
+
 ## 6. Ejecutar las pruebas
 
 ```powershell
 cd backend
-ruff check . && pytest                    # unitarias + contrato (rápidas, sin red)
-pytest -m integration                     # integración real con Socrata (requiere red)
+ruff check . && pytest -m "not integration"   # deterministas: unitarias + contrato, sin red
+pytest -m integration                         # integración real con Postgres/Socrata (requiere servicios)
 python -m eval.run --suite golden-v1 --limit 10   # smoke de evaluación (usa LLM: consume cuota)
 cd ../frontend
 npm run test:e2e                          # Playwright (requiere ambos servicios arriba)

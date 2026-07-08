@@ -68,11 +68,11 @@ entrada ─▶ planificador ─▶ enrutador ─┬─▶ buscar_catalogo ──
 | API | FastAPI + Uvicorn | Estándar de la industria, tipado con Pydantic, SSE nativo. |
 | Orquestación | LangGraph (+ LangChain Core) + `langgraph-checkpoint-postgres` | Grafo de estados con checkpoints PostgreSQL; `thread_id = run_id`, `.setup()` idempotente y borrado con `adelete_thread(run_id)` (research.md §10). |
 | Capa LLM | `langchain-google-genai` (default) + `langchain-anthropic` (comparativa OE3) | RF-206: intercambio por configuración `LLM_PROVIDER`/`LLM_MODEL`. |
-| Embeddings | **DECISIÓN PENDIENTE** (ver [`research.md`](./research.md) §1). Candidatos: `intfloat/multilingual-e5-large` (local), `gemini-embedding-2` (gestionado) u otro modelo multilingüe actual justificado en research.md | La selección DEBE salir del benchmark reproducible de T-205; ningún candidato es ganador todavía. La dimensión vectorial y la migración definitiva dependen de esta decisión (T-104B). |
+| Embeddings | **DECISIÓN PENDIENTE** (ver [`research.md`](./research.md) §1). Candidatos: `intfloat/multilingual-e5-large` (local), `gemini-embedding-2` (gestionado) u otro modelo multilingüe actual justificado en research.md | La selección DEBE salir del benchmark reproducible de T-205; ningún candidato es ganador todavía. La dimensión vectorial y la migración definitiva dependen de esta decisión (T-104B). Las dependencias `sentence-transformers`/`torch` pueden existir solo como extra opcional `benchmark-embeddings` para investigación; la dependencia definitiva de runtime se agrega después de decidir. |
 | Validación datos | Pydantic + módulo propio `quality/` | La capa de calidad es lógica determinista propia (Art. I.4); no requiere framework pesado. |
 | HTTP externo | `httpx` (async, timeouts, retries) | Consultas Socrata concurrentes. |
 | Persistencia | SQLAlchemy async + `psycopg[binary,pool]` | Una sola estrategia asíncrona para FastAPI, repositorios y jobs; evita mezclar drivers. |
-| Pruebas | pytest + pytest-asyncio + respx (mocks HTTP) | Ver `pruebas.md`. |
+| Pruebas | pytest + pytest-asyncio + respx (mocks HTTP) | Ver `pruebas.md`. `pytest -m "not integration"` ejecuta pruebas deterministas sin red; `pytest -m integration` ejecuta las pruebas con PostgreSQL/Socrata reales. |
 | Lint/formato | ruff | Un solo binario para lint+format. |
 
 ### Frontend (`frontend/` — evolución del código actual)
@@ -90,8 +90,18 @@ entrada ─▶ planificador ─▶ enrutador ─┬─▶ buscar_catalogo ──
   - **Desarrollo local:** contenedor Docker definido en `compose.yaml` (raíz del repo, tarea T-105): PostgreSQL + pgvector, volumen persistente, healthcheck y variables por `.env`. La imagen debe fijarse con tag completo o digest, no `latest` ni un alias flotante. Las extensiones `vector` y `pg_trgm` se crean mediante script `init` del contenedor local; no por comando manual ni por Alembic. `DATABASE_URL=postgresql://usuario:clave@localhost:5432/cuestion_de_datos`.
   - **CI:** el job backend de GitHub Actions usa un servicio PostgreSQL+pgvector equivalente al local cuando ejecute pruebas de contrato o integración con DB. Exporta un `DATABASE_URL` de CI y valida extensiones antes de correr migraciones/pruebas. Las pruebas unitarias puras no necesitan el servicio.
   - **Despliegue:** servicio gestionado compatible (Supabase, Neon u otro; tier gratuito suficiente para el piloto). `DATABASE_URL=postgresql://usuario:clave@host-remoto:5432/base`.
-- Esquema completo en [`data-model.md`](./data-model.md). Migraciones con **Alembic**. La base local se crea y levanta en T-105; luego T-102 puede inicializar backend/checkpointer, T-104A configura Alembic y crea las tablas iniciales sin `catalog_embeddings`; la migración definitiva de `catalog_embeddings` se crea DESPUÉS del benchmark de embeddings (orden T-105 → T-102 → T-104A → T-205 → T-104B, ver tasks.md).
+- Esquema completo en [`data-model.md`](./data-model.md). Migraciones con **Alembic**. La base local se crea y levanta en T-105; luego T-102 puede inicializar backend/checkpointer, T-104A configura Alembic y crea las tablas iniciales sin `catalog_embeddings`; la migración definitiva de `catalog_embeddings` se crea DESPUÉS del benchmark de embeddings (orden T-105 → T-102 → T-104A → T-106 → T-201 → T-201A → T-202 → T-205 → T-104B, ver tasks.md).
 - T-104B es condicional al resultado de T-205: si la dimensión elegida es `<= 2000`, crea `vector(<DIM>)` + HNSW con `vector_cosine_ops`; si es `> 2000`, debe cambiar explícitamente a `halfvec(<DIM>)` y su clase de operador correspondiente, documentando la decisión en `research.md`, `data-model.md`, `.env.example`, `plan.md` y `quickstart.md` en el mismo PR.
+
+### Benchmark de embeddings (T-205)
+
+El benchmark usa un entorno reproducible instalado desde `backend/pyproject.toml` con:
+
+```powershell
+pip install -e ".[dev,benchmark-embeddings]"
+```
+
+El extra `benchmark-embeddings` contiene solo dependencias opcionales de investigación para candidatos locales (`sentence-transformers`, PyTorch u otras necesarias), con versiones fijadas por T-205 tras comprobar compatibilidad con Python 3.12. El procedimiento registra: versión de Python; versiones de `sentence-transformers`, PyTorch y dependencias relevantes; identificador y versión exacta del modelo; CPU, RAM y dispositivo usado; tamaño de lote; parámetros de codificación; normalización de vectores; semillas cuando apliquen; tiempo de carga del modelo separado de latencia por consulta; costo y configuración de cada candidato gestionado; comandos o notebook necesarios para reproducir. El resultado de T-205 es la única fuente para agregar dependencias definitivas de runtime.
 
 ### Plataformas externas
 | Servicio | Uso | Plan |
@@ -231,7 +241,17 @@ v2.0 se declara terminada cuando: (1) todos los RF de spec.md están implementad
 - **Arranque idempotente:** antes de aceptar tráfico, el backend marca como `interrupted` solo las corridas `running` asociadas a un `worker_instance_id` cuya lease esté vencida, persiste un único evento terminal `error` con código `RUN_INTERRUPTED` o `WORKER_LOST` y conserva evidencias/claims parciales ya validados. Repetir el arranque no duplica eventos terminales. Si existe una instancia anterior con lease vigente, sus corridas no se interrumpen.
 - **Estado de corrida** en `agent_runs.status` (+ `heartbeat_at` actualizado periódicamente por la corrida activa).
 - **Checkpoints de LangGraph** persistidos en PostgreSQL (checkpointer oficial): se usan para inspección y diagnóstico del estado de una corrida. En el piloto NO existe reanudación automática del trabajo del agente.
-- **Eventos numerados:** cada evento SSE se persiste en `agent_run_events` con secuencia monotónica por corrida ANTES de emitirse. Los eventos terminales (`answer`/`error`) se conservan siempre.
+- **Eventos numerados y reserva atómica:** cada evento SSE se persiste en `agent_run_events` con secuencia monotónica por corrida ANTES de emitirse. La secuencia se reserva dentro de la misma transacción lógica que inserta el evento mediante una actualización atómica de `agent_runs`, por ejemplo:
+
+  ```sql
+  UPDATE agent_runs
+  SET last_event_seq = last_event_seq + 1
+  WHERE id = :run_id
+  RETURNING last_event_seq;
+  ```
+
+  La inserción en `agent_run_events(run_id, seq, event_type, payload)` usa el `seq` retornado y la unicidad `(run_id, seq)` como defensa adicional. Si la transacción hace rollback después de reservar, el incremento también revierte y el número puede reutilizarse sin hueco observable. Dos emisores concurrentes serializan por bloqueo de fila; un timeout que compite con un evento normal, un detector de worker perdido o una escritura duplicada del terminal deben ganar mediante transición terminal idempotente (`terminal_event_written_at`/estado terminal) y producir como máximo un evento terminal. Un reintento idempotente reutiliza la comprobación de evento terminal existente o inserta un evento nuevo solo si la transacción previa no confirmó.
+- **Eventos terminales:** los eventos terminales (`answer`/`error`) se conservan siempre mientras exista la corrida y se escriben una sola vez aunque compitan timeout, worker perdido y cierre por reinicio.
 - **Reconexión SSE:** el cliente reanuda enviando el encabezado estándar `Last-Event-ID` con el último `seq` recibido; el servidor reenvía los eventos persistidos con `seq` mayor y continúa en vivo. Sin pérdida ni duplicación (prueba de integración en pruebas.md §2.3). El token de acceso viaja SIEMPRE por encabezado `Authorization`, nunca en la URL.
 - **Corridas huérfanas:** un barrido periódico detecta corridas `running` con `heartbeat_at` vencido (> `RUN_HEARTBEAT_TIMEOUT_S`, default 120 s) y las transiciona a `interrupted`; si la duración excede `RUN_MAX_DURATION_S` (default 600 s), transiciona a `failed` con código `RUN_TIMEOUT`.
 - **Semántica normativa única (sin ambigüedad):**
@@ -263,7 +283,7 @@ v2.0 se declara terminada cuando: (1) todos los RF de spec.md están implementad
 
 **Consentimiento y borrado (RF-802/803):** la UI informa antes de la primera investigación qué se almacena (pregunta, contexto acotado, trazas), con qué fin (funcionamiento y evaluación técnica), por cuánto tiempo (según `retention_class`, data-model.md §7) y cómo borrarlo (`DELETE /v2/agent/runs/{run_id}`).
 
-**Retención (RF-804):** además del borrado por usuario, un job periódico ejecuta el barrido de retención al menos cada 6 horas. SLA: toda corrida vencida se borra físicamente en máximo 24 horas. Si cualquier acceso encuentra una corrida vencida, ejecuta borrado oportunista antes de responder. La operación es transaccional e idempotente: copiar métricas no identificables → asegurar snapshot eval si aplica → borrar checkpoints con `adelete_thread(run_id)` → borrar corrida y relaciones. `technical_metrics` se purga por `RETENTION_TECH_MONTHS`.
+**Retención (RF-804):** además del borrado por usuario, un servicio/CLI idempotente del backend ejecuta el barrido de retención; el endpoint administrativo `POST /v2/admin/retention/run` reutiliza la misma lógica para ejecución manual. La programación periódica se hace fuera de FastAPI cada 6 horas mediante el scheduler del proveedor de despliegue o un workflow programado autenticado con `ADMIN_TOKEN`; no se añade un servicio persistente ni scheduler interno. SLA: toda corrida vencida se borra físicamente en máximo 24 horas. Si cualquier acceso encuentra una corrida vencida, ejecuta borrado oportunista antes de responder. La operación es transaccional e idempotente: adquirir una ejecución lógica única por ventana → copiar métricas no identificables → asegurar snapshot eval si aplica → borrar checkpoints con `adelete_thread(run_id)` → borrar corrida y relaciones. `technical_metrics` se purga por `RETENTION_TECH_MONTHS`. En despliegue, el humano crea el cron externo, registra el secreto, verifica la primera ejecución y revisa fallos.
 
 ## 12. Configuración del backend (T-102, RF/RNF relacionados)
 

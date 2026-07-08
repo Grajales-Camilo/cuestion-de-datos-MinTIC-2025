@@ -20,9 +20,25 @@
 | Accesibilidad automatizada (parcial) | CI (Lighthouse/axe) | Local | No | Cada PR con cambios de UI | Sí si score < 95 |
 | Accesibilidad manual (WCAG 2.2 AA) | Checklist §5 | Local | No | Por release | Sí (acta requerida) |
 
+**Separación explícita de pytest:** el marcador `integration` se registra en `backend/pyproject.toml` durante T-102/T-103:
+
+```toml
+[tool.pytest.ini_options]
+markers = [
+    "integration: pruebas que requieren red, PostgreSQL real o servicios externos"
+]
+```
+
+Comandos normativos:
+- `pytest -m "not integration"`: pruebas deterministas sin red, incluyendo unitarias, contrato con mocks, smoke de agente guionado y pruebas de seguridad sin servicios externos.
+- `pytest -m integration`: pruebas de integración con PostgreSQL real, Socrata/Discovery vivo o servicios externos declarados.
+- La evaluación con LLM real NO se mezcla con pytest: se ejecuta con `python -m eval.run ...` según §4.2.
+
+No se define un `addopts` global que excluya integración, para no impedir accidentalmente `pytest -m integration`.
+
 ## 2. Pruebas de la arquitectura backend
 
-### 2.1 Unitarias (`pytest`, sin red — todo I/O mockeado con respx)
+### 2.1 Unitarias y contrato determinista (`pytest -m "not integration"`, sin red — todo I/O mockeado con respx)
 
 **Guardia SoQL estructural (RNF-011, RF-207)** — `test_soql_guard.py`:
 - Acepta `SELECT` simples, con `GROUP BY`, `ORDER BY` y funciones de la lista blanca.
@@ -32,7 +48,7 @@
 - Defensa en profundidad: `DELETE`, `DROP`, `UPDATE`, `;` bloqueados aunque el parser fallara.
 - Inyecta `LIMIT 1000` cuando falta; reduce `LIMIT 50000` a 1000.
 - Sanitiza términos con `'`, `%`, `_` en `explorar_valores`.
-- Canonicaliza consultas equivalentes al mismo `source_hash` estable.
+- Canonicaliza consultas equivalentes de forma estable para que el `source_hash` de claims no dependa de espacios, mayúsculas o alias resueltos.
 - Rechaza antes de llamar a Socrata cualquier dataset/columna con `eligibility_status != eligible`, PII `unknown`/`high`, o PII `medium` sin agregación mínima (`count >= 5`) y sin columnas explícitas.
 
 **Capa de calidad** — `test_quality_*.py`: todos los casos obligatorios de `contracts/validacion-calidad.md` §5 (incluidos el rechazo por fuente no estatal, PII, los falsos positivos de placeholders y la base `data_cutoff_at` vs `data_updated_at_fallback`), más pruebas de frontera de cada umbral (edad = 12 meses exactos, null_ratio = 5.0%, score = 74 vs 75). Verificar determinismo y `warnings_user` en español sin jerga. Para publicadores oficiales cubrir: nombre canónico, alias, alias ambiguo, mayúsculas y tildes, publicador desconocido, publicador privado, entidad estatal válida con denominación abreviada, entidad histórica inactiva válida en su vigencia y sucesor institucional documentado.
@@ -43,7 +59,7 @@
 - Rechazos: columna inexistente, operando no numérico, operando nulo, división por cero, fórmula DSL con operación no permitida (nada de código arbitrario en el evaluador seguro).
 - Verificador de cifras huérfanas: un texto con una cifra sin claim asociado es detectado y bloquea (caso positivo y negativo).
 - Definición de “cifra”: cubrir enteros, decimales con coma/punto, porcentajes, monedas, miles, tasas, rangos y años analíticos; excluir UUID, dataset_id, fecha completa de cita, DIVIPOLA y número de sección.
-- `source_hash`: misma evidencia + DSL canonicalizada + filas ordenadas produce hash idéntico; cambiar fórmula, fila, columna, `raw_value`, unidad o redondeo cambia el hash.
+- `source_hash`: mismas filas, misma fórmula y mismo formato producen el mismo hash incluso en corridas distintas; cambiar fórmula cambia el hash; cambiar una fila o el orden definido cuando sea semánticamente relevante cambia el hash; cambiar `raw_value`, unidad o redondeo cambia el hash; cambiar únicamente `run_id`, `evidence_id` o `claim_id` NO cambia el hash; la prueba verifica que el orden de filas se canonicaliza por regla definida, no por orden arbitrario de diccionario/JSON.
 - Determinismo: mismas filas + misma spec ⇒ mismo claim.
 
 **Herramientas del agente** — `test_tools_*.py`: cada tool valida entrada (Pydantic), trunca salida a su presupuesto, mapea errores HTTP a códigos del contrato (`SOCRATA_TIMEOUT`, `SOQL_SYNTAX`…), y nunca lanza excepción no controlada.
@@ -56,7 +72,7 @@
 
 ### 2.2 Contrato API (`test_contract_*.py`, FastAPI TestClient + agente falso)
 - Esquemas de respuesta de cada endpoint validados contra `contracts/api-rest.md` (usar modelos Pydantic compartidos como fuente única).
-- `GET /v2/health`: `200` con todos los checks `ok`; `503 degraded` cuando falla DB, índice o proveedor LLM. En ambos casos usa `HealthResponse`; `/health` es la única excepción al sobre estándar de errores.
+- `GET /v2/health`: `200` con todos los checks `ok`; `503 degraded` cuando falla DB, índice o proveedor LLM. En ambos casos usa `HealthResponse`; `/health` es la única excepción al sobre estándar de errores. Variante por fases: antes de T-203/T-204, con DB disponible pero sin `catalog_embeddings`/índice construido, debe responder `503 degraded` con `catalog_index` degradado o `not_initialized`; después de T-203/T-204, con conteos de índice disponibles, debe responder `200 ok` si las demás dependencias están sanas.
 - `POST /v2/agent/query`: 422 con pregunta < 10 chars; 429 al exceder corridas concurrentes globales por proceso; `options.llm_*` ignorado si `EVAL_MODE=false`; la respuesta 202 incluye `run_access_token` y `token_expires_at`, y el token NO vuelve a aparecer en ninguna respuesta posterior. El JSON público no acepta `retention_class` y siempre crea corridas `user`.
 - **Creación de corridas eval:** prueba del servicio interno/runner OE3 que crea `retention_class=eval` solo con `EVAL_MODE=true`; el endpoint público no puede forzar retención de 24 meses.
 - **Autorización por token (RF-801):** `GET stream`, `GET runs` y `DELETE runs` sin header → 401 `UNAUTHORIZED`; con token incorrecto → 401; con corrida vencida → borrado oportunista y 404 `RUN_NOT_FOUND`; con token válido → 200/204. En base de datos solo existe el hash (ninguna columna contiene el token en claro). Casos explícitos: token `user` expira en `created_at + RETENTION_USER_DAYS`; token `eval` expira en `created_at + RETENTION_EVAL_MONTHS`.
@@ -70,13 +86,15 @@
 - Sobre de error estándar en TODAS las rutas no-2xx excepto `/v2/health`; `message_user` presente y en español.
 - Endpoints admin: 401 sin `X-Admin-Token`.
 
-### 2.3 Integración (marcadas `@pytest.mark.integration`, servicios reales)
+### 2.3 Integración (`pytest -m integration`, servicios reales)
+Esta suite cubre ESC-07 para ingesta e índice: T-201 verifica ingesta idempotente, T-203 generación homogénea de embeddings y T-206 ejecución programada/manual sin dejar el servicio fuera de línea.
+
 - **Socrata vivo:** `ejecutar_soql` contra un dataset estable (`2d3i-f9wd`) devuelve filas; `perfilar_dataset` y `explorar_valores` reales; detección de *drift* de la API (si Socrata cambia el formato, esta suite lo revela primero — plan.md §9).
 - **Discovery API:** una página de ingesta real produce registros válidos.
 - **RNF-010 índice:** medir al menos 100 consultas representativas contra el índice; reportar distribución p50/p95/p99 de `/v2/catalog/search`, cobertura real de embeddings sobre datasets tabulares activos y porcentaje de datasets excluidos por `api_active=false`/elegibilidad. p95 debe ser ≤ 1 s y cobertura ≥ 90%.
-- **Postgres real LOCAL (contenedor de `compose.yaml`, no un servicio gestionado):** extensiones creadas por init del contenedor; migraciones desde cero; constraints de dominio (`status`, `retention_class`, `publisher_verification_status`, confianza y ratios 0..1); unicidad `eval_case_results(eval_run_id, case_id)`; upsert idempotente de ingesta (correr 2 veces → mismos conteos); búsqueda pgvector devuelve orden por similitud correcto con 3 vectores sembrados; si T-205 usa `vector(<DIM>)`, `DIM <= 2000`; si usa dimensiones mayores, la migración debe usar `halfvec` y probarlo; trigram de DIVIPOLA; FK `eval_case_results.agent_run_id ON DELETE SET NULL`. En CI se usa un contenedor `pgvector/pgvector` de servicio — la suite DEBE pasar sin credenciales de Supabase/Neon (Constitución Art. II.2).
+- **Postgres real LOCAL (contenedor de `compose.yaml`, no un servicio gestionado):** extensiones creadas por init del contenedor; migraciones desde cero; constraints de dominio (`status`, `retention_class`, `publisher_verification_status`, confianza y ratios 0..1); índice parcial `uq_official_alias_unambiguous` sobre `official_publisher_aliases(alias_normalized) WHERE ambiguous=false`; unicidad `eval_case_results(eval_run_id, case_id)`; upsert idempotente de ingesta (correr 2 veces → mismos conteos); búsqueda pgvector devuelve orden por similitud correcto con 3 vectores sembrados; si T-205 usa `vector(<DIM>)`, `DIM <= 2000`; si usa dimensiones mayores, la migración debe usar `halfvec` y probarlo; trigram de DIVIPOLA; FK `eval_case_results.agent_run_id ON DELETE SET NULL`. En CI se usa un contenedor `pgvector/pgvector` de servicio — la suite DEBE pasar sin credenciales de Supabase/Neon (Constitución Art. II.2).
 - **Persistencia de trazas:** una corrida del grafo (con LLM falso guionado) escribe `agent_runs` + `agent_steps` + `agent_run_events` + `evidence_results` + `quality_reports` + `quantitative_claims` consistentes (FKs, conteos, estados, `last_event_seq`).
-- **Publicadores oficiales:** carga de fixture canónico; normalización determinista; `official_publishers.id` coincide con el contrato; alias global único cuando no es ambiguo; alias no único queda `official_publisher_aliases.ambiguous=true` y dataset `unknown`; tildes y mayúsculas no cambian el resultado; publicador desconocido queda `unknown`; publicador privado queda `private_or_non_official`; entidad estatal abreviada se resuelve por alias; entidad histórica pasa solo dentro de vigencia o con sucesor; T-201A verifica cobertura >= 90% tras ingesta real.
+- **Publicadores oficiales:** carga de fixture canónico; normalización determinista; `official_publishers.id` coincide con el contrato; alias único no ambiguo resuelve publicador; intento de duplicar un alias no ambiguo falla por índice parcial; dos registros ambiguos con el mismo texto son válidos si `ambiguous=true` y nunca asignan automáticamente; alias no único queda `official_publisher_aliases.ambiguous=true` y dataset `unknown`; tildes y mayúsculas no cambian el resultado; publicador desconocido queda `unknown`; publicador privado queda `private_or_non_official`; entidad estatal abreviada se resuelve por alias; entidad histórica pasa solo dentro de vigencia o con sucesor; T-201A verifica cobertura >= 90% tras ingesta real.
 - **Corte estadístico:** `evidence_results` persiste `data_cutoff_at` con método, columna, confianza, base e instante calculado desde las filas de esa evidencia; antes de perfilar o consultar, solo puede existir `catalog_datasets.latest_observed_cutoff_at` como pista. El contrato de calidad usa `data_cutoff_at` si existe y declara `data_updated_at_fallback` si no; el mensaje de fallback nunca dice "corte".
 - **PII:** datasets/columnas `unknown` bloquean antes de T5; `high` o `contains_personal_data=true` son rechazados; `medium` solo pasa con agregación/columnas explícitas, `count >= 5` por fila y sin filas individuales; `sample_values` queda vacío para `medium/high/unknown`.
 - **Volumetría:** fixtures de evidencia miden bytes serializados, número de columnas y filas; `SELECT *` se rechaza; máximo 50 filas entran al contexto LLM; `tool_output_summary` ≤ 20 KB, evento SSE `evidence` ≤ 256 KB y `evidence_results.rows` ≤ 1 MB salvo descarga explícita; 1.000 filas solo se conservan cuando existe necesidad de descarga.
@@ -87,11 +105,12 @@
   4. Reconecta con `Last-Event-ID = seq`.
   5. Verifica que recibe TODOS los eventos posteriores sin duplicados ni huecos (secuencia contigua).
   6. Verifica el desenlace: la corrida termina en `completed`, o —en la variante con reinicio— queda explícitamente `interrupted` con su evento terminal persistido; nunca queda `running` huérfana tras el barrido.
+- **Reserva atómica de secuencias SSE:** prueba concurrente que lanza dos emisores contra el mismo `run_id` y verifica `last_event_seq` contiguo, unicidad `(run_id, seq)` y cero huecos/duplicados. Variantes: timeout compitiendo con evento normal; detector de worker perdido compitiendo con reinicio; escritura duplicada del evento terminal; rollback después de reservar secuencia; reintento idempotente tras fallo transitorio. Resultado esperado: como máximo un evento terminal y stream reanudable con `Last-Event-ID`.
 - **Arranque y huérfanas:** al iniciar con una corrida `running` de otro `worker_instance_id` cuya lease venció, la marca `interrupted` y escribe un solo evento terminal aunque el arranque se repita. Si la instancia anterior conserva una lease vigente, NO se interrumpe; esta variante cubre despliegues con solapamiento. Probar TTL y renovación de lease: renueva cada tercio de TTL y expira al superar `WORKER_LEASE_TTL_S`.
 - **Timeout de corrida:** una corrida guionada que excede `RUN_MAX_DURATION_S` transiciona a `failed` y emite `RUN_TIMEOUT`; no se acepta `interrupted` para este caso.
 - **Respuesta `interrupted`:** validar nulabilidad exacta: `summary` nullable, `narrative=null`, `evidence[]`/`claims[]` parciales o vacíos, `no_evidence_report=null`, `usage.termination_reason` obligatorio y latencia/costo nullable.
 - **Borrado eval:** borrar una corrida `eval` elimina `agent_runs` y relaciones operativas, llama `adelete_thread(run_id)`, deja `eval_case_results.agent_run_id = NULL`, conserva métricas no identificables y el reporte agregado sigue renderizable.
-- **Job de retención:** con reloj simulado cubre corridas `user`, `eval` y `technical_metrics`; ejecuta copia atómica de métricas, snapshot eval, borrado de checkpoints y borrado físico; cumple SLA máximo de 24 horas desde vencimiento lógico.
+- **Job de retención:** con reloj simulado cubre corridas `user`, `eval` y `technical_metrics`; ejecuta copia atómica de métricas, snapshot eval, borrado de checkpoints y borrado físico; cumple SLA máximo de 24 horas desde vencimiento lógico. Prueba ejecución manual local por CLI/servicio y endpoint admin; prueba exclusión o lock de ejecución lógica para dos barridos simultáneos.
 - **Barridos idempotentes:** ejecutar dos veces el barrido de retención y el cierre de corridas interrumpidas no duplica métricas ni eventos terminales; una falla simulada al borrar checkpoints deja la operación reintentable sin pérdida parcial.
 - **Perfilado Socrata:** `perfilar_dataset` usa una o pocas consultas agregadas/concurrentes; la prueba falla si una cascada secuencial puede exceder RNF-001 con los timeouts definidos.
 
@@ -116,6 +135,8 @@ Se inyecta un LLM falso que devuelve decisiones predefinidas para probar la MEC�
 - Presupuesto: máx. 4 `ejecutar_soql` por corrida.
 
 ### 4.2 Evaluación con LLM real (golden set — RF-601/602, semanal y pre-release)
+Esta suite verifica ESC-06 (evaluación técnica OE3): T-601 define el conjunto dorado, T-602 calcula métricas y T-603 compara configuraciones.
+
 Corrida: `python -m eval.run --suite golden-v1 --provider google --model gemini-2.5-flash`
 
 | Métrica | Cómo se calcula | Umbral (RNF) |
@@ -168,6 +189,12 @@ Reglas de la corrida: golden set congelado por versión (cambiarlo = `golden-v2`
 - `prefers-reduced-motion` respetado en animaciones de la línea de tiempo.
 - Tablas de datos con encabezados correctos; gráficas con alternativa textual (la tabla misma).
 
+**Revisión manual RNF-012 — idioma y claridad en español (obligatoria por release, acta en `docs/`):**
+- Responsable: revisor de release (humano) con apoyo del agente si se desea.
+- Evidencia: acta `docs/release-rnf-012-<version>.md` con capturas o enlaces a fixtures revisados.
+- Criterio de aprobación: etiquetas del frontend, mensajes de error, `message_user`, advertencias de calidad, estados y mensajes SSE, textos de consentimiento, mensajes de retención/borrado y mensajes de "sin evidencia" están en español claro para ACT-01/ACT-02; no hay jerga técnica sin explicación en la superficie primaria.
+- Vínculo normativo: RNF-012 y Constitución Art. V.5.
+
 ## 6. Pruebas de seguridad (RNF-011, Art. VI)
 - Auditoría de bundle del frontend: ninguna API key presente (`grep` de patrones de claves en `.next/`).
 - Guardia SoQL: suite exhaustiva de §2.1 + fuzzing ligero (lista de 100 payloads de inyección SQL clásicos → 0 pasan).
@@ -178,4 +205,4 @@ Reglas de la corrida: golden set congelado por versión (cambiarlo = `golden-v2`
 - Dependencias: `pip-audit` y `npm audit` en CI; vulnerabilidades críticas bloquean release.
 
 ## 7. Criterio de salida por release
-Un release de v2.0.x puede publicarse solo si: unitarias+contrato 100% verdes (incluidas durabilidad, token y claims); integración verde en las últimas 24 h; E2E verde; última corrida golden dentro de umbrales; accesibilidad automatizada ≥ 95 **y** acta de revisión manual WCAG 2.2 AA del release archivada; auditoría de dependencias sin críticas. El reporte del golden set del release se versiona junto al tag (Art. II.3).
+Un release de v2.0.x puede publicarse solo si: unitarias+contrato 100% verdes (incluidas durabilidad, token y claims); integración verde en las últimas 24 h; E2E verde; última corrida golden dentro de umbrales; accesibilidad automatizada ≥ 95 **y** acta de revisión manual WCAG 2.2 AA del release archivada; acta RNF-012 archivada; auditoría de dependencias sin críticas. El reporte del golden set del release se versiona junto al tag (Art. II.3).

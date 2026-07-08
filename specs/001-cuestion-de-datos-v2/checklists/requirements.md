@@ -6,7 +6,7 @@
 Comando de búsqueda sugerido (PowerShell, desde `specs/`):
 ```powershell
 Get-ChildItem . -Recurse -Filter *.md |
-    Select-String -Pattern 'stable_id|data_cutoff_at|latest_observed_cutoff_at|HealthResponse|run_access_token|retention_class|interrupted|RUN_TIMEOUT|adelete_thread|SELECT \*'
+    Select-String -Pattern 'sentence-transformers|benchmark-embeddings|T-202|T-205|quick_counts|pytest|integration|HealthResponse|catalog_index|last_event_seq|agent_run_events|alias_normalized|ambiguous|source_hash|evidence_id|retention|T-306|RNF-012|ESC-06|ESC-07'
 ```
 
 ---
@@ -21,7 +21,7 @@ Get-ChildItem . -Recurse -Filter *.md |
 
 ## Bloqueo 2 — Orden migraciones ↔ selección de modelo
 - [x] `T-104A` crea las tablas SIN `catalog_embeddings` (tasks.md, Fase 1).
-- [x] Orden documental: T-201 → T-205 (benchmark) → T-104B (migración definitiva) → T-203 → T-204.
+- [x] Orden documental: T-201 → T-201A → T-202 → T-205 (benchmark) → T-104B (migración definitiva) → T-203 → T-204.
 - [x] `data-model.md` usa `vector(<DIM>)` con nota de decisión pendiente.
 - [x] Reglas: no mezclar modelos/dimensiones; cambio de modelo ⇒ regenerar índice o versionar índices separados.
 
@@ -119,6 +119,20 @@ Get-ChildItem . -Recurse -Filter *.md |
 - [x] **R4-7 Corridas sin ambigüedad operacional.** Token vencido converge a borrado oportunista + `404`; DELETE sobre corrida activa tiene gracia cooperativa; errores SSE terminales incluyen `status`.
 - [x] **R4-8 Durabilidad y embeddings cerrados.** Lease tiene TTL/renovación; T-104B es condicional `vector`/`halfvec`; T-205 debe propagar modelo/dimensión a modelo, dependencias, `.env.example`, plan y quickstart.
 - [x] **R4-9 Pruebas y trazabilidad.** Endpoints admin tienen dueño; pruebas cubren RF-403, CSV, gráficas, RNF-001 simple/multi-paso, RNF-010 p95/cobertura real y presupuestos de bytes.
+
+# Ronda 5 — Corrección documental focalizada T-202/T-205/T-306/RNF-012 (2026-07-07)
+
+- [x] **R5-1 Entorno T-205 reproducible.** T-102 distingue extra opcional `benchmark-embeddings` de dependencias definitivas de runtime; T-205 exige `pip install -e ".[dev,benchmark-embeddings]"`, versiones compatibles con Python 3.12 y registro de entorno/modelo/parámetros/costos.
+- [x] **R5-2 Ruta con T-202.** Rutas y checklist incluyen `T-201 → T-201A → T-202 → T-205`; `resolver_geografia` depende de `divipola_entries` cargado.
+- [x] **R5-3 Quickstart sin función fantasma.** `quick_counts()` se reemplaza por consultas `docker compose exec db psql` sobre `official_publishers`, `catalog_datasets`, `catalog_embeddings` y `divipola_entries`.
+- [x] **R5-4 Suites pytest separadas.** `pytest -m "not integration"` y `pytest -m integration`; marcador `integration` registrado en `pyproject.toml`; sin `addopts` global excluyente.
+- [x] **R5-5 Healthcheck por fase.** Antes de T-203/T-204, `catalog_index` degradado/no inicializado produce `503 degraded`; después del índice, conteos sanos permiten `200 ok`.
+- [x] **R5-6 Secuencia SSE atómica.** T-300, plan, modelo y pruebas exigen `UPDATE agent_runs ... RETURNING last_event_seq` y transacción coherente con `agent_run_events`.
+- [x] **R5-7 Aliases con índice parcial.** Alias no ambiguos únicos por índice parcial; aliases ambiguos duplicados permitidos si no asignan automáticamente.
+- [x] **R5-8 `source_hash` reproducible.** Hash de contenido excluye `evidence_id`, `claim_id` y `run_id`; pruebas cubren estabilidad y cambios materiales.
+- [x] **R5-9 Retención programada.** T-306 documenta servicio/CLI idempotente, endpoint admin, cron externo cada seis horas, secreto admin, ejecución única lógica, logs/métricas y acciones humanas en T-701.
+- [x] **R5-10 RNF-012 verificable.** Pruebas y T-505 exigen acta manual de idioma/claridad en español con responsable, evidencia, criterio y ubicación.
+- [x] **R5-11 ESC-06/ESC-07 trazables.** ESC-06 referenciado en T-601/T-602/T-603 y pruebas de evaluación; ESC-07 en T-201/T-203/T-206 y pruebas de ingesta/índice.
 
 ## Pendientes (sin cambios)
 
