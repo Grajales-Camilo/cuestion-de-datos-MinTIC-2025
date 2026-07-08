@@ -73,6 +73,7 @@ ADMIN_TOKEN=elige-un-token-largo-aleatorio
 EVAL_MODE=false
 ```
 > Antes de T-205, `.env.example` puede dejar `EMBEDDING_MODEL` vacío o documentado como pendiente para tareas que no construyen embeddings. En el sistema completo descrito por este quickstart, T-205 ya debe haber elegido el modelo y, si usa `vector(<DIM>)`, `DIM <= 2000` salvo que T-205 haya cambiado explícitamente a `halfvec`.
+> Si tu Windows ya tiene otro PostgreSQL escuchando en `localhost:5432`, cambia el puerto publicado por Docker en el `.env` de la raíz, por ejemplo `POSTGRES_PORT=5433`, recrea el servicio con `docker compose up -d db` y usa el mismo puerto en `backend/.env`: `DATABASE_URL=postgresql://usuario:clave@localhost:5433/cuestion_de_datos`.
 
 PowerShell no carga `backend/.env` automáticamente. Para las comprobaciones manuales de esta guía que usan `$env:...`, define esas variables en la sesión actual con los mismos valores de `backend/.env`:
 
@@ -81,6 +82,10 @@ $env:DATABASE_URL = "postgresql://usuario:clave@localhost:5432/cuestion_de_datos
 $env:GOOGLE_API_KEY = "<tu_google_api_key>"
 $env:SOCRATA_APP_TOKEN = "<tu_socrata_app_token>"
 $env:ADMIN_TOKEN = "<tu_admin_token_local>"
+```
+Si cambiaste el puerto local de PostgreSQL, usa el mismo valor aquí, por ejemplo:
+```powershell
+$env:DATABASE_URL = "postgresql://usuario:clave@localhost:5433/cuestion_de_datos"
 ```
 
 **Frontend:**
@@ -191,6 +196,7 @@ docker compose exec db psql -U usuario -d cuestion_de_datos -c "SELECT 1;"
 | `/v2/health` → `catalog_index: degraded` | Ingesta no ejecutada | §3. |
 | Embeddings lentísimos en local | Modelo local en CPU | Usa `--batch-size 16` con una muestra (`--limit 200`); el trade-off local vs gestionado es parte de la decisión de T-205 (research.md §1). |
 | `docker compose up` falla o el healthcheck nunca pasa | Docker Desktop apagado o puerto 5432 ocupado | Arranca Docker Desktop; cambia el puerto en `.env` del compose. |
+| El backend falla autenticando contra PostgreSQL aunque `docker compose exec db psql ...` funciona | Otro PostgreSQL local está atendiendo `localhost:5432` en Windows | Usa un puerto alterno para el contenedor, por ejemplo `POSTGRES_PORT=5433`, ejecuta `docker compose up -d db` y cambia `DATABASE_URL` a `postgresql://usuario:clave@localhost:5433/cuestion_de_datos`. |
 | `429` de Gemini en pruebas | Cuota del tier gratuito agotada | Espera la ventana o reduce `--limit` del eval. |
 | SSE no muestra pasos en el navegador | URL del backend o CORS mal configurados | Revisa `NEXT_PUBLIC_BACKEND_URL` en `frontend/.env.local` y que el origen `http://localhost:3000` esté permitido en el CORS del backend; recuerda que el consumo es con `fetch()` streaming, no `EventSource`. |
 | Socrata responde 403 | App token ausente/incorrecto | §7, segunda línea. |
