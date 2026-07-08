@@ -64,6 +64,7 @@ DELETE_ACTIVE_GRACE_S=5
 RETENTION_USER_DAYS=90                             # token user expira junto con esta retención
 RETENTION_EVAL_MONTHS=24                           # token eval expira junto con esta retención
 RETENTION_TECH_MONTHS=12                           # métricas no identificables
+RETENTION_HASH_SALT=<secreto-largo-solo-servidor>  # requerido para source_run_hash; no usar este placeholder en prod/eval
 CATALOG_STALE_AFTER_DAYS=8                         # marca index_stale si un dataset no se sincroniza en esta ventana
 PLACEHOLDER_MIN_RATIO=0.30                         # umbral contextual de placeholders
 MAX_CONCURRENT_RUNS=3
@@ -72,6 +73,15 @@ ADMIN_TOKEN=elige-un-token-largo-aleatorio
 EVAL_MODE=false
 ```
 > Antes de T-205, `.env.example` puede dejar `EMBEDDING_MODEL` vacío o documentado como pendiente para tareas que no construyen embeddings. En el sistema completo descrito por este quickstart, T-205 ya debe haber elegido el modelo y, si usa `vector(<DIM>)`, `DIM <= 2000` salvo que T-205 haya cambiado explícitamente a `halfvec`.
+
+PowerShell no carga `backend/.env` automáticamente. Para las comprobaciones manuales de esta guía que usan `$env:...`, define esas variables en la sesión actual con los mismos valores de `backend/.env`:
+
+```powershell
+$env:DATABASE_URL = "postgresql://usuario:clave@localhost:5432/cuestion_de_datos"
+$env:GOOGLE_API_KEY = "<tu_google_api_key>"
+$env:SOCRATA_APP_TOKEN = "<tu_socrata_app_token>"
+$env:ADMIN_TOKEN = "<tu_admin_token_local>"
+```
 
 **Frontend:**
 ```powershell
@@ -144,6 +154,7 @@ Abre `http://localhost:3000`.
 
 7. **Retención manual local:** para probar el barrido sin esperar al cron externo:
    ```powershell
+   $env:ADMIN_TOKEN = "<tu_admin_token_local>"
    curl.exe -X POST -H "X-Admin-Token: $env:ADMIN_TOKEN" "http://localhost:8000/v2/admin/retention/run"
    ```
    En despliegue, este mismo endpoint lo invoca un scheduler externo cada 6 horas con el secreto de administración.
@@ -162,7 +173,7 @@ Detalle completo de suites y umbrales: [`pruebas.md`](./pruebas.md).
 
 ## 7. Verificar credenciales sueltas (si algo falla)
 
-```bash
+```powershell
 # Gemini (PowerShell)
 curl.exe "https://generativelanguage.googleapis.com/v1beta/models?key=$env:GOOGLE_API_KEY"
 # Socrata (PowerShell)

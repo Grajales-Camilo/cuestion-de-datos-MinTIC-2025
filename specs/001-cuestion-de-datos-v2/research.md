@@ -86,7 +86,7 @@ T-205 debe comprobar y fijar versiones compatibles con Python 3.12 antes de ejec
 
 **SLA de borrado:** una corrida vencida no debe permanecer accesible. Si una solicitud `GET`, `stream` o `DELETE` encuentra una corrida vencida, ejecuta borrado oportunista antes de responder (`404` posterior). El job periódico de retención debe borrar físicamente corridas vencidas en un máximo de 24 horas desde el vencimiento lógico; fallos se registran y reintentan sin duplicar métricas ni eventos.
 
-**Programación del job de retención (piloto).** La lógica vive en el backend como servicio/CLI idempotente reutilizado por el endpoint administrativo `POST /v2/admin/retention/run`. La ejecución periódica se programa fuera de FastAPI cada 6 horas mediante el scheduler del proveedor de despliegue o un workflow programado, autenticado con `ADMIN_TOKEN`. No se añade un scheduler persistente dentro del proceso ni servicios nuevos (Art. III). La implementación debe asegurar una única ejecución lógica por ventana ante despliegues solapados o reintentos, registrar métricas/logs de cada barrido y conservar el SLA de borrado físico dentro de las 24 horas posteriores al vencimiento lógico. En despliegue, el humano debe crear el cron externo, registrar el secreto, verificar la primera ejecución y revisar fallos.
+**Programación del job de retención (piloto).** La lógica vive en el backend como servicio/CLI idempotente reutilizado por el endpoint administrativo `POST /v2/admin/retention/run`. La ejecución periódica se programa fuera de FastAPI cada 6 horas mediante el scheduler del proveedor de despliegue o un workflow programado, autenticado con `ADMIN_TOKEN`. No se añade un scheduler persistente dentro del proceso ni servicios nuevos (Art. III). Para asegurar una única ejecución lógica ante despliegues solapados o reintentos, cada barrido debe intentar adquirir al inicio un advisory lock transaccional de PostgreSQL con clave fija del proyecto (`pg_try_advisory_xact_lock(20260707, 804)`). Si no adquiere el lock, no copia métricas ni borra datos y responde como ejecución omitida por `already_running`. Si lo adquiere, registra métricas/logs de cada barrido y conserva el SLA de borrado físico dentro de las 24 horas posteriores al vencimiento lógico. `technical_metrics.source_run_hash` se calcula con `RETENTION_HASH_SALT`, secreto servidor obligatorio en prod/eval; rotarlo durante reintentos pendientes puede romper la deduplicación y solo debe hacerse después de cerrar barridos en curso. En despliegue, el humano debe crear el cron externo, registrar `ADMIN_TOKEN` y `RETENTION_HASH_SALT` como secretos, verificar la primera ejecución y revisar fallos.
 
 ## 5. Decisión registrada: modelo de afirmaciones cuantitativas — `DECIDIDA`
 
@@ -126,13 +126,13 @@ T-205 debe comprobar y fijar versiones compatibles con Python 3.12 antes de ejec
 
 **Consecuencia:** RF-302 puede devolver `latest_observed_cutoff_at` como pista, pero cada Evidencia puede tener un corte distinto. Si no se puede inferir `data_cutoff_at`, la calidad usa `data_updated_at` solo como fallback de antigüedad y el mensaje debe decir "fecha de actualización del portal; corte estadístico desconocido".
 
-## 10. Decisión registrada: persistencia PostgreSQL y LangGraph — `DECIDIDA`
+## 9. Decisión registrada: persistencia PostgreSQL y LangGraph — `DECIDIDA`
 
 **Decisión:** el backend usa SQLAlchemy **asíncrono** con `psycopg` v3 como controlador PostgreSQL (`psycopg[binary,pool]`) y `AsyncEngine`/pool asíncrono para la aplicación. El checkpointer usa `langgraph-checkpoint-postgres` y `AsyncPostgresSaver`. En la inicialización del backend se ejecuta `.setup()` del checkpointer de forma idempotente. El `thread_id` de LangGraph es siempre `run_id`.
 
 **Borrado:** RF-803 y el job de retención deben llamar a `adelete_thread(run_id)` antes de borrar la fila de `agent_runs`, dentro de la misma unidad operacional documentada; si el borrado de checkpoints falla, la transacción de borrado operativo no se considera completa y se reintenta.
 
-## 11. Decisión registrada: health, rate limiting y SoQL — `DECIDIDA`
+## 10. Decisión registrada: health, rate limiting y SoQL — `DECIDIDA`
 
 **Health:** `/v2/health` es una excepción explícita al sobre estándar de errores: responde `HealthResponse` tanto en `200` como en `503 degraded`, para que monitores puedan leer checks parciales.
 
@@ -140,7 +140,7 @@ T-205 debe comprobar y fijar versiones compatibles con Python 3.12 antes de ejec
 
 **Parser SoQL:** T-302 implementa una gramática restringida propia con parser estructural mantenido en `app/tools/soql_parser.py` para el subconjunto permitido. Se prohíbe `SELECT *`; `OFFSET` máximo 5.000; alias solo en `SELECT` para agregados y deben resolverse al validar `ORDER BY`; literales permitidos: strings escapados, números, booleanos y fechas ISO; funciones permitidas son solo las listadas en `contracts/agent-tools.md`. La consulta se canonicaliza antes de persistirla.
 
-## 12. Decisión registrada: privacidad y elegibilidad previa a Socrata — `DECIDIDA`
+## 11. Decisión registrada: privacidad y elegibilidad previa a Socrata — `DECIDIDA`
 
 **Decisión:** la privacidad se decide antes de ejecutar T5. `pii_risk_level="unknown"` bloquea la consulta hasta clasificación; `high` o `contains_personal_data=true` bloquean siempre; `medium` solo permite consultas agregadas con columnas explícitas, sin filas individuales y con agregación mínima verificable (`count >= 5` por fila o equivalente). `low` puede continuar si el publicador y la API son elegibles.
 
@@ -148,7 +148,7 @@ T-205 debe comprobar y fijar versiones compatibles con Python 3.12 antes de ejec
 
 **Razón:** la Constitución Art. VI prohíbe incorporar datos personales identificables. Una fuente oficial y pública no prueba por sí sola que sea segura para trazas, SSE o reproducción de evidencias.
 
-## 9. Decisión registrada: configuración del backend — `DECIDIDA`
+## 12. Decisión registrada: configuración del backend — `DECIDIDA`
 
 **Problema.** T-102 no puede crear un `.env.example` suficiente si la lista de variables, tipos y obligatoriedad está dispersa o incompleta.
 

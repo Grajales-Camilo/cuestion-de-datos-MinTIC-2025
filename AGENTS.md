@@ -14,6 +14,9 @@ Antes de escribir o modificar código, leer en este orden:
 10. `specs/001-cuestion-de-datos-v2/quickstart.md`
 11. `specs/001-cuestion-de-datos-v2/checklists/requirements.md`, si existe
 
+Este archivo refleja instrucciones operativas del repositorio. No altera la
+jerarquía normativa definida por `specs/constitution.md`.
+
 ## Jerarquía
 
 `constitution.md` > `spec.md` > `research.md` > `plan.md` >

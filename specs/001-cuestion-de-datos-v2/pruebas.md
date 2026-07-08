@@ -36,6 +36,8 @@ Comandos normativos:
 
 No se define un `addopts` global que excluya integración, para no impedir accidentalmente `pytest -m integration`.
 
+**Bootstrap mínimo de pruebas (T-102/T-103):** antes de cerrar T-102 debe existir al menos una prueba determinista sin red en `backend/tests/` para que `pytest -m "not integration"` no falle por ausencia de tests. El mínimo aceptable cubre carga de settings y/o `/v2/health` con dependencias locales/mocks; T-103 consume esa suite para que el primer PR pueda quedar verde.
+
 ## 2. Pruebas de la arquitectura backend
 
 ### 2.1 Unitarias y contrato determinista (`pytest -m "not integration"`, sin red — todo I/O mockeado con respx)
@@ -65,6 +67,7 @@ No se define un `addopts` global que excluya integración, para no impedir accid
 **Herramientas del agente** — `test_tools_*.py`: cada tool valida entrada (Pydantic), trunca salida a su presupuesto, mapea errores HTTP a códigos del contrato (`SOCRATA_TIMEOUT`, `SOQL_SYNTAX`…), y nunca lanza excepción no controlada.
 
 **Configuración** — `test_settings.py`: valida tipos, defaults y obligatoriedad de todas las variables de plan.md §12; `DATABASE_URL` acepta `postgres://` y `postgresql://` y se transforma a SQLAlchemy async sin exponer secretos; rechaza esquemas no PostgreSQL; `EMBEDDING_MODEL` no puede requerirse antes de T-203/T-205 en comandos que no construyen embeddings; `RETENTION_USER_DAYS`, `RETENTION_EVAL_MONTHS`, `RETENTION_TECH_MONTHS`, `WORKER_LEASE_TTL_S` y `DELETE_ACTIVE_GRACE_S` deben respetar rangos; `CORS_ALLOWED_ORIGINS` rechaza `*`; `EVAL_MODE=true` solo se permite en entorno de evaluación controlado, no en backend público.
+`RETENTION_HASH_SALT` es obligatorio en prod/eval, tiene longitud mínima de 32 bytes aleatorios y no aparece en logs ni errores.
 
 **Capa LLM** — `test_llm_factory.py`: instancia google/anthropic según config; falla claro con proveedor desconocido; agrega tokens y costo por corrida.
 
@@ -110,7 +113,7 @@ Esta suite cubre ESC-07 para ingesta e índice: T-201 verifica ingesta idempoten
 - **Timeout de corrida:** una corrida guionada que excede `RUN_MAX_DURATION_S` transiciona a `failed` y emite `RUN_TIMEOUT`; no se acepta `interrupted` para este caso.
 - **Respuesta `interrupted`:** validar nulabilidad exacta: `summary` nullable, `narrative=null`, `evidence[]`/`claims[]` parciales o vacíos, `no_evidence_report=null`, `usage.termination_reason` obligatorio y latencia/costo nullable.
 - **Borrado eval:** borrar una corrida `eval` elimina `agent_runs` y relaciones operativas, llama `adelete_thread(run_id)`, deja `eval_case_results.agent_run_id = NULL`, conserva métricas no identificables y el reporte agregado sigue renderizable.
-- **Job de retención:** con reloj simulado cubre corridas `user`, `eval` y `technical_metrics`; ejecuta copia atómica de métricas, snapshot eval, borrado de checkpoints y borrado físico; cumple SLA máximo de 24 horas desde vencimiento lógico. Prueba ejecución manual local por CLI/servicio y endpoint admin; prueba exclusión o lock de ejecución lógica para dos barridos simultáneos.
+- **Job de retención:** con reloj simulado cubre corridas `user`, `eval` y `technical_metrics`; ejecuta copia atómica de métricas, snapshot eval, borrado de checkpoints y borrado físico; cumple SLA máximo de 24 horas desde vencimiento lógico. Prueba ejecución manual local por CLI/servicio y endpoint admin; prueba el advisory lock `pg_try_advisory_xact_lock(20260707, 804)` con dos barridos simultáneos: uno ejecuta y el otro responde `already_running` sin efectos. Verifica que `source_run_hash` usa `RETENTION_HASH_SALT` de forma estable durante reintentos.
 - **Barridos idempotentes:** ejecutar dos veces el barrido de retención y el cierre de corridas interrumpidas no duplica métricas ni eventos terminales; una falla simulada al borrar checkpoints deja la operación reintentable sin pérdida parcial.
 - **Perfilado Socrata:** `perfilar_dataset` usa una o pocas consultas agregadas/concurrentes; la prueba falla si una cascada secuencial puede exceder RNF-001 con los timeouts definidos.
 

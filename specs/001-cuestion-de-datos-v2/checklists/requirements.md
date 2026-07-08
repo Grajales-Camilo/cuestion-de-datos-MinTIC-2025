@@ -134,6 +134,14 @@ Get-ChildItem . -Recurse -Filter *.md |
 - [x] **R5-10 RNF-012 verificable.** Pruebas y T-505 exigen acta manual de idioma/claridad en español con responsable, evidencia, criterio y ubicación.
 - [x] **R5-11 ESC-06/ESC-07 trazables.** ESC-06 referenciado en T-601/T-602/T-603 y pruebas de evaluación; ESC-07 en T-201/T-203/T-206 y pruebas de ingesta/índice.
 
+# Ronda 6 — Correcciones de auditoría integral preimplementación (2026-07-07)
+
+- [x] **R6-1 Bootstrap de pruebas T-103.** T-102 exige pruebas mínimas deterministas sin red para que `pytest -m "not integration"` no falle por ausencia de tests; T-103 consume esa suite en el primer PR.
+- [x] **R6-2 Retención sin decisión implícita.** `RETENTION_HASH_SALT` queda documentado en plan, modelo, pruebas, quickstart y despliegue; `source_run_hash` usa ese secreto servidor para idempotencia.
+- [x] **R6-3 Lock concreto del barrido.** Research, plan, modelo, contrato admin, pruebas y T-306 usan advisory lock PostgreSQL `pg_try_advisory_xact_lock(20260707, 804)` y respuesta `already_running` sin efectos.
+- [x] **R6-4 Quickstart PowerShell literal.** Las variables usadas como `$env:...` se exportan explícitamente en la sesión antes de los comandos manuales.
+- [x] **R6-5 Trazabilidad auxiliar.** README/AGENTS aclaran que `AGENTS.md` es operativo y no altera la jerarquía; T-705 referencia el sitio divulgativo/producto público sin ampliar el alcance funcional del software.
+
 ## Pendientes (sin cambios)
 
 - [ ] Decisión de embeddings y dimensión (research.md §1) — se resuelve en T-205; bloquea T-104B/T-203.

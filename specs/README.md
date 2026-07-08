@@ -2,7 +2,7 @@
 
 Esta carpeta contiene la especificación completa para la evolución de **Cuestión de Datos v1.0 → v2.0**, siguiendo la metodología *Spec-Driven Development* (convención GitHub Spec Kit). Cualquier agente de IA o desarrollador humano debe leer estos documentos **en este orden** antes de escribir código:
 
-El orden de lectura coincide con la jerarquía normativa (constitution.md §Gobernanza); `research.md` se lee antes del plan porque contiene decisiones `PENDIENTE` que bloquean tareas.
+El orden de lectura coincide con la jerarquía normativa (constitution.md §Gobernanza); `research.md` se lee antes del plan porque contiene decisiones `PENDIENTE` que bloquean tareas. En el repositorio, `AGENTS.md` se lee inmediatamente después de este README como instrucción operativa para agentes, pero no modifica la jerarquía normativa.
 
 | Orden | Archivo | Propósito | Responde a |
 |-------|---------|-----------|------------|

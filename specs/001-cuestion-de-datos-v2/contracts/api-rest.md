@@ -247,7 +247,7 @@ Límites: `q` 3–500 chars no vacíos tras trim; `k` 1–25 (default 10); `k > 
 - `POST /v2/admin/ingest` → dispara ingesta (RF-701). Responde `202` con `ingest_run_id`.
 - `GET /v2/admin/ingest/runs?limit=20` → historial de `ingest_runs`.
 - `POST /v2/admin/publishers/reload` → recarga fixture versionado de publicadores oficiales y aliases (T-106/T-201A). Responde `202` con resumen de altas/cambios/aliases ambiguos.
-- `POST /v2/admin/retention/run` → dispara manualmente el barrido idempotente de retención (T-306). Responde `202` con conteos planificados.
+- `POST /v2/admin/retention/run` → dispara manualmente el barrido idempotente de retención (T-306). Responde `202` con conteos planificados/ejecutados. Forma mínima: `{ "status": "accepted" | "skipped", "reason": null | "already_running", "planned": {...}, "executed": {...} }`. Si otro barrido ya posee el advisory lock PostgreSQL de retención, responde `202` con `status="skipped"` y `reason="already_running"`, sin copiar métricas ni borrar datos.
 - `GET /v2/admin/metrics` → agregados de corridas y evaluación. Fuente normativa: RNF-001/RNF-009 desde `agent_runs` recientes y `technical_metrics`; RNF-002/RNF-003/RNF-004/RNF-005 desde `eval_runs` y `eval_case_results`, nunca estimado desde logs textuales.
 
 ## 10. Compatibilidad y versionado
