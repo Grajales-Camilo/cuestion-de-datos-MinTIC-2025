@@ -11,11 +11,11 @@ import asyncio
 import sys
 
 import httpx
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.catalog.divipola_client import DivipolaClient
 from app.config import get_settings
 from app.db.divipola import rows_to_entries, upsert_divipola_entries
+from app.db.engine import create_app_async_engine
 
 _SODA_BASE_URL = "https://www.datos.gov.co"
 _DEFAULT_DATASET_ID = "gdxc-w37w"
@@ -35,7 +35,7 @@ async def _run(dataset_id: str, page_size: int) -> None:
 
     entries = rows_to_entries(rows)
 
-    engine = create_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
+    engine = create_app_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
     try:
         summary = await upsert_divipola_entries(engine, entries)
     finally:

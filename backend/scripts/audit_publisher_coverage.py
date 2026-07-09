@@ -15,10 +15,11 @@ import json
 import sys
 from pathlib import Path
 
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.catalog.coverage import build_coverage_report_from_db
 from app.config import get_settings
+from app.db.engine import create_app_async_engine
 
 _DEFAULT_OUTPUT = (
     Path(__file__).resolve().parents[1] / "data" / "official_publishers_coverage.json"
@@ -27,7 +28,7 @@ _DEFAULT_OUTPUT = (
 
 async def _run(output_path: Path, candidate_limit: int) -> None:
     settings = get_settings()
-    engine = create_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
+    engine = create_app_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
     try:
         session_factory = async_sessionmaker(engine, expire_on_commit=False)
         async with session_factory() as session:
