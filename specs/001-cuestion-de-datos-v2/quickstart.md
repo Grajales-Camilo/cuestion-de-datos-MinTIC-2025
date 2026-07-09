@@ -122,6 +122,16 @@ docker compose exec db psql -U usuario -d cuestion_de_datos -c "SELECT count(*) 
 Esperado en el sistema completo: `official_publishers > 0`, `catalog_datasets >= 7000`, `catalog_embeddings` cubre los datasets activos definidos por RNF-010 y `divipola_municipalities >= 1100`.
 > Atajo: para probar sin ingesta completa, `python scripts/ingest_catalog.py --limit 200` indexa una muestra (suficiente para desarrollo, insuficiente para RNF-010).
 
+**Ampliar publicadores oficiales (seguimiento de T-201A).** Después de correr `python scripts/audit_publisher_coverage.py`, `backend/data/official_publishers_coverage.json` prioriza por volumen los textos de `publisher` aún sin resolver. Para agregar entidades nuevas (con su `verification_source` ya verificado a mano) sin editar el JSON del fixture directamente, arma un CSV (`id,canonical_name,entity_type,verification_source,aliases,ambiguous_aliases,active`, alias separados por `|`) y ejecuta:
+```powershell
+python scripts/add_publishers.py --input ruta.csv --dry-run   # valida y muestra el resumen sin escribir
+python scripts/add_publishers.py --input ruta.csv             # escribe backend/data/official_publishers.json
+python scripts/load_official_publishers.py                    # aplica el fixture actualizado a la base local
+python scripts/ingest_catalog.py                               # re-resuelve publisher_verification_status del catalogo ya ingerido (idempotente)
+python scripts/audit_publisher_coverage.py                     # regenera el reporte de cobertura
+```
+El script rechaza (sin escribir nada) alias no ambiguos que ya pertenezcan a otra entidad, `canonical_name` que colisione con un alias existente, y cambios de campo sobre un `id` ya existente salvo que uses `--update-existing`. Detalle en el docstring de `backend/scripts/add_publishers.py`.
+
 ## 4. Levantar los servicios
 
 Terminal 1 — backend:

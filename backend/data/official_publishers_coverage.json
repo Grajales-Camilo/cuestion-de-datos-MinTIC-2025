@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-07-09T01:40:49.299813+00:00",
-  "total_datasets": 8417,
+  "generated_at": "2026-07-09T02:24:07.653122+00:00",
+  "total_datasets": 8423,
   "total_active_datasets": 8416,
   "counts_by_status": {
-    "verified": 2376,
-    "unknown": 6040
+    "verified": 2433,
+    "unknown": 5983
   },
-  "verified_ratio_active": 0.2823,
+  "verified_ratio_active": 0.2891,
   "coverage_target": 0.9,
   "coverage_gap": true,
-  "gap_explanation": "Cobertura verified 28.23% de datasets tabulares activos, por debajo del objetivo 90% (research.md #7, tasks.md T-201A). Brecha documentada explicitamente, tal como permite el criterio de aceptacion; unresolved_publisher_candidates prioriza por volumen las siguientes ampliaciones del fixture.",
+  "gap_explanation": "Cobertura verified 28.91% de datasets tabulares activos, por debajo del objetivo 90% (research.md #7, tasks.md T-201A). Brecha documentada explicitamente, tal como permite el criterio de aceptacion; unresolved_publisher_candidates prioriza por volumen las siguientes ampliaciones del fixture.",
   "ambiguous_aliases": [
     {
       "alias_normalized": "SECRETARIA DE EDUCACION",
@@ -615,17 +615,6 @@
       ]
     },
     {
-      "publisher_text": "Agencia Nacional de Seguridad Vial",
-      "dataset_count": 12,
-      "sample_dataset_ids": [
-        "24ny-2dhf",
-        "3at4-zibc",
-        "9uuv-ijtc",
-        "cm2t-qreq",
-        "fr9f-9g4b"
-      ]
-    },
-    {
       "publisher_text": "Alcaldia_de_Santa_Rosa_de_Cabal",
       "dataset_count": 12,
       "sample_dataset_ids": [
@@ -1118,6 +1107,17 @@
         "bzeh-ecuk",
         "fkdi-8hm8",
         "hexk-9eta"
+      ]
+    },
+    {
+      "publisher_text": "datosabiertos@supertransporte.gov.co",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "5r3g-zv5z",
+        "7atu-2b28",
+        "7tvr-cx9w",
+        "aaqx-he6s",
+        "atkg-vhpp"
       ]
     }
   ]
