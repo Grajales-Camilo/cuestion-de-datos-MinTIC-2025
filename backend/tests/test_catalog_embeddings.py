@@ -6,6 +6,7 @@ from app.catalog.embeddings import (
     ensure_embedding_dimensions,
     require_supported_embedding_model,
 )
+from app.catalog.search import build_text_search_query
 
 
 def test_require_supported_embedding_model_accepts_decided_model() -> None:
@@ -21,3 +22,11 @@ def test_require_supported_embedding_model_rejects_other_models(model) -> None:
 def test_ensure_embedding_dimensions_rejects_wrong_dimension() -> None:
     with pytest.raises(ValueError, match=str(EMBEDDING_DIMENSION)):
         ensure_embedding_dimensions("aaaa-0001", [0.1, 0.2])
+
+
+def test_build_text_search_query_expands_escolar_terms() -> None:
+    text_query = build_text_search_query("deserción escolar")
+
+    assert "desercion:*" in text_query
+    assert "escolar:*" in text_query
+    assert "educacion:*" in text_query
