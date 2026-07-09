@@ -1,6 +1,6 @@
 {
   "fixture_version": "2026-07-09",
-  "updated_at": "2026-07-09T00:00:00Z",
+  "updated_at": "2026-07-09T02:19:59Z",
   "publishers": [
     {
       "id": "dane",
@@ -66,6 +66,11 @@
         },
         {
           "alias_raw": "Ministerio de Hacienda y Credito Publico",
+          "verification_source": "https://www.minhacienda.gov.co"
+        },
+        {
+          "alias_raw": "Ministerio de Hacienda",
+          "ambiguous": false,
           "verification_source": "https://www.minhacienda.gov.co"
         }
       ]
@@ -278,6 +283,11 @@
         {
           "alias_raw": "UPRA",
           "verification_source": "https://upra.gov.co/en/upra/acerca-de-la-upra/quienes-somos"
+        },
+        {
+          "alias_raw": "Unidad de Planificación de Tierras Rurales Adecuación de Tierras y Usos Agropecuarios",
+          "ambiguous": false,
+          "verification_source": "https://upra.gov.co/en/upra/acerca-de-la-upra/quienes-somos"
         }
       ]
     },
@@ -388,6 +398,11 @@
         {
           "alias_raw": "Datos Abiertos Función Pública",
           "verification_source": "https://www1.funcionpublica.gov.co/quienes-somos/funciones-generales"
+        },
+        {
+          "alias_raw": "DAFP",
+          "ambiguous": false,
+          "verification_source": "https://www1.funcionpublica.gov.co/quienes-somos/funciones-generales"
         }
       ]
     },
@@ -455,7 +470,23 @@
       "entity_type": "departamento_administrativo",
       "active": true,
       "verification_source": "https://www.prosperidadsocial.gov.co/",
-      "aliases": []
+      "aliases": [
+        {
+          "alias_raw": "Departamento Administrativo para la Prosperidad Social",
+          "ambiguous": false,
+          "verification_source": "https://www.prosperidadsocial.gov.co/"
+        },
+        {
+          "alias_raw": "DPS",
+          "ambiguous": false,
+          "verification_source": "https://www.prosperidadsocial.gov.co/"
+        },
+        {
+          "alias_raw": "Prosperidad Social",
+          "ambiguous": false,
+          "verification_source": "https://www.prosperidadsocial.gov.co/"
+        }
+      ]
     },
     {
       "id": "corte-constitucional",
@@ -526,7 +557,13 @@
       "entity_type": "ministerio",
       "active": true,
       "verification_source": "https://www.minvivienda.gov.co/",
-      "aliases": []
+      "aliases": [
+        {
+          "alias_raw": "Ministerio de Vivienda",
+          "ambiguous": false,
+          "verification_source": "https://www.minvivienda.gov.co/"
+        }
+      ]
     },
     {
       "id": "gobernacion-valle-cauca",
@@ -743,6 +780,477 @@
           "verification_source": "https://www.risaralda.gov.co/ (dominio institucional .gov.co)"
         }
       ]
+    },
+    {
+      "id": "colombia-compra-eficiente",
+      "canonical_name": "Agencia Nacional de Contratación Pública - Colombia Compra Eficiente",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.colombiacompra.gov.co/transparencia/quienes-somos",
+      "aliases": [
+        {
+          "alias_raw": "Colombia Compra Eficiente",
+          "ambiguous": false,
+          "verification_source": "https://www.colombiacompra.gov.co/transparencia/quienes-somos"
+        },
+        {
+          "alias_raw": "ANCP",
+          "ambiguous": false,
+          "verification_source": "https://www.colombiacompra.gov.co/transparencia/quienes-somos"
+        }
+      ]
+    },
+    {
+      "id": "ansv",
+      "canonical_name": "Agencia Nacional de Seguridad Vial",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://ansv.gov.co/es/agencia",
+      "aliases": [
+        {
+          "alias_raw": "ANSV",
+          "ambiguous": false,
+          "verification_source": "https://ansv.gov.co/es/agencia"
+        }
+      ]
+    },
+    {
+      "id": "apc-colombia",
+      "canonical_name": "Agencia Presidencial de Cooperación Internacional de Colombia",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.apccolombia.gov.co/quienes-somos",
+      "aliases": [
+        {
+          "alias_raw": "APC-Colombia",
+          "ambiguous": false,
+          "verification_source": "https://www.apccolombia.gov.co/quienes-somos"
+        },
+        {
+          "alias_raw": "APC Colombia",
+          "ambiguous": false,
+          "verification_source": "https://www.apccolombia.gov.co/quienes-somos"
+        }
+      ]
+    },
+    {
+      "id": "auditoria-general",
+      "canonical_name": "Auditoría General de la República",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.auditoria.gov.co/en/web/guest/inicio",
+      "aliases": []
+    },
+    {
+      "id": "anla",
+      "canonical_name": "Autoridad Nacional de Licencias Ambientales",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.anla.gov.co/nosotros/institucional/somos-anla",
+      "aliases": [
+        {
+          "alias_raw": "ANLA",
+          "ambiguous": false,
+          "verification_source": "https://www.anla.gov.co/nosotros/institucional/somos-anla"
+        }
+      ]
+    },
+    {
+      "id": "camara-representantes",
+      "canonical_name": "Cámara de Representantes",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.camara.gov.co/que-es-la-camara/",
+      "aliases": []
+    },
+    {
+      "id": "congreso",
+      "canonical_name": "Congreso de la República de Colombia",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.mininterior.gov.co/congreso-de-la-republica-de-colombia/",
+      "aliases": []
+    },
+    {
+      "id": "consejo-nacional-electoral",
+      "canonical_name": "Consejo Nacional Electoral",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.cne.gov.co/la-entidad/acerca-del-cne",
+      "aliases": [
+        {
+          "alias_raw": "CNE",
+          "ambiguous": false,
+          "verification_source": "https://www.cne.gov.co/la-entidad/acerca-del-cne"
+        }
+      ]
+    },
+    {
+      "id": "dapre",
+      "canonical_name": "Departamento Administrativo de la Presidencia de la República",
+      "entity_type": "departamento_administrativo",
+      "active": true,
+      "verification_source": "https://dapre.presidencia.gov.co/dapre",
+      "aliases": [
+        {
+          "alias_raw": "DAPRE",
+          "ambiguous": false,
+          "verification_source": "https://dapre.presidencia.gov.co/dapre"
+        }
+      ]
+    },
+    {
+      "id": "dian",
+      "canonical_name": "Dirección de Impuestos y Aduanas Nacionales",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.dian.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "DIAN",
+          "ambiguous": false,
+          "verification_source": "https://www.dian.gov.co/"
+        },
+        {
+          "alias_raw": "Unidad Administrativa Especial Dirección de Impuestos y Aduanas Nacionales",
+          "ambiguous": false,
+          "verification_source": "https://www.dian.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "fiscalia",
+      "canonical_name": "Fiscalía General de la Nación",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.fiscalia.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "igac",
+      "canonical_name": "Instituto Geográfico Agustín Codazzi",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.igac.gov.co/quienes-somos",
+      "aliases": [
+        {
+          "alias_raw": "IGAC",
+          "ambiguous": false,
+          "verification_source": "https://www.igac.gov.co/quienes-somos"
+        }
+      ]
+    },
+    {
+      "id": "instituto-nacional-salud",
+      "canonical_name": "Instituto Nacional de Salud",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.ins.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "INS",
+          "ambiguous": false,
+          "verification_source": "https://www.ins.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "mindefensa",
+      "canonical_name": "Ministerio de Defensa Nacional",
+      "entity_type": "ministerio",
+      "active": true,
+      "verification_source": "https://www.mindefensa.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "Ministerio de Defensa",
+          "ambiguous": false,
+          "verification_source": "https://www.mindefensa.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "mintransporte",
+      "canonical_name": "Ministerio de Transporte",
+      "entity_type": "ministerio",
+      "active": true,
+      "verification_source": "https://mintransporte.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "parques-nacionales",
+      "canonical_name": "Parques Nacionales Naturales de Colombia",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.parquesnacionales.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "registraduria",
+      "canonical_name": "Registraduría Nacional del Estado Civil",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.registraduria.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "RNEC",
+          "ambiguous": false,
+          "verification_source": "https://www.registraduria.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "secretaria-transparencia",
+      "canonical_name": "Secretaría de Transparencia de la Presidencia de la República",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.secretariatransparencia.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "senado",
+      "canonical_name": "Senado de la República",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.senado.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "Senado de la Republica",
+          "ambiguous": false,
+          "verification_source": "https://www.senado.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "servicio-geologico",
+      "canonical_name": "Servicio Geológico Colombiano",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.sgc.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "SGC",
+          "ambiguous": false,
+          "verification_source": "https://www.sgc.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "servicios-postales-nacionales",
+      "canonical_name": "Servicios Postales Nacionales S.A.",
+      "entity_type": "empresa_estado",
+      "active": true,
+      "verification_source": "https://www.4-72.com.co/institucional/publicaciones/3/quienes-somos/",
+      "aliases": [
+        {
+          "alias_raw": "4-72",
+          "ambiguous": false,
+          "verification_source": "https://www.4-72.com.co/institucional/publicaciones/3/quienes-somos/"
+        }
+      ]
+    },
+    {
+      "id": "supernotariado",
+      "canonical_name": "Superintendencia de Notariado y Registro",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.supernotariado.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "supertransporte",
+      "canonical_name": "Superintendencia de Transporte",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.supertransporte.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "upme",
+      "canonical_name": "Unidad de Planeación Minero Energética",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www1.upme.gov.co/Entornoinstitucional/Paginas/quienes-somos.aspx",
+      "aliases": [
+        {
+          "alias_raw": "UPME",
+          "ambiguous": false,
+          "verification_source": "https://www1.upme.gov.co/Entornoinstitucional/Paginas/quienes-somos.aspx"
+        }
+      ]
+    },
+    {
+      "id": "ungrd",
+      "canonical_name": "Unidad Nacional para la Gestión del Riesgo de Desastres",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://portal.gestiondelriesgo.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "UNGRD",
+          "ambiguous": false,
+          "verification_source": "https://portal.gestiondelriesgo.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "gobernacion-arauca",
+      "canonical_name": "Gobernación de Arauca",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://arauca.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-bolivar",
+      "canonical_name": "Gobernación de Bolívar",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.bolivar.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-caqueta",
+      "canonical_name": "Gobernación del Caquetá",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.caqueta.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-cauca",
+      "canonical_name": "Gobernación del Cauca",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://cauca.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-cesar",
+      "canonical_name": "Gobernación del Cesar",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://cesar.gov.co/d/index.php/es/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-choco",
+      "canonical_name": "Gobernación del Chocó",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.choco.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-cordoba",
+      "canonical_name": "Gobernación de Córdoba",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.cordoba.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-cundinamarca",
+      "canonical_name": "Gobernación de Cundinamarca",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.cundinamarca.gov.co/home/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-guainia",
+      "canonical_name": "Gobernación del Guainía",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.guainia.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-guaviare",
+      "canonical_name": "Gobernación de Guaviare",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.guaviare.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-huila",
+      "canonical_name": "Gobernación del Huila",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.huila.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-guajira",
+      "canonical_name": "Gobernación de La Guajira",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.laguajira.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-narino",
+      "canonical_name": "Gobernación de Nariño",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://narino.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-norte-santander",
+      "canonical_name": "Gobernación de Norte de Santander",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.nortedesantander.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-putumayo",
+      "canonical_name": "Gobernación del Putumayo",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.putumayo.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-quindio",
+      "canonical_name": "Gobernación del Quindío",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.quindio.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-san-andres",
+      "canonical_name": "Gobernación del Archipiélago de San Andrés, Providencia y Santa Catalina",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.sanandres.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-tolima",
+      "canonical_name": "Gobernación del Tolima",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://tolima.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-vaupes",
+      "canonical_name": "Gobernación del Vaupés",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.vaupes.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-vichada",
+      "canonical_name": "Gobernación de Vichada",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.vichada.gov.co/",
+      "aliases": []
     }
   ],
   "known_private_publishers": [
@@ -750,6 +1258,16 @@
       "name_raw": "Universidad de los Andes",
       "verification_source": "https://www.uniandes.edu.co/es/la-universidad",
       "note": "Universidad privada sin animo de lucro, no es una entidad estatal; no forma parte del registro oficial."
+    },
+    {
+      "name_raw": "Confederación Colombiana de Cámaras de Comercio",
+      "verification_source": "https://confecamaras.org.co/ (\"es una entidad privada, de utilidad comun, gremial y sin animo de lucro\")",
+      "note": "Confecamaras es una entidad de derecho privado (gremio de las camaras de comercio) que ejerce funciones publicas por delegacion legal; no es una entidad estatal y no forma parte del registro oficial."
+    },
+    {
+      "name_raw": "Confecámaras",
+      "verification_source": "https://confecamaras.org.co/ (\"es una entidad privada, de utilidad comun, gremial y sin animo de lucro\")",
+      "note": "Forma corta de Confederación Colombiana de Cámaras de Comercio; misma entidad privada."
     }
   ]
 }
