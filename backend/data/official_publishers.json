@@ -1,6 +1,6 @@
 {
   "fixture_version": "2026-07-09",
-  "updated_at": "2026-07-09T02:19:59Z",
+  "updated_at": "2026-07-09T03:15:13Z",
   "publishers": [
     {
       "id": "dane",
@@ -15,6 +15,11 @@
         },
         {
           "alias_raw": "Departamento Administrativo Nacional de Estadistica",
+          "verification_source": "https://www.dane.gov.co/index.php/acerca-del-dane"
+        },
+        {
+          "alias_raw": "Departamento Administrativo Nacional de Estadística - DANE",
+          "ambiguous": false,
           "verification_source": "https://www.dane.gov.co/index.php/acerca-del-dane"
         }
       ]
@@ -153,6 +158,11 @@
         {
           "alias_raw": "MinAmbiente",
           "verification_source": "https://www.minambiente.gov.co"
+        },
+        {
+          "alias_raw": "Ministerio de Ambiente y Desarrollo Sostenible - MinAmbiente",
+          "ambiguous": false,
+          "verification_source": "https://www.minambiente.gov.co"
         }
       ]
     },
@@ -165,6 +175,11 @@
       "aliases": [
         {
           "alias_raw": "MinAgricultura",
+          "verification_source": "https://www.minagricultura.gov.co"
+        },
+        {
+          "alias_raw": "Ministerio de Agricultura",
+          "ambiguous": false,
           "verification_source": "https://www.minagricultura.gov.co"
         }
       ]
@@ -797,6 +812,11 @@
           "alias_raw": "ANCP",
           "ambiguous": false,
           "verification_source": "https://www.colombiacompra.gov.co/transparencia/quienes-somos"
+        },
+        {
+          "alias_raw": "Datos Abiertos CCE",
+          "ambiguous": false,
+          "verification_source": "https://www.colombiacompra.gov.co/transparencia/quienes-somos"
         }
       ]
     },
@@ -830,6 +850,11 @@
           "alias_raw": "APC Colombia",
           "ambiguous": false,
           "verification_source": "https://www.apccolombia.gov.co/quienes-somos"
+        },
+        {
+          "alias_raw": "Agencia Presidencial de Cooperación Internacional de Colombia APC-Colombia",
+          "ambiguous": false,
+          "verification_source": "https://www.apccolombia.gov.co/quienes-somos"
         }
       ]
     },
@@ -839,7 +864,13 @@
       "entity_type": "otra_estatal",
       "active": true,
       "verification_source": "https://www.auditoria.gov.co/en/web/guest/inicio",
-      "aliases": []
+      "aliases": [
+        {
+          "alias_raw": "Auditora Delegada para la Vigilancia de la Gestión Fiscal",
+          "ambiguous": false,
+          "verification_source": "https://www.auditoria.gov.co/en/web/guest/inicio"
+        }
+      ]
     },
     {
       "id": "anla",
@@ -951,6 +982,11 @@
           "alias_raw": "INS",
           "ambiguous": false,
           "verification_source": "https://www.ins.gov.co/"
+        },
+        {
+          "alias_raw": "DatosabiertosINS",
+          "ambiguous": false,
+          "verification_source": "https://www.ins.gov.co/"
         }
       ]
     },
@@ -965,6 +1001,11 @@
           "alias_raw": "Ministerio de Defensa",
           "ambiguous": false,
           "verification_source": "https://www.mindefensa.gov.co/"
+        },
+        {
+          "alias_raw": "Observatorio MDN",
+          "ambiguous": false,
+          "verification_source": "https://www.mindefensa.gov.co/"
         }
       ]
     },
@@ -974,7 +1015,13 @@
       "entity_type": "ministerio",
       "active": true,
       "verification_source": "https://mintransporte.gov.co/",
-      "aliases": []
+      "aliases": [
+        {
+          "alias_raw": "Mintransporte",
+          "ambiguous": false,
+          "verification_source": "https://mintransporte.gov.co/"
+        }
+      ]
     },
     {
       "id": "parques-nacionales",
@@ -993,6 +1040,11 @@
       "aliases": [
         {
           "alias_raw": "RNEC",
+          "ambiguous": false,
+          "verification_source": "https://www.registraduria.gov.co/"
+        },
+        {
+          "alias_raw": "datos abiertos RNEC",
           "ambiguous": false,
           "verification_source": "https://www.registraduria.gov.co/"
         }
@@ -1045,6 +1097,11 @@
           "alias_raw": "4-72",
           "ambiguous": false,
           "verification_source": "https://www.4-72.com.co/institucional/publicaciones/3/quienes-somos/"
+        },
+        {
+          "alias_raw": "Datos abiertos SPN",
+          "ambiguous": false,
+          "verification_source": "https://www.4-72.com.co/institucional/publicaciones/3/quienes-somos/"
         }
       ]
     },
@@ -1062,7 +1119,13 @@
       "entity_type": "otra_estatal",
       "active": true,
       "verification_source": "https://www.supertransporte.gov.co/",
-      "aliases": []
+      "aliases": [
+        {
+          "alias_raw": "datosabiertos@supertransporte.gov.co",
+          "ambiguous": false,
+          "verification_source": "https://www.supertransporte.gov.co/"
+        }
+      ]
     },
     {
       "id": "upme",
@@ -1251,6 +1314,25 @@
       "active": true,
       "verification_source": "https://www.vichada.gov.co/",
       "aliases": []
+    },
+    {
+      "id": "invias",
+      "canonical_name": "Instituto Nacional de Vías",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.invias.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "INVIAS",
+          "ambiguous": false,
+          "verification_source": "https://www.invias.gov.co/"
+        },
+        {
+          "alias_raw": "Instituto Nacional de Vías - INVIAS",
+          "ambiguous": false,
+          "verification_source": "https://www.invias.gov.co/"
+        }
+      ]
     }
   ],
   "known_private_publishers": [
@@ -1268,6 +1350,16 @@
       "name_raw": "Confecámaras",
       "verification_source": "https://confecamaras.org.co/ (\"es una entidad privada, de utilidad comun, gremial y sin animo de lucro\")",
       "note": "Forma corta de Confederación Colombiana de Cámaras de Comercio; misma entidad privada."
+    },
+    {
+      "name_raw": "serviciorues",
+      "verification_source": "Hoja de Ruta Nacional de Datos Abiertos Estrategicos (MinTIC, datos.gov.co/dataset/fn2v-r4gu), fila PIDA23-Registro de companias: entidad responsable = Confederacion Colombiana de Camaras de Comercio (Confecamaras).",
+      "note": "RUES (Registro Unico Empresarial y Social) es administrado por las Camaras de Comercio a traves de Confecamaras, entidad privada; no es una entidad estatal."
+    },
+    {
+      "name_raw": "RUNT 2.0",
+      "verification_source": "https://mintransporte.gov.co/publicaciones/11445/wwwruntgovco-unico-portal-disponible-del-runt/ (concesion 604 de 2022, operador Concesion RUNT 2.0 S.A.S.)",
+      "note": "El Registro Unico Nacional de Transito opera bajo un contrato de concesion privada (Concesion RUNT 2.0 S.A.S.) con el Ministerio de Transporte, no es una entidad estatal directa."
     }
   ]
 }

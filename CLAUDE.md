@@ -30,6 +30,15 @@ Si dos documentos se contradicen:
 3. Reportar el conflicto.
 4. Aplicar el documento de mayor jerarquía.
 
+## Navegación del repositorio con MCP
+
+- Este repositorio debe navegarse primero con `codebase-memory-mcp`.
+- Antes de leer archivos de forma amplia, hacer búsquedas recursivas o inspeccionar directorios completos, consultar el grafo MCP para ubicar módulos, símbolos, rutas, dependencias, pruebas y hotspots relacionados.
+- Abrir solo los archivos necesarios para verificar, implementar o probar el cambio solicitado.
+- Si el índice MCP no existe, está desactualizado o no responde, indexar o actualizar el repositorio antes de continuar.
+- Si el resultado del MCP contradice el contenido real de los archivos, prevalece el contenido real y se debe reportar la discrepancia.
+- No usar el MCP para alterar la jerarquía documental definida en este archivo.
+
 ## Desarrollo
 
 - Toda implementación debe mencionar los requisitos `RF-###` o `RNF-###`
