@@ -1,15 +1,16 @@
 {
-  "generated_at": "2026-07-09T02:24:07.653122+00:00",
+  "generated_at": "2026-07-09T03:18:27.630809+00:00",
   "total_datasets": 8423,
   "total_active_datasets": 8416,
   "counts_by_status": {
-    "verified": 2433,
-    "unknown": 5983
+    "verified": 2611,
+    "unknown": 5799,
+    "private_or_non_official": 6
   },
-  "verified_ratio_active": 0.2891,
+  "verified_ratio_active": 0.3102,
   "coverage_target": 0.9,
   "coverage_gap": true,
-  "gap_explanation": "Cobertura verified 28.91% de datasets tabulares activos, por debajo del objetivo 90% (research.md #7, tasks.md T-201A). Brecha documentada explicitamente, tal como permite el criterio de aceptacion; unresolved_publisher_candidates prioriza por volumen las siguientes ampliaciones del fixture.",
+  "gap_explanation": "Cobertura verified 31.02% de datasets tabulares activos, por debajo del objetivo 90% (research.md #7, tasks.md T-201A). Brecha documentada explicitamente, tal como permite el criterio de aceptacion; unresolved_publisher_candidates prioriza por volumen las siguientes ampliaciones del fixture.",
   "ambiguous_aliases": [
     {
       "alias_normalized": "SECRETARIA DE EDUCACION",
@@ -32,17 +33,6 @@
       ]
     },
     {
-      "publisher_text": "Datos Abiertos CCE",
-      "dataset_count": 49,
-      "sample_dataset_ids": [
-        "36vw-pbq2",
-        "3hdv-smhz",
-        "3skv-9na7",
-        "3xwx-53wt",
-        "4ex9-j3n8"
-      ]
-    },
-    {
       "publisher_text": "Universidad Pedagógica y Tecnológica de Colombia",
       "dataset_count": 45,
       "sample_dataset_ids": [
@@ -51,17 +41,6 @@
         "3ms3-pdns",
         "3v96-qv64",
         "46in-76rd"
-      ]
-    },
-    {
-      "publisher_text": "Observatorio MDN",
-      "dataset_count": 44,
-      "sample_dataset_ids": [
-        "26zg-9p9r",
-        "3cjd-phaj",
-        "3pur-d5ez",
-        "3wcs-8xp9",
-        "4rxi-8m8d"
       ]
     },
     {
@@ -263,17 +242,6 @@
       ]
     },
     {
-      "publisher_text": "Ministerio de Agricultura",
-      "dataset_count": 17,
-      "sample_dataset_ids": [
-        "297b-g54g",
-        "2pnw-mmge",
-        "39sf-amtm",
-        "3usu-fpk5",
-        "42df-c2gg"
-      ]
-    },
-    {
       "publisher_text": "ALCALDÍA DE COTA",
       "dataset_count": 16,
       "sample_dataset_ids": [
@@ -417,17 +385,6 @@
       ]
     },
     {
-      "publisher_text": "DatosabiertosINS",
-      "dataset_count": 14,
-      "sample_dataset_ids": [
-        "4hyg-wa9d",
-        "5bbt-dm6e",
-        "84d4-vfax",
-        "982z-3w9e",
-        "dkws-353q"
-      ]
-    },
-    {
       "publisher_text": "Dirección de Seguridad Ciudadana",
       "dataset_count": 14,
       "sample_dataset_ids": [
@@ -568,17 +525,6 @@
         "6tk6-g6zd",
         "8u7x-6qcd",
         "csu3-wqw4"
-      ]
-    },
-    {
-      "publisher_text": "Ministerio de Ambiente y Desarrollo Sostenible - MinAmbiente",
-      "dataset_count": 13,
-      "sample_dataset_ids": [
-        "832u-c3pg",
-        "929b-nywn",
-        "9a89-px8u",
-        "d75b-uyph",
-        "e8q4-8mx9"
       ]
     },
     {
@@ -799,17 +745,6 @@
         "4c8c-kmwq",
         "5nek-piwp",
         "7npu-4qa5"
-      ]
-    },
-    {
-      "publisher_text": "datos abiertos RNEC",
-      "dataset_count": 11,
-      "sample_dataset_ids": [
-        "24zd-s9xt",
-        "2bj9-hehn",
-        "2r2t-ej3x",
-        "436c-83m9",
-        "75f2-fe2s"
       ]
     },
     {
@@ -1110,14 +1045,80 @@
       ]
     },
     {
-      "publisher_text": "datosabiertos@supertransporte.gov.co",
+      "publisher_text": "Empresa de Acueducto y Alcantarillado de Mosquera",
       "dataset_count": 9,
       "sample_dataset_ids": [
-        "5r3g-zv5z",
-        "7atu-2b28",
-        "7tvr-cx9w",
-        "aaqx-he6s",
-        "atkg-vhpp"
+        "2kdn-fhcd",
+        "4vwu-x8hi",
+        "8dq4-8npi",
+        "dryn-wbeu",
+        "ggqx-2hy4"
+      ]
+    },
+    {
+      "publisher_text": "esehospialpioxii",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "3d3d-vu2w",
+        "3pvf-jpvf",
+        "6hn6-48gx",
+        "dt6u-2gkm",
+        "m8se-7v3b"
+      ]
+    },
+    {
+      "publisher_text": "E.S.E Hospital San Vicente de Paúl",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "4nut-g5f7",
+        "7xee-5e6i",
+        "d53j-hn85",
+        "exir-se42",
+        "hqe8-pjkj"
+      ]
+    },
+    {
+      "publisher_text": "Geovanny Mancilla",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "3pfh-yj57",
+        "9v9c-htja",
+        "ejag-pgsd",
+        "gxmq-aa4t",
+        "ra9d-rjtg"
+      ]
+    },
+    {
+      "publisher_text": "IUPB",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "52wd-eep7",
+        "7f9g-u2ha",
+        "9pap-w58t",
+        "d3eh-arg3",
+        "d77h-gdka"
+      ]
+    },
+    {
+      "publisher_text": "Jurisdicción Especial para la Paz - JEP",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "2ggc-hzbh",
+        "469w-bt4f",
+        "7zwj-m2rv",
+        "du48-9apm",
+        "pbdd-i59g"
+      ]
+    },
+    {
+      "publisher_text": "personeriatocancipa",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "46c4-mye7",
+        "4f76-w9mn",
+        "g38u-4pun",
+        "h3dk-52a2",
+        "h6yt-ut22"
       ]
     }
   ]
