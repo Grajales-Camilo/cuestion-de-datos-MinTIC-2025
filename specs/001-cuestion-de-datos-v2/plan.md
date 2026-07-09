@@ -68,7 +68,7 @@ entrada ─▶ planificador ─▶ enrutador ─┬─▶ buscar_catalogo ──
 | API | FastAPI + Uvicorn | Estándar de la industria, tipado con Pydantic, SSE nativo. |
 | Orquestación | LangGraph (+ LangChain Core) + `langgraph-checkpoint-postgres` | Grafo de estados con checkpoints PostgreSQL; `thread_id = run_id`, `.setup()` idempotente y borrado con `adelete_thread(run_id)` (research.md §10). |
 | Capa LLM | `langchain-google-genai` (default) + `langchain-anthropic` (comparativa OE3) | RF-206: intercambio por configuración `LLM_PROVIDER`/`LLM_MODEL`. |
-| Embeddings | **DECISIÓN PENDIENTE** (ver [`research.md`](./research.md) §1). Candidatos: `intfloat/multilingual-e5-large` (local), `gemini-embedding-2` (gestionado) u otro modelo multilingüe actual justificado en research.md | La selección DEBE salir del benchmark reproducible de T-205; ningún candidato es ganador todavía. La dimensión vectorial y la migración definitiva dependen de esta decisión (T-104B). Las dependencias `sentence-transformers`/`torch` pueden existir solo como extra opcional `benchmark-embeddings` para investigación; la dependencia definitiva de runtime se agrega después de decidir. |
+| Embeddings | `gemini-embedding-2` (Google, gestionado), 768 dimensiones — decidido en T-205 (ver [`research.md`](./research.md) §1, 2026-07-09) | Empata en recall@10 con el candidato local (94,12%/90,91%) pero gana en latencia real (p95 41,8ms vs 120,2ms) y evita el costo de infraestructura del local: su pico de RAM medido (2,43 GB) excede el tier gratuito de Railway y consumiría de forma permanente parte del tier Hobby presupuestado. `langchain-google-genai` y `httpx` ya son dependencias de runtime (RF-206); no se agrega ninguna dependencia nueva. `sentence-transformers`/`torch` quedan solo en el extra opcional `benchmark-embeddings`, para reproducir el benchmark si hace falta reabrir la decisión. |
 | Validación datos | Pydantic + módulo propio `quality/` | La capa de calidad es lógica determinista propia (Art. I.4); no requiere framework pesado. |
 | HTTP externo | `httpx` (async, timeouts, retries) | Consultas Socrata concurrentes. |
 | Persistencia | SQLAlchemy async + `psycopg[binary,pool]` | Una sola estrategia asíncrona para FastAPI, repositorios y jobs; evita mezclar drivers. |
@@ -91,7 +91,7 @@ entrada ─▶ planificador ─▶ enrutador ─┬─▶ buscar_catalogo ──
   - **CI:** el job backend de GitHub Actions usa un servicio PostgreSQL+pgvector equivalente al local cuando ejecute pruebas de contrato o integración con DB. Exporta un `DATABASE_URL` de CI y valida extensiones antes de correr migraciones/pruebas. Las pruebas unitarias puras no necesitan el servicio.
   - **Despliegue:** servicio gestionado compatible (Supabase, Neon u otro; tier gratuito suficiente para el piloto). `DATABASE_URL=postgresql://usuario:clave@host-remoto:5432/base`.
 - Esquema completo en [`data-model.md`](./data-model.md). Migraciones con **Alembic**. La base local se crea y levanta en T-105; luego T-102 puede inicializar backend/checkpointer, T-104A configura Alembic y crea las tablas iniciales sin `catalog_embeddings`; la migración definitiva de `catalog_embeddings` se crea DESPUÉS del benchmark de embeddings (orden T-105 → T-102 → T-104A → T-106 → T-201 → T-201A → T-202 → T-205 → T-104B, ver tasks.md).
-- T-104B es condicional al resultado de T-205: si la dimensión elegida es `<= 2000`, crea `vector(<DIM>)` + HNSW con `vector_cosine_ops`; si es `> 2000`, debe cambiar explícitamente a `halfvec(<DIM>)` y su clase de operador correspondiente, documentando la decisión en `research.md`, `data-model.md`, `.env.example`, `plan.md` y `quickstart.md` en el mismo PR.
+- T-205 decidió `gemini-embedding-2` a 768 dimensiones (`research.md` §1, 2026-07-09; `768 <= 2000`). T-104B queda desbloqueada: crea `vector(768)` + HNSW con `vector_cosine_ops` (no requiere `halfvec`).
 
 ### Benchmark de embeddings (T-205)
 
@@ -287,7 +287,7 @@ v2.0 se declara terminada cuando: (1) todos los RF de spec.md están implementad
 
 ## 12. Configuración del backend (T-102, RF/RNF relacionados)
 
-Estas variables son la fuente para construir `backend/.env.example`. No se fijan secretos reales. `EMBEDDING_MODEL` queda sin valor por defecto hasta T-205.
+Estas variables son la fuente para construir `backend/.env.example`. No se fijan secretos reales. `EMBEDDING_MODEL` quedó fijado por T-205 (`research.md` §1, 2026-07-09).
 
 | Variable | Propósito | Tipo | Default documental | Obligatoria | Entornos | Validaciones | Requisitos |
 |---|---|---|---|---|---|---|---|
@@ -297,7 +297,7 @@ Estas variables son la fuente para construir `backend/.env.example`. No se fijan
 | `SOCRATA_APP_TOKEN` | Aumentar límites de datos.gov.co | string secreto | ninguno | Sí | dev/prod/eval | No se envía al cliente ni logs | RF-207, RNF-011 |
 | `LLM_PROVIDER` | Selección de proveedor LLM | enum `google`/`anthropic` | `google` | Sí | dev/prod/eval | Debe estar soportado por factory | RF-206 |
 | `LLM_MODEL` | Modelo del proveedor LLM | string | `gemini-2.5-flash` | Sí | dev/prod/eval | Compatible con `LLM_PROVIDER`; override por request solo con `EVAL_MODE=true` | RF-206, RF-601 |
-| `EMBEDDING_MODEL` | Modelo elegido para embeddings | string | PENDIENTE T-205 | Sí desde T-203 | dev/prod/eval | Debe coincidir con research.md §1 y dimensión migrada en T-104B | RF-301, T-205 |
+| `EMBEDDING_MODEL` | Modelo elegido para embeddings | string | `gemini-embedding-2` | Sí desde T-203 | dev/prod/eval | Debe coincidir con research.md §1 (768 dim) y dimensión migrada en T-104B | RF-301, T-205 |
 | `AGENT_MAX_STEPS` | Presupuesto máximo del agente | int | `10` | Sí | dev/prod/eval | `1 <= valor <= 25` | RF-201 |
 | `RUN_MAX_DURATION_S` | Duración máxima por corrida | int segundos | `600` | Sí | dev/prod/eval | Mayor que 0; al exceder termina `failed/RUN_TIMEOUT` | RF-209, RNF-001 |
 | `RUN_HEARTBEAT_TIMEOUT_S` | Umbral para worker muerto | int segundos | `120` | Sí | dev/prod/eval | Mayor que heartbeat emitido; al vencer termina `interrupted` | RF-209 |
