@@ -30,3 +30,29 @@ def test_build_text_search_query_expands_escolar_terms() -> None:
     assert "desercion:*" in text_query
     assert "escolar:*" in text_query
     assert "educacion:*" in text_query
+
+
+def test_build_text_search_query_returns_plain_terms_when_no_synonym_matches() -> None:
+    """El boost lexical es un parche acotado (ver comentario de SYNONYMS_ES en
+    search.py): una consulta sin sinonimos conocidos no debe romperse ni
+    inventar terminos, solo usa las palabras literales de la consulta."""
+
+    text_query = build_text_search_query("trafico portuario maritimo")
+
+    assert "trafico:*" in text_query
+    assert "portuario:*" in text_query
+    assert "maritimo:*" in text_query
+    assert "educacion:*" not in text_query
+    assert "escolar:*" not in text_query
+
+
+def test_build_text_search_query_drops_terms_shorter_than_three_chars() -> None:
+    text_query = build_text_search_query("de la ANI")
+
+    assert "ani:*" in text_query
+    assert "de:*" not in text_query
+    assert "la:*" not in text_query
+
+
+def test_build_text_search_query_returns_empty_string_when_only_short_terms() -> None:
+    assert build_text_search_query("de la") == ""
