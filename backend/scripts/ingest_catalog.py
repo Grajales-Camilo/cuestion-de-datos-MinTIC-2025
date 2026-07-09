@@ -11,15 +11,14 @@ import argparse
 import asyncio
 import sys
 
-from sqlalchemy.ext.asyncio import create_async_engine
-
 from app.catalog.ingest import run_ingest
 from app.config import get_settings
+from app.db.engine import create_app_async_engine
 
 
 async def _run(limit: int | None, page_size: int, trigger: str, domain: str) -> None:
     settings = get_settings()
-    engine = create_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
+    engine = create_app_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
     try:
         summary = await run_ingest(
             engine,

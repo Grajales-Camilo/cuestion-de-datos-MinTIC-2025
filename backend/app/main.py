@@ -9,10 +9,10 @@ from fastapi import Depends, FastAPI, Header, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import get_settings
 from app.db.checkpointer import setup_checkpointer
+from app.db.engine import create_app_async_engine
 from app.db.publishers import (
     DEFAULT_FIXTURE_PATH,
     OfficialPublishersFixture,
@@ -141,7 +141,7 @@ def _run_catalog_check_with_selector(database_url: str) -> tuple[bool, CatalogIn
 
 
 async def _check_database_and_catalog_async(database_url: str) -> tuple[bool, CatalogIndexCheck]:
-    engine = create_async_engine(database_url, pool_pre_ping=True)
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
     catalog_index = CatalogIndexCheck(status="degraded", detail="not_initialized")
     try:
         async with engine.connect() as connection:
@@ -213,7 +213,7 @@ def _run_reload_publishers_with_selector(
 async def _reload_publishers_async(
     database_url: str, fixture: OfficialPublishersFixture
 ) -> ReloadSummary:
-    engine = create_async_engine(database_url, pool_pre_ping=True)
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
     try:
         return await reload_official_publishers(engine, fixture)
     finally:

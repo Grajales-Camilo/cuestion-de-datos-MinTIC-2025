@@ -5,6 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -187,6 +188,26 @@ class CatalogColumn(Base):
         nullable=False,
         server_default=text("'[]'::jsonb"),
     )
+
+
+class CatalogEmbedding(Base):
+    __tablename__ = "catalog_embeddings"
+    __table_args__ = (
+        Index(
+            "ix_catalog_embeddings_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
+
+    dataset_id: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("catalog_datasets.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    embedding: Mapped[list[float]] = mapped_column(Vector(768), nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class IngestRun(Base):

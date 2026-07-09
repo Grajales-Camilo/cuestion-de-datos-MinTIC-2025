@@ -11,16 +11,15 @@ import asyncio
 import sys
 from pathlib import Path
 
-from sqlalchemy.ext.asyncio import create_async_engine
-
 from app.config import get_settings
+from app.db.engine import create_app_async_engine
 from app.db.publishers import DEFAULT_FIXTURE_PATH, load_fixture, reload_official_publishers
 
 
 async def _run(fixture_path: Path) -> None:
     settings = get_settings()
     fixture = load_fixture(fixture_path)
-    engine = create_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
+    engine = create_app_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
     try:
         summary = await reload_official_publishers(engine, fixture)
     finally:
