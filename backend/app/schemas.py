@@ -44,3 +44,26 @@ class PublishersReloadSummary(BaseModel):
     publishers_updated: int
     aliases_created: int
     ambiguous_aliases: int
+
+
+class CatalogSearchResult(BaseModel):
+    dataset_id: str
+    name: str
+    publisher: str | None
+    official_publisher_id: str | None
+    publisher_verification_status: str
+    pii_risk_level: str
+    eligibility_status: str
+    eligibility_reasons: list[Any]
+    similarity: float
+    row_count: int | None
+    data_updated_at: str | None
+    latest_observed_cutoff_at: str | None
+    metadata_synced_at: str
+    index_stale: bool
+    columns_preview: list[str]
+
+
+class CatalogSearchResponse(BaseModel):
+    query: str
+    results: list[CatalogSearchResult]
