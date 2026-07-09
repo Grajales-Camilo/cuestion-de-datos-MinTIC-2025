@@ -5,7 +5,7 @@
 
 ---
 
-## 1. Decisión pendiente: modelo de embeddings — `PENDIENTE`
+## 1. Decisión registrada: modelo de embeddings — `DECIDIDA`
 
 **Problema.** El índice semántico del catálogo (RF-301…304) necesita un modelo de embeddings multilingüe con buen desempeño en español administrativo colombiano (títulos y descripciones de datasets estatales, topónimos DIVIPOLA). La elección fija la dimensión vectorial de `catalog_embeddings`, por lo que la migración definitiva de esa tabla (T-104B) NO puede crearse antes de esta decisión.
 
@@ -43,14 +43,32 @@ benchmark-embeddings = [
 
 T-205 debe comprobar y fijar versiones compatibles con Python 3.12 antes de ejecutar el benchmark local, registrar esas versiones y usar un comando reproducible equivalente a `pip install -e ".[dev,benchmark-embeddings]"`. Estas dependencias opcionales NO convierten al modelo local en decisión de runtime. La dependencia definitiva de runtime se incorpora solo después de que T-205 registre el modelo ganador, dimensión, tipo `vector`/`halfvec` y justificación.
 
-**Decisión:** _pendiente de T-205._
+**Decisión (T-205, 2026-07-09):** `gemini-embedding-2` (Google, gestionado), dimensión **768**, columna `vector(768)` con `vector_cosine_ops` (no requiere `halfvec`).
 
-**Consecuencias de la decisión (cuando se tome):**
-- Fija `<DIM>` en `data-model.md` §`catalog_embeddings` y en la migración de T-104B.
-- Fija `EMBEDDING_MODEL` en `.env.example` y quickstart.md.
+**Evidencia del benchmark** (`notebooks/01_benchmark_embeddings.ipynb`, muestra congelada `notebooks/fixtures/`: 200 datasets reales de T-201 + 1.155 filas reales de T-202; 34 consultas anotadas a mano, 11 territoriales):
+
+| Criterio | `intfloat/multilingual-e5-large` (local) | `gemini-embedding-2` (gestionado) |
+|---|---|---|
+| 1. recall@10 (todas) | 94,12% | 94,12% |
+| 2. recall@10 (territoriales) | 90,91% | 90,91% |
+| 3. dimensión | 1024 | 768 |
+| 4. latencia p95 embed consulta | 120,2 ms | 41,8 ms |
+| 5. costo (corpus 200 + 34 consultas, tokens reales) | $0,00 (API) | $0,0092 |
+| 5. costo reindexación completa (~8.416 datasets activos) | $0,00 (API) | $0,39 (evento raro, no recurrente) |
+| 6. ¿corre en el servidor del piloto? | RAM pico medida: **2.430,7 MB** — excede el tier gratuito de Railway (0,5 GB); como RF-302 exige embeber la consulta "en caliente" en el mismo proceso del backend, esa RAM queda reservada de forma permanente dentro del tier Hobby (~USD 5/mes, plan.md §2) sin importar el volumen de uso | Sin huella de RAM relevante en el backend (solo llamada HTTP) |
+| 7. dependencia de proveedor | Ninguna (pesos abiertos) | Alta (API de Google) |
+| 8. reproducibilidad | Sí (determinístico, CPU) | No (modelo cerrado, solo vía API) |
+| 9. tamaño de índice (catálogo completo) | 32,88 MB | 24,66 MB |
+| 10. compatibilidad pgvector | `vector(1024)` ✓ | `vector(768)` ✓ |
+
+**Justificación.** Recall@10 empata exactamente en ambos candidatos (criterios 1-2) — no discrimina. `gemini-embedding-2` gana en latencia real (~3x más rápido) y, sobre todo, evita el costo de infraestructura que impone el local: su pico de RAM medido (2,43 GB) es incompatible con el tier gratuito de Railway y consume de forma permanente una porción fija del tier Hobby presupuestado en `plan.md`, independientemente del volumen real de consultas. El costo de la API gestionada es marginal al volumen del piloto (`spec.md` SUP-02, ~500 investigaciones/mes) y la reindexación completa es un evento raro y acotado (~$0,39 al tamaño actual del catálogo). Se acepta conscientemente perder los criterios 7 y 8 (dependencia de proveedor y reproducibilidad, donde el local es superior): el proyecto ya tiene precedente arquitectónico de capa multi-proveedor para el LLM (RF-206), y cambiar de modelo de embeddings en el futuro exige regenerar el índice completo — costo conocido y acotado, no catastrófico. Firmado por Juan Camilo Grajales B., 2026-07-09.
+
+**Consecuencias de la decisión:**
+- `<DIM>` en `data-model.md` §`catalog_embeddings` queda fijado en `768`; T-104B puede crear la migración definitiva (`vector(768)` + `vector_cosine_ops`).
+- `EMBEDDING_MODEL=gemini-embedding-2` en `.env.example` y `quickstart.md`.
 - NO se mezclan embeddings de modelos o dimensiones distintas en un mismo índice; cambiar de modelo después exige regenerar el índice completo o versionar índices separados (tabla por modelo).
-- Si el elegido es gestionado, el cron de ingesta (T-206) necesita la API key correspondiente como secret.
-- Restricción de compatibilidad pgvector: si T-104B mantiene `vector(<DIM>) + vector_cosine_ops`, la dimensión elegida DEBE ser `DIM <= 2000`. Si el benchmark justifica un modelo/dimensión mayor, T-205 debe documentar explícitamente el cambio a `halfvec` y T-104B debe crear el tipo/índice correspondiente; no se permite seleccionar silenciosamente un embedding de 3072 dimensiones con `vector`.
+- El cron de ingesta (T-206) necesita `GOOGLE_API_KEY` como secret — ya es una dependencia existente del proyecto (LLM por defecto), no una nueva.
+- Restricción de compatibilidad pgvector satisfecha: `DIM=768 <= 2000`, se mantiene `vector` + `vector_cosine_ops`, sin necesidad de `halfvec`.
 
 ## 2. Decisión registrada: durabilidad de corridas y SSE — `DECIDIDA (piloto)`
 

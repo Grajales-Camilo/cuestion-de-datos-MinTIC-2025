@@ -55,7 +55,7 @@ ANTHROPIC_API_KEY=...               # requerido solo si LLM_PROVIDER=anthropic o
 SOCRATA_APP_TOKEN=...               # T-002
 LLM_PROVIDER=google
 LLM_MODEL=gemini-2.5-flash
-EMBEDDING_MODEL=<modelo decidido en T-205>
+EMBEDDING_MODEL=gemini-embedding-2         # decidido en T-205 (research.md §1, 2026-07-09), 768 dimensiones
 AGENT_MAX_STEPS=10
 RUN_MAX_DURATION_S=600
 RUN_HEARTBEAT_TIMEOUT_S=120
@@ -72,7 +72,7 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000         # producción: dominios de cu
 ADMIN_TOKEN=elige-un-token-largo-aleatorio
 EVAL_MODE=false
 ```
-> Antes de T-205, `.env.example` puede dejar `EMBEDDING_MODEL` vacío o documentado como pendiente para tareas que no construyen embeddings. En el sistema completo descrito por este quickstart, T-205 ya debe haber elegido el modelo y, si usa `vector(<DIM>)`, `DIM <= 2000` salvo que T-205 haya cambiado explícitamente a `halfvec`.
+> T-205 decidió `gemini-embedding-2` a 768 dimensiones (`research.md` §1, 2026-07-09) — `vector(768)`, `768 <= 2000`, no requiere `halfvec`. Para fases anteriores a T-205 en un checkout histórico, `.env.example` podía dejar `EMBEDDING_MODEL` vacío; en el sistema completo descrito por este quickstart ya no aplica.
 > Si tu Windows ya tiene otro PostgreSQL escuchando en `localhost:5432`, cambia el puerto publicado por Docker en el `.env` de la raíz, por ejemplo `POSTGRES_PORT=5433`, recrea el servicio con `docker compose up -d db` y usa el mismo puerto en `backend/.env`: `DATABASE_URL=postgresql://usuario:clave@localhost:5433/cuestion_de_datos`.
 
 PowerShell no carga `backend/.env` automáticamente. Para las comprobaciones manuales de esta guía que usan `$env:...`, define esas variables en la sesión actual con los mismos valores de `backend/.env`:
