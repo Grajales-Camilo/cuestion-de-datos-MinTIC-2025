@@ -1,6 +1,6 @@
 {
-  "fixture_version": "2026-07-08",
-  "updated_at": "2026-07-08T00:00:00Z",
+  "fixture_version": "2026-07-09",
+  "updated_at": "2026-07-09T00:00:00Z",
   "publishers": [
     {
       "id": "dane",
@@ -9,8 +9,14 @@
       "active": true,
       "verification_source": "https://www.dane.gov.co/index.php/acerca-del-dane",
       "aliases": [
-        {"alias_raw": "DANE", "verification_source": "https://www.dane.gov.co/index.php/acerca-del-dane"},
-        {"alias_raw": "Departamento Administrativo Nacional de Estadistica", "verification_source": "https://www.dane.gov.co/index.php/acerca-del-dane"}
+        {
+          "alias_raw": "DANE",
+          "verification_source": "https://www.dane.gov.co/index.php/acerca-del-dane"
+        },
+        {
+          "alias_raw": "Departamento Administrativo Nacional de Estadistica",
+          "verification_source": "https://www.dane.gov.co/index.php/acerca-del-dane"
+        }
       ]
     },
     {
@@ -20,8 +26,14 @@
       "active": true,
       "verification_source": "https://www.mineducacion.gov.co",
       "aliases": [
-        {"alias_raw": "MEN", "verification_source": "https://www.mineducacion.gov.co"},
-        {"alias_raw": "Ministerio de Educacion Nacional", "verification_source": "https://www.mineducacion.gov.co"}
+        {
+          "alias_raw": "MEN",
+          "verification_source": "https://www.mineducacion.gov.co"
+        },
+        {
+          "alias_raw": "Ministerio de Educacion Nacional",
+          "verification_source": "https://www.mineducacion.gov.co"
+        }
       ]
     },
     {
@@ -31,8 +43,14 @@
       "active": true,
       "verification_source": "https://www.minsalud.gov.co",
       "aliases": [
-        {"alias_raw": "MinSalud", "verification_source": "https://www.minsalud.gov.co"},
-        {"alias_raw": "Ministerio de Salud y Proteccion Social", "verification_source": "https://www.minsalud.gov.co"}
+        {
+          "alias_raw": "MinSalud",
+          "verification_source": "https://www.minsalud.gov.co"
+        },
+        {
+          "alias_raw": "Ministerio de Salud y Proteccion Social",
+          "verification_source": "https://www.minsalud.gov.co"
+        }
       ]
     },
     {
@@ -42,8 +60,14 @@
       "active": true,
       "verification_source": "https://www.minhacienda.gov.co",
       "aliases": [
-        {"alias_raw": "MinHacienda", "verification_source": "https://www.minhacienda.gov.co"},
-        {"alias_raw": "Ministerio de Hacienda y Credito Publico", "verification_source": "https://www.minhacienda.gov.co"}
+        {
+          "alias_raw": "MinHacienda",
+          "verification_source": "https://www.minhacienda.gov.co"
+        },
+        {
+          "alias_raw": "Ministerio de Hacienda y Credito Publico",
+          "verification_source": "https://www.minhacienda.gov.co"
+        }
       ]
     },
     {
@@ -53,7 +77,10 @@
       "active": true,
       "verification_source": "https://www.mininterior.gov.co",
       "aliases": [
-        {"alias_raw": "MinInterior", "verification_source": "https://www.mininterior.gov.co"}
+        {
+          "alias_raw": "MinInterior",
+          "verification_source": "https://www.mininterior.gov.co"
+        }
       ]
     },
     {
@@ -63,8 +90,14 @@
       "active": true,
       "verification_source": "https://www.minjusticia.gov.co",
       "aliases": [
-        {"alias_raw": "MinJusticia", "verification_source": "https://www.minjusticia.gov.co"},
-        {"alias_raw": "Ministerio de Justicia", "verification_source": "https://www.minjusticia.gov.co"}
+        {
+          "alias_raw": "MinJusticia",
+          "verification_source": "https://www.minjusticia.gov.co"
+        },
+        {
+          "alias_raw": "Ministerio de Justicia",
+          "verification_source": "https://www.minjusticia.gov.co"
+        }
       ]
     },
     {
@@ -74,8 +107,14 @@
       "active": true,
       "verification_source": "https://www.mintrabajo.gov.co",
       "aliases": [
-        {"alias_raw": "MinTrabajo", "verification_source": "https://www.mintrabajo.gov.co"},
-        {"alias_raw": "Ministerio de Trabajo", "verification_source": "https://www.mintrabajo.gov.co"}
+        {
+          "alias_raw": "MinTrabajo",
+          "verification_source": "https://www.mintrabajo.gov.co"
+        },
+        {
+          "alias_raw": "Ministerio de Trabajo",
+          "verification_source": "https://www.mintrabajo.gov.co"
+        }
       ]
     },
     {
@@ -85,9 +124,18 @@
       "active": true,
       "verification_source": "https://www.mintic.gov.co/portal/inicio/",
       "aliases": [
-        {"alias_raw": "MinTIC", "verification_source": "https://www.mintic.gov.co/portal/inicio/"},
-        {"alias_raw": "Ministerio TIC", "verification_source": "https://www.mintic.gov.co/portal/inicio/"},
-        {"alias_raw": "Ministerio de Tecnologias de la Informacion y las Comunicaciones", "verification_source": "https://www.mintic.gov.co/portal/inicio/"}
+        {
+          "alias_raw": "MinTIC",
+          "verification_source": "https://www.mintic.gov.co/portal/inicio/"
+        },
+        {
+          "alias_raw": "Ministerio TIC",
+          "verification_source": "https://www.mintic.gov.co/portal/inicio/"
+        },
+        {
+          "alias_raw": "Ministerio de Tecnologias de la Informacion y las Comunicaciones",
+          "verification_source": "https://www.mintic.gov.co/portal/inicio/"
+        }
       ]
     },
     {
@@ -97,7 +145,10 @@
       "active": true,
       "verification_source": "https://www.minambiente.gov.co",
       "aliases": [
-        {"alias_raw": "MinAmbiente", "verification_source": "https://www.minambiente.gov.co"}
+        {
+          "alias_raw": "MinAmbiente",
+          "verification_source": "https://www.minambiente.gov.co"
+        }
       ]
     },
     {
@@ -107,7 +158,10 @@
       "active": true,
       "verification_source": "https://www.minagricultura.gov.co",
       "aliases": [
-        {"alias_raw": "MinAgricultura", "verification_source": "https://www.minagricultura.gov.co"}
+        {
+          "alias_raw": "MinAgricultura",
+          "verification_source": "https://www.minagricultura.gov.co"
+        }
       ]
     },
     {
@@ -117,8 +171,14 @@
       "active": true,
       "verification_source": "https://www.antioquia.gov.co/",
       "aliases": [
-        {"alias_raw": "Gobernacion de Antioquia", "verification_source": "https://www.antioquia.gov.co/"},
-        {"alias_raw": "Departamento de Antioquia", "verification_source": "https://www.antioquia.gov.co/"}
+        {
+          "alias_raw": "Gobernacion de Antioquia",
+          "verification_source": "https://www.antioquia.gov.co/"
+        },
+        {
+          "alias_raw": "Departamento de Antioquia",
+          "verification_source": "https://www.antioquia.gov.co/"
+        }
       ]
     },
     {
@@ -128,8 +188,14 @@
       "active": true,
       "verification_source": "https://bogota.gov.co/",
       "aliases": [
-        {"alias_raw": "Alcaldia de Bogota", "verification_source": "https://bogota.gov.co/"},
-        {"alias_raw": "Alcaldia Mayor de Bogota", "verification_source": "https://bogota.gov.co/"},
+        {
+          "alias_raw": "Alcaldia de Bogota",
+          "verification_source": "https://bogota.gov.co/"
+        },
+        {
+          "alias_raw": "Alcaldia Mayor de Bogota",
+          "verification_source": "https://bogota.gov.co/"
+        },
         {
           "alias_raw": "Secretaria de Educacion",
           "ambiguous": true,
@@ -144,7 +210,10 @@
       "active": true,
       "verification_source": "https://www.medellin.gov.co/",
       "aliases": [
-        {"alias_raw": "Alcaldia de Medellin", "verification_source": "https://www.medellin.gov.co/"},
+        {
+          "alias_raw": "Alcaldia de Medellin",
+          "verification_source": "https://www.medellin.gov.co/"
+        },
         {
           "alias_raw": "Secretaria de Educacion",
           "ambiguous": true,
@@ -159,8 +228,14 @@
       "active": true,
       "verification_source": "https://unal.edu.co/",
       "aliases": [
-        {"alias_raw": "UNAL", "verification_source": "https://unal.edu.co/"},
-        {"alias_raw": "Universidad Nacional", "verification_source": "https://unal.edu.co/"}
+        {
+          "alias_raw": "UNAL",
+          "verification_source": "https://unal.edu.co/"
+        },
+        {
+          "alias_raw": "Universidad Nacional",
+          "verification_source": "https://unal.edu.co/"
+        }
       ]
     },
     {
@@ -170,7 +245,10 @@
       "active": true,
       "verification_source": "https://www.sena.edu.co/es-co/transparencia/Paginas/Juridicalinks.aspx",
       "aliases": [
-        {"alias_raw": "SENA", "verification_source": "https://www.sena.edu.co/es-co/transparencia/Paginas/Juridicalinks.aspx"}
+        {
+          "alias_raw": "SENA",
+          "verification_source": "https://www.sena.edu.co/es-co/transparencia/Paginas/Juridicalinks.aspx"
+        }
       ]
     },
     {
@@ -180,8 +258,490 @@
       "active": true,
       "verification_source": "https://www.fna.gov.co",
       "aliases": [
-        {"alias_raw": "FNA", "verification_source": "https://www.fna.gov.co"},
-        {"alias_raw": "Fondo Nacional de Ahorro", "verification_source": "https://www.fna.gov.co"}
+        {
+          "alias_raw": "FNA",
+          "verification_source": "https://www.fna.gov.co"
+        },
+        {
+          "alias_raw": "Fondo Nacional de Ahorro",
+          "verification_source": "https://www.fna.gov.co"
+        }
+      ]
+    },
+    {
+      "id": "upra",
+      "canonical_name": "Unidad de Planificación Rural Agropecuaria",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://upra.gov.co/en/upra/acerca-de-la-upra/quienes-somos",
+      "aliases": [
+        {
+          "alias_raw": "UPRA",
+          "verification_source": "https://upra.gov.co/en/upra/acerca-de-la-upra/quienes-somos"
+        }
+      ]
+    },
+    {
+      "id": "sspd",
+      "canonical_name": "Superintendencia de Servicios Públicos Domiciliarios",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.superservicios.gov.co/Nuestra-entidad",
+      "aliases": [
+        {
+          "alias_raw": "Superintendencia de Servicios Públicos Domiciliarios - Planeación",
+          "verification_source": "https://www.superservicios.gov.co/Nuestra-entidad"
+        },
+        {
+          "alias_raw": "Superintendencia de Servicios Públicos Domiciliarios - AAA",
+          "verification_source": "https://www.superservicios.gov.co/Nuestra-entidad"
+        }
+      ]
+    },
+    {
+      "id": "superfinanciera",
+      "canonical_name": "Superintendencia Financiera de Colombia",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.superfinanciera.gov.co/publicaciones/60607/nuestra-entidadacerca-de-la-sfc-60607/",
+      "aliases": []
+    },
+    {
+      "id": "invima",
+      "canonical_name": "Instituto Nacional de Vigilancia de Medicamentos y Alimentos",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.invima.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "Invima",
+          "verification_source": "https://www.invima.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "ideam",
+      "canonical_name": "Instituto de Hidrología, Meteorología y Estudios Ambientales",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.ideam.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "Oficina de Informática IDEAM",
+          "verification_source": "https://www.ideam.gov.co/"
+        },
+        {
+          "alias_raw": "IDEAM",
+          "verification_source": "https://www.ideam.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "dnp",
+      "canonical_name": "Departamento Nacional de Planeación",
+      "entity_type": "departamento_administrativo",
+      "active": true,
+      "verification_source": "https://www.dnp.gov.co/LaEntidad_",
+      "aliases": [
+        {
+          "alias_raw": "Datos Abiertos DNP",
+          "verification_source": "https://www.dnp.gov.co/LaEntidad_"
+        },
+        {
+          "alias_raw": "DNP",
+          "verification_source": "https://www.dnp.gov.co/LaEntidad_"
+        }
+      ]
+    },
+    {
+      "id": "icfes",
+      "canonical_name": "Instituto Colombiano para la Evaluación de la Educación",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.icfes.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "ICFES DATOS ABIERTOS",
+          "verification_source": "https://www.icfes.gov.co/"
+        },
+        {
+          "alias_raw": "ICFES",
+          "verification_source": "https://www.icfes.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "unidad-victimas",
+      "canonical_name": "Unidad para las Víctimas",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.unidadvictimas.gov.co/la-unidad-institucional-misional/",
+      "aliases": []
+    },
+    {
+      "id": "funcion-publica",
+      "canonical_name": "Departamento Administrativo de la Función Pública",
+      "entity_type": "departamento_administrativo",
+      "active": true,
+      "verification_source": "https://www1.funcionpublica.gov.co/quienes-somos/funciones-generales",
+      "aliases": [
+        {
+          "alias_raw": "Datos Abiertos Función Pública",
+          "verification_source": "https://www1.funcionpublica.gov.co/quienes-somos/funciones-generales"
+        }
+      ]
+    },
+    {
+      "id": "cancilleria",
+      "canonical_name": "Ministerio de Relaciones Exteriores",
+      "entity_type": "ministerio",
+      "active": true,
+      "verification_source": "https://www.cancilleria.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "arn",
+      "canonical_name": "Agencia para la Reincorporación y la Normalización",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.reincorporacion.gov.co/es/agencia/Paginas/resena.aspx",
+      "aliases": []
+    },
+    {
+      "id": "andje",
+      "canonical_name": "Agencia Nacional de Defensa Jurídica del Estado",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.defensajuridica.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "Agencia Nacional de Defensa Jurídica del Estado - Datos Abiertos",
+          "verification_source": "https://www.defensajuridica.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "medicina-legal",
+      "canonical_name": "Instituto Nacional de Medicina Legal y Ciencias Forenses",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.medicinalegal.gov.co/en/inicio",
+      "aliases": []
+    },
+    {
+      "id": "esap",
+      "canonical_name": "Escuela Superior de Administración Pública",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.esap.edu.co/",
+      "aliases": [
+        {
+          "alias_raw": "Escuela Superior de Administración Pública ESAP",
+          "verification_source": "https://www.esap.edu.co/"
+        }
+      ]
+    },
+    {
+      "id": "minminas",
+      "canonical_name": "Ministerio de Minas y Energía",
+      "entity_type": "ministerio",
+      "active": true,
+      "verification_source": "https://www.minenergia.gov.co/es/",
+      "aliases": []
+    },
+    {
+      "id": "prosperidad-social",
+      "canonical_name": "Departamento para la Prosperidad Social",
+      "entity_type": "departamento_administrativo",
+      "active": true,
+      "verification_source": "https://www.prosperidadsocial.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "corte-constitucional",
+      "canonical_name": "Corte Constitucional de Colombia",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.corteconstitucional.gov.co/lacorte/",
+      "aliases": []
+    },
+    {
+      "id": "contraloria-general",
+      "canonical_name": "Contraloría General de la República",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.contraloria.gov.co/en/",
+      "aliases": []
+    },
+    {
+      "id": "procuraduria-general",
+      "canonical_name": "Procuraduría General de la Nación",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.procuraduria.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "Procuraduría General de la Nación - Analítica de Datos",
+          "verification_source": "https://www.procuraduria.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "presidencia",
+      "canonical_name": "Presidencia de la República de Colombia",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.presidencia.gov.co/prensa/noticias",
+      "aliases": []
+    },
+    {
+      "id": "ani",
+      "canonical_name": "Agencia Nacional de Infraestructura",
+      "entity_type": "otra_estatal",
+      "active": true,
+      "verification_source": "https://www.ani.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "ANI",
+          "verification_source": "https://www.ani.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "ica",
+      "canonical_name": "Instituto Colombiano Agropecuario",
+      "entity_type": "establecimiento_publico",
+      "active": true,
+      "verification_source": "https://www.ica.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "INSTITUTO COLOMBIANO AGROPECUARIO ICA",
+          "verification_source": "https://www.ica.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "minvivienda",
+      "canonical_name": "Ministerio de Vivienda, Ciudad y Territorio",
+      "entity_type": "ministerio",
+      "active": true,
+      "verification_source": "https://www.minvivienda.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-valle-cauca",
+      "canonical_name": "Gobernación del Valle del Cauca",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.valledelcauca.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-boyaca",
+      "canonical_name": "Gobernación de Boyacá",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.boyaca.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-casanare",
+      "canonical_name": "Gobernación de Casanare",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.casanare.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-santander",
+      "canonical_name": "Gobernación de Santander",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://santander.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-sucre",
+      "canonical_name": "Gobernación de Sucre",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.sucre.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-magdalena",
+      "canonical_name": "Gobernación del Magdalena",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.gobernaciondelmagdalena.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-atlantico",
+      "canonical_name": "Gobernación del Atlántico",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.atlantico.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-caldas",
+      "canonical_name": "Gobernación de Caldas",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://caldas.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-meta",
+      "canonical_name": "Gobernación del Meta",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://meta.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-amazonas",
+      "canonical_name": "Gobernación del Amazonas",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.amazonas.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "alcaldia-palmira",
+      "canonical_name": "Alcaldía Municipal de Palmira",
+      "entity_type": "alcaldia",
+      "active": true,
+      "verification_source": "https://palmira.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "alcaldia-pereira",
+      "canonical_name": "Alcaldía de Pereira",
+      "entity_type": "alcaldia",
+      "active": true,
+      "verification_source": "https://www.pereira.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "Alcaldia de Pereira Secretaria TIC",
+          "verification_source": "https://www.pereira.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "alcaldia-bucaramanga",
+      "canonical_name": "Alcaldía de Bucaramanga",
+      "entity_type": "alcaldia",
+      "active": true,
+      "verification_source": "https://www.bucaramanga.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "AlcaldiaBGA",
+          "verification_source": "https://www.bucaramanga.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "alcaldia-neiva",
+      "canonical_name": "Alcaldía de Neiva",
+      "entity_type": "alcaldia",
+      "active": true,
+      "verification_source": "https://www.alcaldianeiva.gov.co/Paginas/index.aspx",
+      "aliases": [
+        {
+          "alias_raw": "Alcaldía Neiva",
+          "verification_source": "https://www.alcaldianeiva.gov.co/Paginas/index.aspx"
+        }
+      ]
+    },
+    {
+      "id": "alcaldia-barranquilla",
+      "canonical_name": "Alcaldía Distrital de Barranquilla",
+      "entity_type": "alcaldia",
+      "active": true,
+      "verification_source": "https://barranquilla.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "AlcaldiaBarranquilla",
+          "verification_source": "https://barranquilla.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "alcaldia-chia",
+      "canonical_name": "Alcaldía Municipal de Chía",
+      "entity_type": "alcaldia",
+      "active": true,
+      "verification_source": "https://web.chia-cundinamarca.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "alcaldia-fusagasuga",
+      "canonical_name": "Alcaldía Municipal de Fusagasugá",
+      "entity_type": "alcaldia",
+      "active": true,
+      "verification_source": "https://www.fusagasuga.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "Alcaldía del Municipio Fusagasugá",
+          "verification_source": "https://www.fusagasuga.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "alcaldia-yopal",
+      "canonical_name": "Alcaldía de Yopal",
+      "entity_type": "alcaldia",
+      "active": true,
+      "verification_source": "https://www.yopal-casanare.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "Alcaldia_Yopal",
+          "verification_source": "https://www.yopal-casanare.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "alcaldia-guadalajara-buga",
+      "canonical_name": "Alcaldía Municipal de Guadalajara de Buga",
+      "entity_type": "alcaldia",
+      "active": true,
+      "verification_source": "https://www.guadalajaradebuga-valle.gov.co/",
+      "aliases": []
+    },
+    {
+      "id": "alcaldia-san-pedro-milagros",
+      "canonical_name": "Alcaldía de San Pedro de los Milagros",
+      "entity_type": "alcaldia",
+      "active": true,
+      "verification_source": "https://www.sanpedrodelosmilagros-antioquia.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "ALCALDÍA SAN PEDRO DE LOS MILAGROS",
+          "verification_source": "https://www.sanpedrodelosmilagros-antioquia.gov.co/"
+        }
+      ]
+    },
+    {
+      "id": "uniquindio",
+      "canonical_name": "Universidad del Quindío",
+      "entity_type": "universidad_publica",
+      "active": true,
+      "verification_source": "https://www.uniquindio.edu.co/",
+      "aliases": []
+    },
+    {
+      "id": "gobernacion-risaralda",
+      "canonical_name": "Gobernación de Risaralda",
+      "entity_type": "gobernacion",
+      "active": true,
+      "verification_source": "https://www.risaralda.gov.co/",
+      "aliases": [
+        {
+          "alias_raw": "gobiernoelectronico@risaralda.gov.co",
+          "verification_source": "https://www.risaralda.gov.co/ (dominio institucional .gov.co)"
+        }
       ]
     }
   ],
