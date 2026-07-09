@@ -1,0 +1,1124 @@
+{
+  "generated_at": "2026-07-09T01:40:49.299813+00:00",
+  "total_datasets": 8417,
+  "total_active_datasets": 8416,
+  "counts_by_status": {
+    "verified": 2376,
+    "unknown": 6040
+  },
+  "verified_ratio_active": 0.2823,
+  "coverage_target": 0.9,
+  "coverage_gap": true,
+  "gap_explanation": "Cobertura verified 28.23% de datasets tabulares activos, por debajo del objetivo 90% (research.md #7, tasks.md T-201A). Brecha documentada explicitamente, tal como permite el criterio de aceptacion; unresolved_publisher_candidates prioriza por volumen las siguientes ampliaciones del fixture.",
+  "ambiguous_aliases": [
+    {
+      "alias_normalized": "SECRETARIA DE EDUCACION",
+      "publisher_ids": [
+        "alcaldia-bogota",
+        "alcaldia-medellin"
+      ]
+    }
+  ],
+  "unresolved_publisher_candidates": [
+    {
+      "publisher_text": "SubGerencia de Tecnología",
+      "dataset_count": 76,
+      "sample_dataset_ids": [
+        "3e3e-cadp",
+        "48e3-4ffh",
+        "4hi2-qp6e",
+        "4qxm-qg36",
+        "53pp-r72a"
+      ]
+    },
+    {
+      "publisher_text": "Datos Abiertos CCE",
+      "dataset_count": 49,
+      "sample_dataset_ids": [
+        "36vw-pbq2",
+        "3hdv-smhz",
+        "3skv-9na7",
+        "3xwx-53wt",
+        "4ex9-j3n8"
+      ]
+    },
+    {
+      "publisher_text": "Universidad Pedagógica y Tecnológica de Colombia",
+      "dataset_count": 45,
+      "sample_dataset_ids": [
+        "25rq-9y2s",
+        "3iew-7wpx",
+        "3ms3-pdns",
+        "3v96-qv64",
+        "46in-76rd"
+      ]
+    },
+    {
+      "publisher_text": "Observatorio MDN",
+      "dataset_count": 44,
+      "sample_dataset_ids": [
+        "26zg-9p9r",
+        "3cjd-phaj",
+        "3pur-d5ez",
+        "3wcs-8xp9",
+        "4rxi-8m8d"
+      ]
+    },
+    {
+      "publisher_text": "Contraloría General del Cauca",
+      "dataset_count": 38,
+      "sample_dataset_ids": [
+        "7g7m-chku",
+        "84gn-uzcz",
+        "8ffk-nh39",
+        "8qxx-ubmq",
+        "8y6y-qf2v"
+      ]
+    },
+    {
+      "publisher_text": "Corantioquia",
+      "dataset_count": 25,
+      "sample_dataset_ids": [
+        "2my8-qd6m",
+        "3439-5h4z",
+        "343b-zzsj",
+        "34ik-vuxy",
+        "3gcd-b5i3"
+      ]
+    },
+    {
+      "publisher_text": "datosabiertosbolivar",
+      "dataset_count": 25,
+      "sample_dataset_ids": [
+        "2mrc-996c",
+        "3dv4-4tws",
+        "3i3f-z42s",
+        "57zk-a3ru",
+        "625i-y6dc"
+      ]
+    },
+    {
+      "publisher_text": "Dirección TIC Caquetá",
+      "dataset_count": 25,
+      "sample_dataset_ids": [
+        "23ys-f57r",
+        "2jfx-9wa3",
+        "2zw7-57ef",
+        "3fdb-vxvt",
+        "4z49-s5y9"
+      ]
+    },
+    {
+      "publisher_text": "Ronal Martinez",
+      "dataset_count": 25,
+      "sample_dataset_ids": [
+        "39qq-a72j",
+        "3v9z-z6ap",
+        "3xsy-8xcp",
+        "4jfs-zi6u",
+        "52eu-ic7d"
+      ]
+    },
+    {
+      "publisher_text": "Datos Abiertos La Estrella",
+      "dataset_count": 24,
+      "sample_dataset_ids": [
+        "3apn-gwx9",
+        "4rvm-a6nk",
+        "5t29-amau",
+        "7v8m-zcmy",
+        "9nht-tmxs"
+      ]
+    },
+    {
+      "publisher_text": "datosabiertos@nortedesantander.gov.co",
+      "dataset_count": 23,
+      "sample_dataset_ids": [
+        "2sza-3ea9",
+        "3tph-vaui",
+        "68ut-ip9i",
+        "7esd-c2ka",
+        "c2fr-ezse"
+      ]
+    },
+    {
+      "publisher_text": "Corpoboyacá",
+      "dataset_count": 22,
+      "sample_dataset_ids": [
+        "3pry-zutu",
+        "6p4z-7yzu",
+        "74p6-vttx",
+        "7h9i-7gun",
+        "8fyh-9cka"
+      ]
+    },
+    {
+      "publisher_text": "Ministerio de Tecnologías de la Información y las Comunicaciones - Datos Abiertos",
+      "dataset_count": 22,
+      "sample_dataset_ids": [
+        "2xnf-ye6y",
+        "3kqs-gweq",
+        "4t9r-7v7i",
+        "5cng-ebxj",
+        "8xbh-t8dg"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía Mayor de Cartagena",
+      "dataset_count": 21,
+      "sample_dataset_ids": [
+        "2ajc-ca5x",
+        "2muq-8ebv",
+        "2xk8-g74q",
+        "6xvs-by3p",
+        "dzg4-ay5q"
+      ]
+    },
+    {
+      "publisher_text": "amartinez",
+      "dataset_count": 21,
+      "sample_dataset_ids": [
+        "489x-mu3c",
+        "6deq-vx84",
+        "89wx-5p2g",
+        "8iut-hgij",
+        "b346-rc9m"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldia de Sabaneta",
+      "dataset_count": 20,
+      "sample_dataset_ids": [
+        "3t3f-dhmr",
+        "5pzh-wx7d",
+        "8ain-65jx",
+        "9gex-niww",
+        "bewj-2mvn"
+      ]
+    },
+    {
+      "publisher_text": "soportetics@unidadsolidaria.gov.co",
+      "dataset_count": 20,
+      "sample_dataset_ids": [
+        "2zn7-bez3",
+        "7bzy-2j2h",
+        "9xdg-hm6t",
+        "a65q-6den",
+        "ahbx-upcu"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía de Armenia",
+      "dataset_count": 19,
+      "sample_dataset_ids": [
+        "4zfq-adg2",
+        "5ybu-xnqv",
+        "642z-p6dp",
+        "68hz-sayt",
+        "8hes-t424"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldia - Acacias",
+      "dataset_count": 18,
+      "sample_dataset_ids": [
+        "2wcw-x9bt",
+        "3kda-jhhq",
+        "4bhj-4ydn",
+        "747h-496x",
+        "7wuh-vu4h"
+      ]
+    },
+    {
+      "publisher_text": "Cámara de Comercio de Valledupar para el Valle del Río Cesar",
+      "dataset_count": 18,
+      "sample_dataset_ids": [
+        "3dvc-hxsz",
+        "3kkb-6c2s",
+        "4dad-kvp8",
+        "5qkr-a6eh",
+        "6jyb-j9yf"
+      ]
+    },
+    {
+      "publisher_text": "Cámara de Comercio del Oriente Antioqueño",
+      "dataset_count": 17,
+      "sample_dataset_ids": [
+        "52v3-bv92",
+        "7x7g-n3tz",
+        "8muu-svth",
+        "acdj-kesr",
+        "cnx6-6hin"
+      ]
+    },
+    {
+      "publisher_text": "colmayor",
+      "dataset_count": 17,
+      "sample_dataset_ids": [
+        "8r4y-btdg",
+        "8s29-ukb3",
+        "9856-w5h6",
+        "9und-zqvd",
+        "cp44-np4f"
+      ]
+    },
+    {
+      "publisher_text": "Ministerio de Agricultura",
+      "dataset_count": 17,
+      "sample_dataset_ids": [
+        "297b-g54g",
+        "2pnw-mmge",
+        "39sf-amtm",
+        "3usu-fpk5",
+        "42df-c2gg"
+      ]
+    },
+    {
+      "publisher_text": "ALCALDÍA DE COTA",
+      "dataset_count": 16,
+      "sample_dataset_ids": [
+        "6hhh-tp4r",
+        "a9pw-ejvd",
+        "asm3-gfyn",
+        "dpff-cytv",
+        "dq48-e44f"
+      ]
+    },
+    {
+      "publisher_text": "EPM",
+      "dataset_count": 16,
+      "sample_dataset_ids": [
+        "2dfa-smxv",
+        "3j6d-bxwb",
+        "5ybk-eaa8",
+        "9cbc-ej2f",
+        "av6t-m6ju"
+      ]
+    },
+    {
+      "publisher_text": "ISABU",
+      "dataset_count": 16,
+      "sample_dataset_ids": [
+        "26um-zdwn",
+        "55fz-hx6b",
+        "8e9r-2fmw",
+        "8hwz-6ugn",
+        "9qvn-tgs8"
+      ]
+    },
+    {
+      "publisher_text": "MUNICIPIO DE MADRID",
+      "dataset_count": 16,
+      "sample_dataset_ids": [
+        "3bzp-f8vh",
+        "3v3b-sbwj",
+        "6mjz-32mx",
+        "7ccd-9ynt",
+        "a4yv-84tf"
+      ]
+    },
+    {
+      "publisher_text": "Unidad de Restitución",
+      "dataset_count": 16,
+      "sample_dataset_ids": [
+        "2df8-4uep",
+        "33hn-pgph",
+        "3dag-3s9a",
+        "65ge-hi8s",
+        "67fa-66zj"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía Municipal de La Dorada - Caldas",
+      "dataset_count": 15,
+      "sample_dataset_ids": [
+        "58yq-ak5i",
+        "7b75-c737",
+        "8nku-esw7",
+        "9w8h-nex7",
+        "9wnh-ux8s"
+      ]
+    },
+    {
+      "publisher_text": "Cámara de Comercio del Huila",
+      "dataset_count": 15,
+      "sample_dataset_ids": [
+        "7csk-2r3g",
+        "9xx7-744j",
+        "d37c-tr6i",
+        "gnag-re5a",
+        "h4bg-2evv"
+      ]
+    },
+    {
+      "publisher_text": "datossevilla",
+      "dataset_count": 15,
+      "sample_dataset_ids": [
+        "22g7-3npn",
+        "4p2c-mk37",
+        "bhvk-shwk",
+        "d9rj-3b2z",
+        "djbf-3ch8"
+      ]
+    },
+    {
+      "publisher_text": "IDSNDS",
+      "dataset_count": 15,
+      "sample_dataset_ids": [
+        "2btt-9z2g",
+        "32v8-incv",
+        "38kb-azu8",
+        "4gag-998i",
+        "69hj-y4m3"
+      ]
+    },
+    {
+      "publisher_text": "Municipio de Envigado",
+      "dataset_count": 15,
+      "sample_dataset_ids": [
+        "2fzn-ck9b",
+        "4zs6-n5cw",
+        "5nyx-jhqh",
+        "7nv5-fy9z",
+        "7s4q-y6ad"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía de Tunja",
+      "dataset_count": 14,
+      "sample_dataset_ids": [
+        "4hzx-66uh",
+        "4ryc-k7fx",
+        "crvq-kgsi",
+        "d7jj-d4ki",
+        "eqrm-823z"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía Miranda Cauca",
+      "dataset_count": 14,
+      "sample_dataset_ids": [
+        "784m-ukeb",
+        "8i96-5gxt",
+        "azhq-pjvu",
+        "eshz-g35p",
+        "fb7h-3siu"
+      ]
+    },
+    {
+      "publisher_text": "Analítica Institucional ICBF",
+      "dataset_count": 14,
+      "sample_dataset_ids": [
+        "3dwe-98sm",
+        "4s78-bzvq",
+        "5akr-u7t8",
+        "86gf-6iex",
+        "crxh-as6c"
+      ]
+    },
+    {
+      "publisher_text": "DatosabiertosINS",
+      "dataset_count": 14,
+      "sample_dataset_ids": [
+        "4hyg-wa9d",
+        "5bbt-dm6e",
+        "84d4-vfax",
+        "982z-3w9e",
+        "dkws-353q"
+      ]
+    },
+    {
+      "publisher_text": "Dirección de Seguridad Ciudadana",
+      "dataset_count": 14,
+      "sample_dataset_ids": [
+        "4wxs-jqui",
+        "aykh-uvvi",
+        "c6wg-wr7w",
+        "cmxv-8tb9",
+        "ct4m-8t9m"
+      ]
+    },
+    {
+      "publisher_text": "Ider2021",
+      "dataset_count": 14,
+      "sample_dataset_ids": [
+        "8jmu-4h93",
+        "8s8w-dg53",
+        "ctst-uxg9",
+        "dbb9-8yt7",
+        "dw7i-3hf5"
+      ]
+    },
+    {
+      "publisher_text": "Inspección General y Responsabilidad Profesional",
+      "dataset_count": 14,
+      "sample_dataset_ids": [
+        "bgrt-wejr",
+        "c2hg-qy2c",
+        "cfw3-85b5",
+        "gi4j-eigs",
+        "jysc-4jm5"
+      ]
+    },
+    {
+      "publisher_text": "Segovia Antioquia",
+      "dataset_count": 14,
+      "sample_dataset_ids": [
+        "3fmc-r56a",
+        "47iq-qsfv",
+        "4b8z-fi6b",
+        "4q6j-9d8t",
+        "4ub8-ttd2"
+      ]
+    },
+    {
+      "publisher_text": "Soporte Sistemas",
+      "dataset_count": 14,
+      "sample_dataset_ids": [
+        "3fvp-rwxu",
+        "7y7n-8wu6",
+        "dkpr-qhag",
+        "dwxw-wtq9",
+        "ewej-2idm"
+      ]
+    },
+    {
+      "publisher_text": "Unimagdalena",
+      "dataset_count": 14,
+      "sample_dataset_ids": [
+        "2t8c-queb",
+        "9q44-kxfk",
+        "au3n-3k3u",
+        "fdge-c8ck",
+        "hudy-a8tp"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía de Villavicencio",
+      "dataset_count": 13,
+      "sample_dataset_ids": [
+        "2fhp-2caw",
+        "38t2-j7vd",
+        "4qzq-8t5j",
+        "6vgq-ib8f",
+        "a9yz-vh6j"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldia Municipal de Ibagué",
+      "dataset_count": 13,
+      "sample_dataset_ids": [
+        "63rj-2nt3",
+        "7cvn-vcm5",
+        "am4p-tz7w",
+        "b7i2-sunk",
+        "cyd9-53ts"
+      ]
+    },
+    {
+      "publisher_text": "Cámara de Comercio de Pereira",
+      "dataset_count": 13,
+      "sample_dataset_ids": [
+        "25wj-yk9r",
+        "4rd4-9d97",
+        "5x4m-28a9",
+        "8ubm-rczz",
+        "bvqe-m7ze"
+      ]
+    },
+    {
+      "publisher_text": "Coljuegos E.I.C.E",
+      "dataset_count": 13,
+      "sample_dataset_ids": [
+        "2zg4-ahca",
+        "3sjf-5etx",
+        "6qgp-wich",
+        "7dkq-pphj",
+        "7j4p-u6e9"
+      ]
+    },
+    {
+      "publisher_text": "DIJIN",
+      "dataset_count": 13,
+      "sample_dataset_ids": [
+        "2iz5-9bbz",
+        "37p5-impc",
+        "3jdh-nmwu",
+        "6sqw-8cg5",
+        "72sg-cybi"
+      ]
+    },
+    {
+      "publisher_text": "Dirección de Informática",
+      "dataset_count": 13,
+      "sample_dataset_ids": [
+        "2j6i-5dcy",
+        "35wp-nv6m",
+        "3j6b-9vhx",
+        "65hu-rfmz",
+        "6ad8-ka5m"
+      ]
+    },
+    {
+      "publisher_text": "MILENACCV40",
+      "dataset_count": 13,
+      "sample_dataset_ids": [
+        "4tzz-2g8i",
+        "5mps-hcs4",
+        "6tk6-g6zd",
+        "8u7x-6qcd",
+        "csu3-wqw4"
+      ]
+    },
+    {
+      "publisher_text": "Ministerio de Ambiente y Desarrollo Sostenible - MinAmbiente",
+      "dataset_count": 13,
+      "sample_dataset_ids": [
+        "832u-c3pg",
+        "929b-nywn",
+        "9a89-px8u",
+        "d75b-uyph",
+        "e8q4-8mx9"
+      ]
+    },
+    {
+      "publisher_text": "Municipio de Dosquebradas - Risaralda",
+      "dataset_count": 13,
+      "sample_dataset_ids": [
+        "38f8-mg2s",
+        "3y8s-i9t8",
+        "8u6q-24js",
+        "8utm-cwka",
+        "ehtd-gjr3"
+      ]
+    },
+    {
+      "publisher_text": "Red de salud del Oriente E.S.E.",
+      "dataset_count": 13,
+      "sample_dataset_ids": [
+        "2xdv-mn67",
+        "7bwc-z34p",
+        "7wkb-8xvh",
+        "85y5-8ac5",
+        "9g6h-b4r7"
+      ]
+    },
+    {
+      "publisher_text": "Agencia Nacional de Hidrocarburos - ANH - Oficina de Tecnologías de la Información",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "2tv8-sxwz",
+        "55hp-hhm9",
+        "5dux-bfvx",
+        "6sjh-y3zg",
+        "7nsu-mfub"
+      ]
+    },
+    {
+      "publisher_text": "Agencia Nacional de Seguridad Vial",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "24ny-2dhf",
+        "3at4-zibc",
+        "9uuv-ijtc",
+        "cm2t-qreq",
+        "fr9f-9g4b"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldia_de_Santa_Rosa_de_Cabal",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "4f29-qqdx",
+        "659d-r66y",
+        "6qqc-a5fd",
+        "95k2-xs47",
+        "axq4-qnd3"
+      ]
+    },
+    {
+      "publisher_text": "Cámara de Comercio de Cartagena",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "5u2a-wah6",
+        "6gmv-fb4w",
+        "7tuu-ghn4",
+        "acwn-aqc3",
+        "d45k-68ge"
+      ]
+    },
+    {
+      "publisher_text": "CDMB",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "3v9a-6acv",
+        "57ur-5p28",
+        "5dsf-x7tb",
+        "6mfd-x5if",
+        "9fpa-27t2"
+      ]
+    },
+    {
+      "publisher_text": "Controlaría General de Córdoba",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "7era-c7uq",
+        "8e8a-m2vw",
+        "9azu-tpw5",
+        "9q9f-cuwz",
+        "a5xf-5dak"
+      ]
+    },
+    {
+      "publisher_text": "Datos Abierto De La Armada Nacional",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "4mfr-d7y3",
+        "574n-u3yc",
+        "cvgj-b6jz",
+        "fck4-8jxm",
+        "kmi3-sy9c"
+      ]
+    },
+    {
+      "publisher_text": "ESSAGrupoEPM",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "267b-e9dh",
+        "5af8-j7m4",
+        "6irk-3xph",
+        "7chp-aax9",
+        "avwr-fd4i"
+      ]
+    },
+    {
+      "publisher_text": "Gestión de Tecnologías de la Información",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "4fd8-ptcr",
+        "4t8v-ywmw",
+        "7su2-ytyk",
+        "bwav-wd2c",
+        "eard-bfxc"
+      ]
+    },
+    {
+      "publisher_text": "Laboratorio de Innovación Pública de Manizales",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "22ik-dpuz",
+        "4b9k-k8gc",
+        "57up-zhwr",
+        "6zwu-iumj",
+        "g5qe-wz88"
+      ]
+    },
+    {
+      "publisher_text": "Notaria 2 de Manizales",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "2vit-a4ha",
+        "4dxs-yb7i",
+        "a69w-jbcz",
+        "e89d-fq3n",
+        "gbq5-r9ga"
+      ]
+    },
+    {
+      "publisher_text": "OficinaTI",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "4z5v-cr6b",
+        "9mey-c8s8",
+        "cnky-uvcg",
+        "fybg-535s",
+        "gwtn-wg4v"
+      ]
+    },
+    {
+      "publisher_text": "UESVALLE",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "67zx-ij5w",
+        "8fgr-ag38",
+        "aifi-nz9h",
+        "fu4r-irvu",
+        "hbf3-nvn9"
+      ]
+    },
+    {
+      "publisher_text": "Universidad de La Guajira",
+      "dataset_count": 12,
+      "sample_dataset_ids": [
+        "3w8b-ddza",
+        "58j7-ez2m",
+        "5btb-v9nb",
+        "a9qb-s8rp",
+        "atda-9j88"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía de Los Patios",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "54f9-g37r",
+        "5bid-h9e2",
+        "9ypq-bvgs",
+        "kxdp-jev7",
+        "qqgk-4rdi"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía Municipal de Samacá",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "22bh-fbvb",
+        "2ai7-crvj",
+        "3dsj-5vex",
+        "7gmr-g7qn",
+        "7zun-yvcc"
+      ]
+    },
+    {
+      "publisher_text": "Área Metropolitana de Bucaramanga",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "2d7k-a6en",
+        "33fe-6nxn",
+        "3mbk-rinh",
+        "3qja-8idc",
+        "58ct-h586"
+      ]
+    },
+    {
+      "publisher_text": "camaradecomerciodecucuta",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "3r8k-vvxe",
+        "43hc-489p",
+        "79ad-bsjb",
+        "8j5z-5s34",
+        "9aec-fd7t"
+      ]
+    },
+    {
+      "publisher_text": "CONTRALORÍA DEPARTAMENTAL DEL VALLE DEL CAUCA",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "289e-ua4x",
+        "3qfc-9dew",
+        "4c8c-kmwq",
+        "5nek-piwp",
+        "7npu-4qa5"
+      ]
+    },
+    {
+      "publisher_text": "datos abiertos RNEC",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "24zd-s9xt",
+        "2bj9-hehn",
+        "2r2t-ej3x",
+        "436c-83m9",
+        "75f2-fe2s"
+      ]
+    },
+    {
+      "publisher_text": "ESE Salud Pereira",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "2tvs-cpxh",
+        "c8ra-khhx",
+        "d2vu-3459",
+        "gebr-462g",
+        "k226-53hw"
+      ]
+    },
+    {
+      "publisher_text": "FINAGRO",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "3zt7-zgsk",
+        "5k3r-n7px",
+        "9td7-xpk3",
+        "gpvn-mtqm",
+        "hbaj-th4x"
+      ]
+    },
+    {
+      "publisher_text": "persoenvigado",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "3hgp-yrmn",
+        "3q64-ehar",
+        "4d3h-929g",
+        "6md3-cdz4",
+        "7cd4-gavj"
+      ]
+    },
+    {
+      "publisher_text": "saludsogamosoESE",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "2y7c-8y5q",
+        "9s35-9nqp",
+        "cgvt-kh9a",
+        "ewhd-q7uk",
+        "m9rq-mph5"
+      ]
+    },
+    {
+      "publisher_text": "sistemas@inirida-guainia.gov.co",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "4run-49w8",
+        "4stn-vgsw",
+        "6u6c-p3v9",
+        "an3k-6ukx",
+        "crri-68kn"
+      ]
+    },
+    {
+      "publisher_text": "TAURAMENA",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "43d8-wgdh",
+        "5kvn-6vvd",
+        "69bw-3nyp",
+        "cy4t-gnq2",
+        "f6tv-752w"
+      ]
+    },
+    {
+      "publisher_text": "vistahermosa",
+      "dataset_count": 11,
+      "sample_dataset_ids": [
+        "6m4j-n8vs",
+        "8anm-6n2p",
+        "8b74-vi8r",
+        "airb-8fcy",
+        "b3c3-mdm6"
+      ]
+    },
+    {
+      "publisher_text": "Agencia de Educación Postsecundaria de Medellín- Sapiencia",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "2h2c-yhcv",
+        "738k-jsum",
+        "dubw-pinf",
+        "ea87-3gxf",
+        "fivi-5h26"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía de Calarcá",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "9sd7-7mj3",
+        "bj7e-xc9g",
+        "cu78-eher",
+        "ktzy-x8mu",
+        "q6k9-bk9h"
+      ]
+    },
+    {
+      "publisher_text": "ALCALDIA DE CASTILLA LA NUEVA-META",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "5h9a-3pw3",
+        "6rf2-7jki",
+        "8vsc-3uzz",
+        "9yx9-hn9j",
+        "dttu-g8tv"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía Quinchía",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "2ipz-hvps",
+        "4zkq-5m6s",
+        "62g2-mjb5",
+        "a4tc-kx5j",
+        "am2s-maa9"
+      ]
+    },
+    {
+      "publisher_text": "amco",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "9nm6-uyy2",
+        "fvnt-frpb",
+        "gata-i5er",
+        "kait-m3xm",
+        "n7qg-ttv5"
+      ]
+    },
+    {
+      "publisher_text": "ANM Agencia Nacional de Mineria Grupo Regalias y Contraprestaciones de Minerales",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "42ha-fhvj",
+        "6uuj-njfp",
+        "6xd6-hsen",
+        "74ct-m5y8",
+        "7amp-4swy"
+      ]
+    },
+    {
+      "publisher_text": "Cámara de Comercio de La Guajira",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "3hix-y8er",
+        "4us9-wsx9",
+        "88p3-cicj",
+        "8cgp-ku7q",
+        "8rxi-7swc"
+      ]
+    },
+    {
+      "publisher_text": "Cámara de Comercio del Putumayo",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "2g5v-w5h8",
+        "c2cy-9iuy",
+        "cj8m-9cng",
+        "hxtq-dtcc",
+        "mies-djkc"
+      ]
+    },
+    {
+      "publisher_text": "Cámara de Comercio de Sincelejo",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "57ts-vknw",
+        "bk2g-u9wz",
+        "gskn-y6cz",
+        "gu7q-q66w",
+        "iwtt-88t5"
+      ]
+    },
+    {
+      "publisher_text": "Contraloría Departamental de Nariño",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "2rxb-d37t",
+        "6umk-ay53",
+        "a84e-iktn",
+        "aw42-s54v",
+        "dkxk-9hru"
+      ]
+    },
+    {
+      "publisher_text": "Corporación Autónoma Regional de Risaralda",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "2u8b-ds89",
+        "53gx-j5pc",
+        "6cnh-52tr",
+        "d9t8-xgtx",
+        "f5av-7djf"
+      ]
+    },
+    {
+      "publisher_text": "dtsaludcaldas",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "2bk8-65js",
+        "3twq-u4k5",
+        "583p-38sw",
+        "b333-mmkt",
+        "bubt-j5ci"
+      ]
+    },
+    {
+      "publisher_text": "Puente Nacional",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "3tjc-wxm9",
+        "c2pd-vhyj",
+        "cwxi-69ft",
+        "emnq-ku9d",
+        "h6mw-kw5b"
+      ]
+    },
+    {
+      "publisher_text": "URF",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "4ae9-8sgw",
+        "54u5-du8v",
+        "6f5i-r8je",
+        "8dk5-vjaw",
+        "9f49-sbs5"
+      ]
+    },
+    {
+      "publisher_text": "Villanueva",
+      "dataset_count": 10,
+      "sample_dataset_ids": [
+        "28u5-nh98",
+        "2mwj-jnjh",
+        "74vz-mjnn",
+        "8z65-b7td",
+        "a3x5-chw8"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía_de_Belalcázar",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "5u2g-jgu3",
+        "bsqe-umzr",
+        "f6qz-s28a",
+        "hs3m-6k3e",
+        "icsu-xerg"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía de Ricaurte Cundinamarca",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "6e4m-6mng",
+        "e88r-fiq9",
+        "j6n8-vymp",
+        "jdhy-vhhj",
+        "mtrs-e68h"
+      ]
+    },
+    {
+      "publisher_text": "Alcaldía Municipal de Roldanillo",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "3s69-mmke",
+        "83ah-qcs3",
+        "c77d-8nhg",
+        "cuh8-kzv2",
+        "drrt-uxk8"
+      ]
+    },
+    {
+      "publisher_text": "CAMARA DE COMERCIO DE BUGA",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "34f3-uczm",
+        "4jg2-3tgv",
+        "5qun-qaiq",
+        "bzxj-44eh",
+        "er68-a8j3"
+      ]
+    },
+    {
+      "publisher_text": "Cámara de Comercio de Medellín para Antioquia",
+      "dataset_count": 9,
+      "sample_dataset_ids": [
+        "2zc9-bpzw",
+        "8niu-2k8m",
+        "bzeh-ecuk",
+        "fkdi-8hm8",
+        "hexk-9eta"
+      ]
+    }
+  ]
+}
