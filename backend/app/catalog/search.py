@@ -56,7 +56,28 @@ class CatalogSearchSummary:
     results: list[CatalogSearchItem]
 
 
-SYNONYMS_ES = {
+# Lista pequeña y curada a mano, NO un tesauro general. Existe porque el
+# stemmer 'spanish' de PostgreSQL solo normaliza variantes morfologicas de
+# una misma raiz (escolar/escolares), no relaciona raices distintas
+# (escolar <-> educacion) -- y la busqueda vectorial por si sola tampoco
+# alcanzaba: los datasets reales del MEN sobre desercion escolar quedaban
+# con similitud coseno ~0.60-0.63 (fuera del top-25) contra ~0.68-0.70 de
+# datasets menos relevantes (verificado T-204 con el indice real, 8.416
+# embeddings). Este boost lexical (ver `lexical_rank` mas abajo) es un
+# parche deliberadamente acotado para ese hueco puntual, no una solucion
+# general de sinonimos en espanol.
+#
+# Limite conocido: solo cubre los pares agregados aqui a mano; una consulta
+# con un sinonimo no listado simplemente no se beneficia del boost (no
+# rompe nada, ver test_build_text_search_query_returns_plain_terms_when_
+# no_synonym_matches). Si aparecen mas huecos reales (via golden queries de
+# research.md o quejas de uso real), amplia esta lista con evidencia
+# concreta -- no adivines pares "razonables". Una solucion mas de fondo
+# (tesauro de PostgreSQL via `CREATE TEXT SEARCH DICTIONARY ... synonym`,
+# alimentado por un fixture versionado como `official_publishers.json`)
+# queda fuera de alcance de este parche; considerala si esta lista crece
+# mucho o si el problema se repite con otros pares no relacionados.
+SYNONYMS_ES: dict[str, list[str]] = {
     "escolar": ["educacion", "educativo", "estudiantes", "alumnos", "matricula"],
     "educacion": ["escolar", "educativo", "estudiantes", "alumnos", "matricula"],
 }
