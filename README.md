@@ -121,7 +121,7 @@ El servicio `db` usa la imagen versionada `pgvector/pgvector:0.8.0-pg16`, un vol
 ### Pasos
 1.  **Clonar el repositorio:**
     ```bash
-    git clone https://github.com/Grajales-Camilo/cuestion-de-datos-MinTIC-2025.git
+    git clone https://github.com/Grajales-Camilo/cuestion-de-datos-MinTIC-2026.git
     cd cuestion-de-datos
     ```
 
