@@ -8,9 +8,15 @@
 # columnas legítimamente no-personales quedan atascadas en "unknown", pero
 # el default seguro no se toca.
 #
-# Todos los patrones se evalúan sobre el texto normalizado (normalize_publisher_name:
-# trim, mayúsculas, sin tildes, espacios colapsados) de field_name + display_name
-# + description concatenados. Orden de evaluación: high -> medium -> low -> default.
+# Los patrones de high/medium se evalúan sobre el texto normalizado
+# (normalize_publisher_name: trim, mayúsculas, sin tildes, espacios
+# colapsados) de field_name + display_name + description CONCATENADOS (una
+# descripción sospechosa puede escalar una columna de nombre genérico). Los
+# patrones de low (anclados con ^...$) se evalúan SOLO contra display_name
+# normalizado si existe, o field_name si no -- NUNCA concatenados con
+# description, porque el ancla de fin de cadena nunca se alcanzaría con
+# texto adicional (hallazgo T-303, verificado contra el catálogo real).
+# Orden de evaluación: high -> medium -> low -> default.
 
 fixture_version: "1.0.0"
 updated_at: "2026-07-08T00:00:00Z"
@@ -66,8 +72,8 @@ medium_risk_column_patterns:
 # cambia el default.
 low_risk_column_allowlist:
   - id: codigo_geografico_oficial
-    pattern: '^COD(IGO)?_?(DANE|DEPARTAMENTO|MUNICIPIO|DIVIPOLA)$|^DEPARTAMENTO$|^MUNICIPIO$|^ENTIDAD_TERRITORIAL$|^REGION$|^LOCALIDAD$|^COMUNA$'
-    reason: "Codigo o nombre de division politico-administrativa, no identifica personas"
+    pattern: '^COD(IGO)?_?(DANE|DEPARTAMENTO|MUNICIPIO|DIVIPOLA|ETC)$|^DEPARTAMENTO$|^MUNICIPIO$|^ETC$|^ENTIDAD_TERRITORIAL$|^REGION$|^LOCALIDAD$|^COMUNA$'
+    reason: "Codigo o nombre de division politico-administrativa (incluida Entidad Territorial Certificada), no identifica personas"
   - id: fecha_periodo_reporte
     pattern: '^(FECHA_)?(CORTE|REPORTE|PERIODO|VIGENCIA|A[ÑN]O|MES|TRIMESTRE|SEMESTRE)$'
     reason: "Fecha o periodo de reporte agregado"
@@ -90,8 +96,11 @@ low_risk_column_allowlist:
     pattern: '^(LATITUD|LONGITUD|COORDENADA)_?(ESTACION|PUNTO_MONITOREO|PREDIO_CATASTRAL|INFRAESTRUCTURA)$'
     reason: "Coordenadas de infraestructura/estaciones de monitoreo, no de una persona"
   - id: metrica_educativa_agregada
-    pattern: '^(MATRICULA|COBERTURA|DESERCION)_?(TOTAL|BRUTA|NETA)?$'
+    pattern: '^(MATRICULA|COBERTURA|DESERCION|APROBACION|REPROBACION|REPITENCIA)_?(TOTAL|BRUTA|NETA|MEDIA|PRIMARIA|SECUNDARIA|TRANSICION)?$'
     reason: "Metrica educativa agregada por institucion/territorio, no individual"
+  - id: metrica_institucional_agregada
+    pattern: '^(SEDES|TAMANO)_?'
+    reason: "Metrica institucional agregada (sedes, tamano promedio de grupo), no individual"
 
 # Señales a nivel de dataset completo (titulo/descripcion/categoria): si
 # aparecen, EMPUJAN el riesgo del dataset hacia arriba aunque los nombres de

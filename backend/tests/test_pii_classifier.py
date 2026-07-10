@@ -23,6 +23,52 @@ def test_low_risk_geographic_code() -> None:
     assert result.risk_level == "low"
 
 
+def test_low_risk_survives_realistic_non_empty_description() -> None:
+    """Regresion del hallazgo T-303: con description no vacia (el caso normal
+    en produccion), el allowlist de low debia seguir resolviendo -- antes de
+    la correccion, el ancla `$` nunca alcanzaba el final de un haystack
+    concatenado con la descripcion y esto quedaba en 'unknown'."""
+    result = classify_column(
+        "municipio",
+        "Municipio",
+        "Nombre del municipio de residencia del estudiante segun DIVIPOLA",
+        FIXTURE,
+    )
+    assert result.risk_level == "low"
+
+
+def test_low_risk_resolves_via_display_name_despite_socrata_mangling() -> None:
+    """Socrata reemplaza cada caracter acentuado por '_' en field_name
+    ('codigo' -> 'c_digo') pero preserva la tilde en display_name; el
+    allowlist de low debe resolver usando display_name."""
+    result = classify_column(
+        "c_digo_municipio", "Código_Municipio", "Codigo DIVIPOLA del municipio", FIXTURE
+    )
+    assert result.risk_level == "low"
+
+
+def test_low_risk_education_indicator_words_with_level_suffix() -> None:
+    for field, display in [
+        ("aprobaci_n_transici_n", "Aprobación_Transición"),
+        ("reprobaci_n_media", "Reprobación_Media"),
+        ("repitencia_primaria", "Repitencia_Primaria"),
+        ("deserci_n_secundaria", "Deserción_Secundaria"),
+    ]:
+        description = "Indicador educativo agregado por municipio"
+        result = classify_column(field, display, description, FIXTURE)
+        assert result.risk_level == "low", f"{field} deberia ser low"
+
+
+def test_low_risk_institutional_metric() -> None:
+    result = classify_column(
+        "sedes_conectadas_a_internet",
+        "Sedes_Conectadas_A_Internet",
+        "Porcentaje de sedes oficiales conectadas a internet",
+        FIXTURE,
+    )
+    assert result.risk_level == "low"
+
+
 def test_medium_risk_quasi_identifier() -> None:
     result = classify_column("salario_individual", None, None, FIXTURE)
     assert result.risk_level == "medium"
@@ -36,6 +82,18 @@ def test_unrecognized_column_defaults_to_unknown() -> None:
 def test_description_can_trigger_classification() -> None:
     result = classify_column("valor", None, "Historia clinica del paciente", FIXTURE)
     assert result.risk_level == "high"
+
+
+def test_high_risk_description_overrides_low_looking_field_name() -> None:
+    """El orden high -> medium -> low no debe romperse: una descripcion de
+    alto riesgo debe ganarle a un field_name que por si solo calificaria low."""
+    result = classify_column("municipio", "Municipio", "Domicilio y cedula del paciente", FIXTURE)
+    assert result.risk_level == "high"
+
+
+def test_low_risk_bare_etc_code() -> None:
+    result = classify_column("etc", "ETC", "Nombre de la Entidad Territorial Certificada", FIXTURE)
+    assert result.risk_level == "low"
 
 
 def test_dataset_risk_is_max_of_columns() -> None:

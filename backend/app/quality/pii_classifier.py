@@ -3,6 +3,28 @@
 Estrategia (Art. VI.1 de la constitucion): cualquier columna que no matchee
 ningun patron de high/medium/low queda en `default_column_risk` ("unknown",
 bloqueada) -- nunca "low" por omision.
+
+Correccion verificada contra datos reales (hallazgo T-303, 2026-07-10): el
+allowlist de `low` usa patrones anclados (`^...$`) pensados para comparar
+contra el NOMBRE exacto de una columna. La implementacion original los
+evaluaba contra el mismo haystack concatenado (`field_name + display_name +
+description`) que high/medium; con una descripcion no vacia (el caso normal
+en produccion) el ancla `$` nunca alcanza el final del nombre real y "low"
+queda practicamente inalcanzable. Verificado contra el catalogo ya
+ingerido: 0 de 2.611 datasets `api_active=true` + `publisher verified`
+resultaban `pii_risk_level=low`. La correccion evalua el allowlist de `low`
+SOLO contra `display_name` (preferido) o `field_name`, normalizados y sin
+concatenar con `description`. Ademas Socrata reemplaza cada caracter
+acentuado por `_` en `field_name` ("codigo" -> "c_digo", "deserci_n",
+"a_o") pero preserva la tilde en `display_name`; preferir `display_name`
+resuelve ese mangling sin heuristicas adicionales. `high`/`medium` NO
+cambian: siguen escaneando el haystack completo (field_name+display_name+
+description) igual que antes, preservando que una descripcion sospechosa
+pueda escalar una columna de nombre generico
+(`test_description_can_trigger_classification`). El cambio SOLO amplia
+cuando una columna puede resolver a `low`; nunca puede degradar una columna
+que ya calificaba como `high`/`medium` porque esos chequeos corren primero
+y no se tocan.
 """
 
 from __future__ import annotations
@@ -72,8 +94,10 @@ def classify_column(
     for pattern in fixture.medium_risk_column_patterns:
         if re.search(pattern.pattern, haystack):
             return ColumnPiiClassification(risk_level="medium", matched_pattern_id=pattern.id)
+
+    name_only = _normalized_haystack(display_name or field_name)
     for pattern in fixture.low_risk_column_allowlist:
-        if re.search(pattern.pattern, haystack):
+        if re.search(pattern.pattern, name_only):
             return ColumnPiiClassification(risk_level="low", matched_pattern_id=pattern.id)
     return ColumnPiiClassification(risk_level=fixture.default_column_risk, matched_pattern_id=None)
 

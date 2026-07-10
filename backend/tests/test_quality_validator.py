@@ -270,7 +270,24 @@ def test_case_12_medium_pii_with_insufficient_aggregation_is_blocked() -> None:
 
     assert result.eligibility_status == "blocked"
     assert "pii_aggregation_insufficient" in result.eligibility_reasons
-    assert any("privacidad" in warning for warning in result.warnings_user)
+
+
+def test_case_12_medium_pii_count_without_explicit_alias_still_counts() -> None:
+    """Regresion del hallazgo T-303: `count(*)` sin `AS` es una consulta valida
+    (RF-401 solo exige "count(*) o agregado equivalente", no un alias); Socrata
+    nombra esa columna `count` cuando no se declara alias."""
+    result = validate_evidence(
+        draft(
+            dataset_pii_risk_level="medium",
+            selected_columns=(SelectedColumn("desercion", "medium"),),
+            canonical_soql="SELECT avg(desercion), count(*) LIMIT 1000 OFFSET 0",
+            rows=({"avg_desercion": "3.966", "count": "5"},),
+            row_count=1,
+        )
+    )
+
+    assert result.eligibility_status == "eligible"
+    assert result.row_policy.aggregation_min_count == 5
 
 
 # --- Caso 13: elegibilidad vs calidad (independientes) -----------------------

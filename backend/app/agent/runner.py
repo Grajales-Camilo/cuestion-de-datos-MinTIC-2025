@@ -56,6 +56,7 @@ from app.tools.ejecutar_soql import ejecutar_soql
 from app.tools.explorar_valores import explorar_valores
 from app.tools.perfilar_dataset import perfilar_dataset
 from app.tools.resolver_geografia import resolver_geografia
+from app.tools.soda_client import SOCRATA_RESOURCE_BASE_URL
 
 DEFAULT_STEP_DELAY_S = 1.0
 CANCEL_POLL_INTERVAL_S = 0.2
@@ -242,7 +243,7 @@ async def execute_agent_run_async(
             model=settings.embedding_model,
             google_api_key=_secret_value(settings.google_api_key),
         )
-        async with httpx.AsyncClient() as http_client:
+        async with httpx.AsyncClient(base_url=SOCRATA_RESOURCE_BASE_URL) as http_client:
             app_token = _secret_value(settings.socrata_app_token)
 
             async def call_buscar(raw_input):

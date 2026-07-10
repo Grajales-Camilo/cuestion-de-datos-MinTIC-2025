@@ -16,7 +16,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
@@ -78,7 +78,16 @@ class PlannerOutput(BaseModel):
 
 
 class ClaimSpecPayload(BaseModel):
-    claim_type: str
+    """Hallazgo T-303 (2026-07-10, ejecucion real): `claim_type` como `str`
+    libre permitia que el LLM alucinara valores como `direct_value`, que
+    `build_claims` rechaza (`claim_type '...' no reconocido`, contracts/
+    agent-tools.md §T7 solo admite `direct`/`derived`). Restringirlo a
+    `Literal` hace que el proveedor de structured output (Gemini/Claude)
+    nunca pueda producir un valor fuera de esos dos, en vez de depender de
+    que T7 lo rechace despues de gastar un paso completo del presupuesto.
+    """
+
+    claim_type: Literal["direct", "derived"]
     description: str = Field(min_length=1, max_length=500)
     source_row_indexes: list[int] = Field(min_length=1)
     columns: list[str] = Field(min_length=1)

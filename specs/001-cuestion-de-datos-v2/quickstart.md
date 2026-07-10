@@ -151,12 +151,18 @@ Abre `http://localhost:3000`.
 3. **Grafo real por consola (T-303, antes de T-304):**
    ```powershell
    cd backend
-   python scripts/run_agent.py --question "¿Cuántos recursos de cooperación internacional recibió el Oriente antioqueño desde 2020 y en qué sectores?"
+   python scripts/run_agent.py --question "¿Cuál fue el promedio de deserción escolar en el departamento de Antioquia entre 2018 y 2022, según el Ministerio de Educación?"
    ```
    El comando crea una corrida durable, ejecuta el grafo real y muestra el
    objeto final. Requiere catálogo e índice cargados, claves LLM/Socrata y
    `EMBEDDING_MODEL=gemini-embedding-2`. No implementa autorización HTTP;
    esa superficie pertenece a T-304.
+
+   Nota (research.md §13): la pregunta original de ESC-02 sobre el "Oriente
+   antioqueño" no es respondible hoy porque esa subregión no existe en
+   `divipola_entries` (solo modela `department`/`municipality`) y el dataset
+   candidato de cooperación internacional carece de columna geográfica;
+   queda documentado como seguimiento separado, no como falla del grafo.
 4. **Agente por API (desde T-304):**
    ```powershell
    $body = @{ question = "¿Cuántos programas de educación para el trabajo hay registrados en Antioquia?" } | ConvertTo-Json

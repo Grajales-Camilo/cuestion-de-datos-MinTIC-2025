@@ -450,12 +450,23 @@ def _worst_pii_level(levels: list[str]) -> str:
 
 
 def _count_alias(parsed: ParsedQuery | None) -> str | None:
+    """Nombre de columna bajo el que Socrata devuelve `count(...)` en `rows`.
+
+    Hallazgo T-303 (2026-07-10, ejecucion real): un `count(*)` SIN alias
+    explicito es una consulta valida y comun (el propio RF-401 solo exige
+    "count(*) o agregado equivalente", no un alias) -- Socrata nombra esa
+    columna de salida literalmente `count` cuando no se declara `AS`.
+    Exigir `item.alias` truthy hacia bloquear evidencia de agregacion
+    genuinamente suficiente (verificado: consulta real con `count(*)` sin
+    alias, Socrata devolvio `{"count": "5", ...}`, pero esta funcion
+    devolvia `None` y `_aggregation_min_count` trataba la fila como si no
+    tuviera conteo, bloqueando por PII medium pese a agregar 5 filas).
+    """
     if parsed is None:
         return None
     for item in parsed.select_items:
         if isinstance(item.expr, FuncCall) and item.expr.name == "count":
-            if item.alias:
-                return item.alias
+            return item.alias or "count"
     return None
 
 
