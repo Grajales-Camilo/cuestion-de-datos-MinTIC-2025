@@ -1,1 +1,1 @@
-"""Capa multi-proveedor LLM. Se implementa en T-301."""
+"""Capa multi-proveedor LLM (T-301, RF-206). Ver `app.llm.factory`."""
