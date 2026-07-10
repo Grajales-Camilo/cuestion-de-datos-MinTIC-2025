@@ -23,8 +23,8 @@
 ## 2. Clonar y configurar
 
 ```bash
-git clone https://github.com/Grajales-Camilo/cuestion-de-datos-MinTIC-2025.git
-cd cuestion-de-datos-MinTIC-2025
+git clone https://github.com/Grajales-Camilo/cuestion-de-datos-MinTIC-2026.git
+cd cuestion-de-datos-MinTIC-2026
 git checkout v2
 ```
 
