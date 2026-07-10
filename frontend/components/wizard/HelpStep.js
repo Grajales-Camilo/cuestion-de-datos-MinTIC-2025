@@ -111,7 +111,7 @@ export default function HelpStep({ onPrev }) {
                             Este proyecto se distribuye bajo licencia <span className="text-yellow-400 font-mono">MIT</span>.
                             <br />
                             <a
-                                href="https://github.com/Grajales-Camilo/cuestion-de-datos-MinTIC-2025"
+                                href="https://github.com/Grajales-Camilo/cuestion-de-datos-MinTIC-2026"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-cyan-400 hover:text-cyan-300 hover:underline inline-flex items-center gap-1 mt-1"
