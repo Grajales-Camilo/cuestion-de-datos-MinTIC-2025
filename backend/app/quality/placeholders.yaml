@@ -1,0 +1,22 @@
+fixture_version: "1.0.0"
+updated_at: "2026-07-06T00:00:00Z"
+# Patrones GENERICOS de relleno (contracts/validacion-calidad.md D2, regla c):
+# solo se marcan como placeholder si ademas superan PLACEHOLDER_MIN_RATIO de
+# las celdas citadas. Deliberadamente NO incluye numeros sueltos como "9" o
+# "99": esos solo cuentan como placeholder si el codebook de la columna
+# (regla b, provisto por el llamador via `known_placeholder_codes`) los
+# declara explicitamente -- de lo contrario serian falsos positivos sobre
+# valores numericos reales (pruebas.md §2.1, caso 5).
+generic_candidate_patterns:
+  - id: "default_prefix"
+    pattern: "(?i)^default[\\s_-]"
+    reason: "Parece un valor de relleno del sistema (empieza con 'Default')"
+  - id: "no_especifica"
+    pattern: "(?i)^no\\s*especifica$"
+    reason: "'No especifica' suele ser un valor de relleno, no una categoria real"
+  - id: "negative_one_code"
+    pattern: "^-1$"
+    reason: "'-1' es un codigo de relleno comun en columnas codificadas"
+  - id: "not_available_text"
+    pattern: "(?i)^(n/?a|sin\\s*dato|sin\\s*informacion)$"
+    reason: "Valor de relleno tipo 'sin dato'/'N/A'"
