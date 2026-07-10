@@ -1,6 +1,9 @@
 import asyncio
+import contextlib
 import hmac
+import json
 import sys
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -8,14 +11,19 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from sqlalchemy import text
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, text
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.agent import durability, heartbeat_sweep, runner, worker_lease
 from app.catalog.search import CatalogSearchSummary, search_catalog
 from app.config import get_settings
 from app.db.checkpointer import setup_checkpointer
 from app.db.engine import create_app_async_engine
+from app.db.models import AgentRun
 from app.db.publishers import (
     DEFAULT_FIXTURE_PATH,
     OfficialPublishersFixture,
@@ -34,6 +42,11 @@ from app.schemas import (
     PublishersReloadSummary,
 )
 
+POC_SWEEP_INTERVAL_S = 2.0
+POC_LEASE_RENEWAL_MIN_INTERVAL_S = 1.0
+POC_SSE_POLL_INTERVAL_S = 0.3
+POC_SSE_PING_INTERVAL_S = 15.0
+
 APP_VERSION = "2.0.0"
 
 if sys.platform == "win32":
@@ -45,7 +58,179 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     app.state.settings = settings
     await setup_checkpointer(settings)
+
+    worker_instance_id, _closed_on_startup = await _startup_worker_lifecycle_with_platform_loop(
+        settings.sqlalchemy_database_url, settings.worker_lease_ttl_s
+    )
+    app.state.worker_instance_id = worker_instance_id
+
+    background_tasks = [
+        asyncio.create_task(
+            _lease_renewal_loop(
+                settings.sqlalchemy_database_url, worker_instance_id, settings.worker_lease_ttl_s
+            )
+        ),
+        asyncio.create_task(
+            _heartbeat_sweep_loop(
+                settings.sqlalchemy_database_url,
+                worker_instance_id,
+                settings.run_heartbeat_timeout_s,
+                settings.run_max_duration_s,
+            )
+        ),
+    ]
+    app.state.background_tasks = background_tasks
+
     yield
+
+    for task in background_tasks:
+        task.cancel()
+    for task in background_tasks:
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    await _mark_worker_shutdown_with_platform_loop(
+        settings.sqlalchemy_database_url, worker_instance_id
+    )
+
+
+async def _startup_worker_lifecycle_with_platform_loop(
+    database_url: str, lease_ttl_s: int
+) -> tuple[str, int]:
+    if sys.platform == "win32":
+        return await asyncio.to_thread(
+            _run_startup_worker_lifecycle_with_selector, database_url, lease_ttl_s
+        )
+    return await _startup_worker_lifecycle_async(database_url, lease_ttl_s)
+
+
+def _run_startup_worker_lifecycle_with_selector(
+    database_url: str, lease_ttl_s: int
+) -> tuple[str, int]:
+    return asyncio.run(
+        _startup_worker_lifecycle_async(database_url, lease_ttl_s),
+        loop_factory=asyncio.SelectorEventLoop,
+    )
+
+
+async def _startup_worker_lifecycle_async(database_url: str, lease_ttl_s: int) -> tuple[str, int]:
+    """Registra la instancia y cierra huerfanas de instancias con lease vencida
+    (arranque idempotente, plan.md §11), en una sola conexion."""
+
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
+    try:
+        worker_instance_id = await worker_lease.register_worker_instance(engine, lease_ttl_s)
+        closed = await worker_lease.close_stale_running_runs(engine, worker_instance_id)
+        return worker_instance_id, closed
+    finally:
+        await engine.dispose()
+
+
+async def _renew_lease_with_platform_loop(
+    database_url: str, worker_instance_id: str, ttl_s: int
+) -> None:
+    if sys.platform == "win32":
+        await asyncio.to_thread(
+            _run_renew_lease_with_selector, database_url, worker_instance_id, ttl_s
+        )
+    else:
+        await _renew_lease_async(database_url, worker_instance_id, ttl_s)
+
+
+def _run_renew_lease_with_selector(database_url: str, worker_instance_id: str, ttl_s: int) -> None:
+    asyncio.run(
+        _renew_lease_async(database_url, worker_instance_id, ttl_s),
+        loop_factory=asyncio.SelectorEventLoop,
+    )
+
+
+async def _renew_lease_async(database_url: str, worker_instance_id: str, ttl_s: int) -> None:
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
+    try:
+        await worker_lease.renew_lease(engine, worker_instance_id, ttl_s)
+    finally:
+        await engine.dispose()
+
+
+async def _mark_worker_shutdown_with_platform_loop(
+    database_url: str, worker_instance_id: str
+) -> None:
+    if sys.platform == "win32":
+        await asyncio.to_thread(_run_mark_shutdown_with_selector, database_url, worker_instance_id)
+    else:
+        await _mark_worker_shutdown_async(database_url, worker_instance_id)
+
+
+def _run_mark_shutdown_with_selector(database_url: str, worker_instance_id: str) -> None:
+    asyncio.run(
+        _mark_worker_shutdown_async(database_url, worker_instance_id),
+        loop_factory=asyncio.SelectorEventLoop,
+    )
+
+
+async def _mark_worker_shutdown_async(database_url: str, worker_instance_id: str) -> None:
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
+    try:
+        await worker_lease.mark_worker_shutdown(engine, worker_instance_id)
+    finally:
+        await engine.dispose()
+
+
+async def _sweep_with_platform_loop(
+    database_url: str, worker_instance_id: str, heartbeat_timeout_s: int, max_duration_s: int
+) -> None:
+    if sys.platform == "win32":
+        await asyncio.to_thread(
+            _run_sweep_with_selector,
+            database_url,
+            worker_instance_id,
+            heartbeat_timeout_s,
+            max_duration_s,
+        )
+    else:
+        await _sweep_async(database_url, worker_instance_id, heartbeat_timeout_s, max_duration_s)
+
+
+def _run_sweep_with_selector(
+    database_url: str, worker_instance_id: str, heartbeat_timeout_s: int, max_duration_s: int
+) -> None:
+    asyncio.run(
+        _sweep_async(database_url, worker_instance_id, heartbeat_timeout_s, max_duration_s),
+        loop_factory=asyncio.SelectorEventLoop,
+    )
+
+
+async def _sweep_async(
+    database_url: str, worker_instance_id: str, heartbeat_timeout_s: int, max_duration_s: int
+) -> None:
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
+    try:
+        await heartbeat_sweep.sweep_orphaned_runs(
+            engine,
+            own_worker_instance_id=worker_instance_id,
+            heartbeat_timeout_s=heartbeat_timeout_s,
+            max_duration_s=max_duration_s,
+        )
+    finally:
+        await engine.dispose()
+
+
+async def _lease_renewal_loop(database_url: str, worker_instance_id: str, ttl_s: int) -> None:
+    """Renueva heartbeat/lease cada tercio del TTL (plan.md §11)."""
+
+    interval = max(ttl_s / 3, POC_LEASE_RENEWAL_MIN_INTERVAL_S)
+    while True:
+        await asyncio.sleep(interval)
+        await _renew_lease_with_platform_loop(database_url, worker_instance_id, ttl_s)
+
+
+async def _heartbeat_sweep_loop(
+    database_url: str, worker_instance_id: str, heartbeat_timeout_s: int, max_duration_s: int
+) -> None:
+    while True:
+        await asyncio.sleep(POC_SWEEP_INTERVAL_S)
+        await _sweep_with_platform_loop(
+            database_url, worker_instance_id, heartbeat_timeout_s, max_duration_s
+        )
 
 
 app = FastAPI(title="Cuestion de Datos API", version=APP_VERSION, lifespan=lifespan)
@@ -394,3 +579,245 @@ def _isoformat(value: datetime | None) -> str | None:
     if value is None:
         return None
     return value.isoformat()
+
+
+# --- T-300: PoC de durabilidad ----------------------------------------------
+# Prefijo `_poc` deliberado: NO es el contrato final de T-304
+# (contracts/api-rest.md `/v2/agent/...`), que incluira RespuestaFinal,
+# claims, evidencia y autorizacion `Authorization: Bearer` (RF-801). Este
+# PoC demuestra solo la mecanica de durabilidad de plan.md §11 sobre un
+# grafo de juguete de 3 nodos; T-304 reutilizara `app/agent/durability.py`,
+# `worker_lease.py`, `heartbeat_sweep.py` y `runner.py`.
+
+
+class PocAgentQueryRequest(BaseModel):
+    question: str | None = None
+    step_delay_s: Annotated[float, Field(ge=0, le=30)] = runner.DEFAULT_STEP_DELAY_S
+
+
+class PocAgentQueryResponse(BaseModel):
+    run_id: uuid.UUID
+    stream_url: str
+
+
+@app.post(
+    "/v2/_poc/agent/query",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=PocAgentQueryResponse,
+)
+async def poc_agent_query(request: Request, body: PocAgentQueryRequest) -> PocAgentQueryResponse:
+    """T-300: crea una corrida del grafo de juguete de 3 nodos (plan.md §11)."""
+
+    settings = request.app.state.settings
+    worker_instance_id = request.app.state.worker_instance_id
+    run_id = await _create_run_with_platform_loop(
+        settings.sqlalchemy_database_url,
+        worker_instance_id=worker_instance_id,
+        question=body.question or "Demostracion T-300 de durabilidad",
+        retention_user_days=settings.retention_user_days,
+    )
+    runner.start_run_task(
+        settings.sqlalchemy_database_url,
+        settings.psycopg_database_url,
+        run_id,
+        body.step_delay_s,
+    )
+    return PocAgentQueryResponse(run_id=run_id, stream_url=f"/v2/_poc/agent/stream/{run_id}")
+
+
+async def _create_run_with_platform_loop(
+    database_url: str, *, worker_instance_id: str, question: str, retention_user_days: int
+) -> uuid.UUID:
+    if sys.platform == "win32":
+        return await asyncio.to_thread(
+            _run_create_run_with_selector,
+            database_url,
+            worker_instance_id,
+            question,
+            retention_user_days,
+        )
+    return await _create_run_async(database_url, worker_instance_id, question, retention_user_days)
+
+
+def _run_create_run_with_selector(
+    database_url: str, worker_instance_id: str, question: str, retention_user_days: int
+) -> uuid.UUID:
+    return asyncio.run(
+        _create_run_async(database_url, worker_instance_id, question, retention_user_days),
+        loop_factory=asyncio.SelectorEventLoop,
+    )
+
+
+async def _create_run_async(
+    database_url: str, worker_instance_id: str, question: str, retention_user_days: int
+) -> uuid.UUID:
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
+    try:
+        return await runner.create_run(
+            engine,
+            worker_instance_id=worker_instance_id,
+            question=question,
+            retention_user_days=retention_user_days,
+        )
+    finally:
+        await engine.dispose()
+
+
+@app.get("/v2/_poc/agent/stream/{run_id}")
+async def poc_agent_stream(
+    request: Request,
+    run_id: uuid.UUID,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    """SSE con reconexion `Last-Event-ID` (RF-209, plan.md §11): reenvia los
+    eventos persistidos con `seq` mayor y continua en vivo hasta el terminal."""
+
+    settings = request.app.state.settings
+    try:
+        since_seq = int(last_event_id) if last_event_id else 0
+    except ValueError:
+        since_seq = 0
+
+    run = await _get_run_with_platform_loop(settings.sqlalchemy_database_url, run_id)
+    if run is None:
+        raise ApiError(
+            status.HTTP_404_NOT_FOUND,
+            "RUN_NOT_FOUND",
+            "No se encontro la investigacion solicitada.",
+            message_dev=f"run_id={run_id} no existe.",
+        )
+
+    return StreamingResponse(
+        _poc_sse_generator(settings.sqlalchemy_database_url, run_id, since_seq),
+        media_type="text/event-stream",
+    )
+
+
+async def _poc_sse_generator(database_url: str, run_id: uuid.UUID, since_seq: int):
+    last_seq = since_seq
+    last_ping = asyncio.get_running_loop().time()
+    while True:
+        events, run = await _fetch_stream_batch_with_platform_loop(database_url, run_id, last_seq)
+        if run is None:
+            return
+        for event in events:
+            yield (
+                f"id: {event.seq}\nevent: {event.event_type}\n"
+                f"data: {json.dumps(event.payload)}\n\n"
+            )
+            last_seq = event.seq
+            if event.event_type in ("answer", "error"):
+                return
+        if run.status != "running" and not events:
+            return
+        now = asyncio.get_running_loop().time()
+        if now - last_ping >= POC_SSE_PING_INTERVAL_S:
+            yield ": ping\n\n"
+            last_ping = now
+        await asyncio.sleep(POC_SSE_POLL_INTERVAL_S)
+
+
+async def _get_run_with_platform_loop(database_url: str, run_id: uuid.UUID) -> AgentRun | None:
+    if sys.platform == "win32":
+        return await asyncio.to_thread(_run_get_run_with_selector, database_url, run_id)
+    return await _get_run_async(database_url, run_id)
+
+
+def _run_get_run_with_selector(database_url: str, run_id: uuid.UUID) -> AgentRun | None:
+    return asyncio.run(_get_run_async(database_url, run_id), loop_factory=asyncio.SelectorEventLoop)
+
+
+async def _get_run_async(database_url: str, run_id: uuid.UUID) -> AgentRun | None:
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
+    try:
+        return await durability.get_run(engine, run_id)
+    finally:
+        await engine.dispose()
+
+
+async def _fetch_stream_batch_with_platform_loop(
+    database_url: str, run_id: uuid.UUID, since_seq: int
+):
+    if sys.platform == "win32":
+        return await asyncio.to_thread(
+            _run_fetch_stream_batch_with_selector, database_url, run_id, since_seq
+        )
+    return await _fetch_stream_batch_async(database_url, run_id, since_seq)
+
+
+def _run_fetch_stream_batch_with_selector(database_url: str, run_id: uuid.UUID, since_seq: int):
+    return asyncio.run(
+        _fetch_stream_batch_async(database_url, run_id, since_seq),
+        loop_factory=asyncio.SelectorEventLoop,
+    )
+
+
+async def _fetch_stream_batch_async(database_url: str, run_id: uuid.UUID, since_seq: int):
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
+    try:
+        run = await durability.get_run(engine, run_id)
+        if run is None:
+            return [], None
+        events = await durability.list_events_since(engine, run_id, since_seq)
+        return events, run
+    finally:
+        await engine.dispose()
+
+
+@app.delete("/v2/_poc/agent/runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def poc_delete_agent_run(request: Request, run_id: uuid.UUID) -> Response:
+    """RF-803: cancela cooperativamente si esta activa (DELETE_ACTIVE_GRACE_S)
+    y borra corrida + checkpoints (`adelete_thread`) de forma irreversible."""
+
+    settings = request.app.state.settings
+    run = await _get_run_with_platform_loop(settings.sqlalchemy_database_url, run_id)
+    if run is None:
+        raise ApiError(
+            status.HTTP_404_NOT_FOUND,
+            "RUN_NOT_FOUND",
+            "No se encontro la investigacion solicitada.",
+            message_dev=f"run_id={run_id} no existe.",
+        )
+
+    await runner.request_cancel_and_wait(run_id, settings.delete_active_grace_s)
+    await _delete_run_with_platform_loop(
+        settings.sqlalchemy_database_url, settings.psycopg_database_url, run_id
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+async def _delete_run_with_platform_loop(
+    sqlalchemy_database_url: str, psycopg_database_url: str, run_id: uuid.UUID
+) -> None:
+    if sys.platform == "win32":
+        await asyncio.to_thread(
+            _run_delete_run_with_selector, sqlalchemy_database_url, psycopg_database_url, run_id
+        )
+    else:
+        await _delete_run_async(sqlalchemy_database_url, psycopg_database_url, run_id)
+
+
+def _run_delete_run_with_selector(
+    sqlalchemy_database_url: str, psycopg_database_url: str, run_id: uuid.UUID
+) -> None:
+    asyncio.run(
+        _delete_run_async(sqlalchemy_database_url, psycopg_database_url, run_id),
+        loop_factory=asyncio.SelectorEventLoop,
+    )
+
+
+async def _delete_run_async(
+    sqlalchemy_database_url: str, psycopg_database_url: str, run_id: uuid.UUID
+) -> None:
+    """Orden normativo (plan.md §11/data-model.md §7): checkpoints primero,
+    luego la fila de la corrida."""
+
+    async with AsyncPostgresSaver.from_conn_string(psycopg_database_url) as saver:
+        await saver.adelete_thread(str(run_id))
+    engine = create_app_async_engine(sqlalchemy_database_url, pool_pre_ping=True)
+    try:
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with session_factory() as session, session.begin():
+            await session.execute(delete(AgentRun).where(AgentRun.id == run_id))
+    finally:
+        await engine.dispose()
