@@ -616,7 +616,7 @@ async def poc_agent_query(request: Request, body: PocAgentQueryRequest) -> PocAg
         question=body.question or "Demostracion T-300 de durabilidad",
         retention_user_days=settings.retention_user_days,
     )
-    runner.start_run_task(
+    runner.start_toy_run_task(
         settings.sqlalchemy_database_url,
         settings.psycopg_database_url,
         run_id,

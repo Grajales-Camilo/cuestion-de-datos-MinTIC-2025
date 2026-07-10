@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from sqlalchemy import select, text, update
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.db.models import AgentRun, AgentRunEvent
 
@@ -48,27 +48,38 @@ async def reserve_and_emit_event(
     """
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    now = datetime.now(UTC)
     async with session_factory() as session, session.begin():
-        seq = (
-            await session.execute(
-                text(
-                    "UPDATE agent_runs SET last_event_seq = last_event_seq + 1 "
-                    "WHERE id = :run_id RETURNING last_event_seq"
-                ),
-                {"run_id": run_id},
-            )
-        ).scalar_one()
-        session.add(
-            AgentRunEvent(
-                run_id=run_id,
-                seq=seq,
-                event_type=event_type,
-                payload=payload,
-                created_at=now,
-            )
-        )
+        seq = await reserve_and_add_event(session, run_id, event_type, payload)
     return EmittedEvent(run_id=run_id, seq=seq, event_type=event_type, payload=payload)
+
+
+async def reserve_and_add_event(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    event_type: EventType,
+    payload: dict[str, Any],
+) -> int:
+    """Reserva e inserta un evento usando la transacción activa del llamador."""
+
+    seq = (
+        await session.execute(
+            text(
+                "UPDATE agent_runs SET last_event_seq = last_event_seq + 1 "
+                "WHERE id = :run_id RETURNING last_event_seq"
+            ),
+            {"run_id": run_id},
+        )
+    ).scalar_one()
+    session.add(
+        AgentRunEvent(
+            run_id=run_id,
+            seq=seq,
+            event_type=event_type,
+            payload=payload,
+            created_at=datetime.now(UTC),
+        )
+    )
+    return int(seq)
 
 
 async def write_terminal_event_once(

@@ -1,5 +1,6 @@
 from typing import Any
 
+import httpx
 import pytest
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage
@@ -12,6 +13,7 @@ from app.llm.factory import (
     LLMPricingError,
     LLMProviderError,
     LLMUsage,
+    ainvoke_structured_chat_model,
     estimate_cost_usd,
     get_chat_model,
     get_chat_model_from_settings,
@@ -107,6 +109,17 @@ def test_get_structured_chat_model_es_uniforme_entre_proveedores(
     structured = get_structured_chat_model(llm_provider, llm_model, DecisionEsquema, **key_kwargs)
 
     assert hasattr(structured, "invoke")
+
+
+class TimeoutRunnable:
+    async def ainvoke(self, _input, **_kwargs):
+        raise httpx.ReadTimeout("proveedor sin respuesta")
+
+
+@pytest.mark.asyncio
+async def test_structured_model_timeout_maps_to_llm_provider_error() -> None:
+    with pytest.raises(LLMProviderError, match="Timeout"):
+        await ainvoke_structured_chat_model(TimeoutRunnable(), [])
 
 
 # --- Conteo de tokens y costo unificado (RNF-009) ---------------------------

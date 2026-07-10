@@ -148,7 +148,16 @@ Abre `http://localhost:3000`.
 
 1. **Salud:** PowerShell: `curl.exe http://localhost:8000/v2/health` → en el sistema completo, `"status": "ok"` con los 3 checks en `ok`. En fases anteriores a T-203/T-204, si la base responde pero el índice aún no existe, debe devolver `503` con el mismo esquema `HealthResponse`, `"status": "degraded"` y `catalog_index` degradado o no inicializado; nunca debe fingir que el índice está disponible.
 2. **Búsqueda semántica:** `curl.exe "http://localhost:8000/v2/catalog/search?q=desercion%20escolar&k=5"` → datasets del sector educación en el top, `index_stale` explícito y `latest_observed_cutoff_at` presente solo como pista o `null`. El catálogo no devuelve `data_cutoff_at` como corte normativo de una evidencia.
-3. **Agente por API:**
+3. **Grafo real por consola (T-303, antes de T-304):**
+   ```powershell
+   cd backend
+   python scripts/run_agent.py --question "¿Cuántos recursos de cooperación internacional recibió el Oriente antioqueño desde 2020 y en qué sectores?"
+   ```
+   El comando crea una corrida durable, ejecuta el grafo real y muestra el
+   objeto final. Requiere catálogo e índice cargados, claves LLM/Socrata y
+   `EMBEDDING_MODEL=gemini-embedding-2`. No implementa autorización HTTP;
+   esa superficie pertenece a T-304.
+4. **Agente por API (desde T-304):**
    ```powershell
    $body = @{ question = "¿Cuántos programas de educación para el trabajo hay registrados en Antioquia?" } | ConvertTo-Json
    $created = Invoke-RestMethod -Method Post -Uri "http://localhost:8000/v2/agent/query" -ContentType "application/json" -Body $body
@@ -158,16 +167,16 @@ Abre `http://localhost:3000`.
    curl.exe -N -H "Authorization: Bearer $($created.run_access_token)" "http://localhost:8000/v2/agent/stream/$($created.run_id)"
    # → eventos id:/step ... y un evento answer final con evidence[], claims[] y quality
    ```
-3b. **Autorización y reconexión:** el mismo stream SIN el header → `401 UNAUTHORIZED`. Corta el `curl.exe` a mitad de corrida y reconecta añadiendo `-H "Last-Event-ID: <último id recibido>"` → recibes los eventos faltantes sin duplicados (RF-209). Para borrar la corrida:
+4b. **Autorización y reconexión:** el mismo stream SIN el header → `401 UNAUTHORIZED`. Corta el `curl.exe` a mitad de corrida y reconecta añadiendo `-H "Last-Event-ID: <último id recibido>"` → recibes los eventos faltantes sin duplicados (RF-209). Para borrar la corrida:
    ```powershell
    curl.exe -X DELETE -H "Authorization: Bearer $($created.run_access_token)" "http://localhost:8000/v2/agent/runs/$($created.run_id)"
    # → 204
    ```
-4. **Honestidad:** pregunta algo sin respuesta en el catálogo (p. ej. "¿Cuál es el precio promedio del arriendo en Marte?") → `status: "no_evidence"`, sin cifras inventadas. Verifica además que toda cifra del `summary` de la comprobación 3 aparece como `display_value` en `claims[]` (RF-208).
-5. **UI completa (ESC-01):** en el navegador, elige la plantilla MGA, escribe un problema en "Identificación del Problema", presiona **Investigar** y verifica: línea de tiempo de pasos en vivo → tarjeta de evidencia con badge de calidad → botón insertar → la cita aparece en el documento.
-6. **Persistencia (ESC-08):** recarga el navegador; el documento y sus citas siguen ahí.
+5. **Honestidad:** pregunta algo sin respuesta en el catálogo (p. ej. "¿Cuál es el precio promedio del arriendo en Marte?") → `status: "no_evidence"`, sin cifras inventadas. Verifica además que toda cifra del `summary` de la comprobación 4 aparece como `display_value` en `claims[]` (RF-208).
+6. **UI completa (ESC-01):** en el navegador, elige la plantilla MGA, escribe un problema en "Identificación del Problema", presiona **Investigar** y verifica: línea de tiempo de pasos en vivo → tarjeta de evidencia con badge de calidad → botón insertar → la cita aparece en el documento.
+7. **Persistencia (ESC-08):** recarga el navegador; el documento y sus citas siguen ahí.
 
-7. **Retención manual local:** para probar el barrido sin esperar al cron externo:
+8. **Retención manual local:** para probar el barrido sin esperar al cron externo:
    ```powershell
    $env:ADMIN_TOKEN = "<tu_admin_token_local>"
    curl.exe -X POST -H "X-Admin-Token: $env:ADMIN_TOKEN" "http://localhost:8000/v2/admin/retention/run"

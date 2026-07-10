@@ -75,6 +75,7 @@ async def ejecutar_soql(
     row_count = len(result.rows)
     return {
         "ok": True,
+        "canonical_soql": canonical.canonical_soql,
         "rows": result.rows,
         "row_count": row_count,
         "executed_at": result.executed_at.isoformat(),

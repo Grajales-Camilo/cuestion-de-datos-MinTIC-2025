@@ -26,6 +26,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable
@@ -77,6 +78,14 @@ class LLMUsage:
     input_tokens: int
     output_tokens: int
     estimated_cost_usd: float
+
+
+@dataclass(frozen=True)
+class StructuredLLMResult:
+    """Salida estructurada junto al mensaje crudo necesario para medir uso."""
+
+    parsed: Any
+    raw_message: AIMessage | None
 
 
 def get_chat_model(
@@ -135,6 +144,7 @@ def get_structured_chat_model(
     *,
     google_api_key: str | None = None,
     anthropic_api_key: str | None = None,
+    include_raw: bool = False,
     **kwargs: Any,
 ) -> Runnable:
     """Envoltura uniforme sobre `with_structured_output` (RF-206).
@@ -151,7 +161,7 @@ def get_structured_chat_model(
         anthropic_api_key=anthropic_api_key,
         **kwargs,
     )
-    return model.with_structured_output(schema)
+    return model.with_structured_output(schema, include_raw=include_raw)
 
 
 def usage_from_message(provider: str, model: str, message: AIMessage) -> LLMUsage:
@@ -235,4 +245,36 @@ async def ainvoke_chat_model(model: BaseChatModel, input: Any, **kwargs: Any) ->
         result = await model.ainvoke(input, **kwargs)
     except _provider_error_types() as exc:
         raise LLMProviderError(f"Error definitivo del proveedor LLM: {exc}") from exc
+    except (TimeoutError, httpx.TimeoutException) as exc:
+        raise LLMProviderError(f"Timeout del proveedor LLM: {exc}") from exc
     return result
+
+
+async def ainvoke_structured_chat_model(
+    model: Runnable, input: Any, **kwargs: Any
+) -> StructuredLLMResult:
+    """Invoca un runnable estructurado y conserva el `AIMessage` si existe.
+
+    Los modelos creados con ``include_raw=True`` devuelven el sobre estándar
+    de LangChain ``{raw, parsed, parsing_error}``. Los dobles de prueba pueden
+    devolver directamente el objeto Pydantic; ambos caminos mantienen una
+    única interfaz para el grafo T-303.
+    """
+
+    try:
+        result = await model.ainvoke(input, **kwargs)
+    except _provider_error_types() as exc:
+        raise LLMProviderError(f"Error definitivo del proveedor LLM: {exc}") from exc
+    except (TimeoutError, httpx.TimeoutException) as exc:
+        raise LLMProviderError(f"Timeout del proveedor LLM: {exc}") from exc
+
+    if isinstance(result, dict) and "parsed" in result:
+        parsing_error = result.get("parsing_error")
+        if parsing_error is not None:
+            raise LLMProviderError(f"Salida estructurada inválida del proveedor: {parsing_error}")
+        raw = result.get("raw")
+        return StructuredLLMResult(
+            parsed=result["parsed"],
+            raw_message=raw if isinstance(raw, AIMessage) else None,
+        )
+    return StructuredLLMResult(parsed=result, raw_message=None)
