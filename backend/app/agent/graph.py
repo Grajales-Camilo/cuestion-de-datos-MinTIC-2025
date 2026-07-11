@@ -21,7 +21,7 @@ from typing import Any, Literal, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.agent.durability import reserve_and_emit_event
@@ -62,6 +62,15 @@ GRAPH_NODES = (
 )
 MAX_SOQL_CALLS = 4
 MAX_SOQL_CORRECTIONS = 2
+# Hallazgo T-402 (2026-07-11, ejecucion real): antes solo "SOQL_SYNTAX"
+# (rechazo real de Socrata) contaba para el presupuesto de correcciones;
+# "SOQL_FORBIDDEN"/"SOQL_UNKNOWN_COLUMN" (rechazo de nuestra propia guardia
+# estructural, p. ej. una clausula FROM alucinada) nunca se contaban, asi
+# que el router podia repetir el mismo error sin limite dentro del
+# presupuesto de pasos general. Ambos son igual de "corregibles reescribiendo
+# el SoQL" -- a diferencia de EVIDENCE_NOT_ELIGIBLE/DATASET_INACTIVE/
+# PII_AGGREGATION_REQUIRED, que no se arreglan cambiando la sintaxis.
+_CORRECTABLE_SOQL_ERROR_CODES = {"SOQL_SYNTAX", "SOQL_FORBIDDEN", "SOQL_UNKNOWN_COLUMN"}
 MAX_SYNTHESIS_RETRIES = 2
 LLM_ROWS_MAX = 50
 EVIDENCE_ROWS_MAX_BYTES = 1024 * 1024
@@ -77,6 +86,52 @@ class PlannerOutput(BaseModel):
     recommended_next_action: str = Field(min_length=1, max_length=200)
 
 
+class ConstFormulaNode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    const: float
+
+
+class ColFormulaNode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    col: str
+
+
+class AggFormulaNode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Debe coincidir con app.quality.claims.ALLOWED_AGG_FUNCTIONS.
+    agg: Literal["sum", "avg", "count", "min", "max"]
+    col: str
+
+
+class OpFormulaNode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Debe coincidir con app.quality.claims.ALLOWED_OPS.
+    op: Literal["add", "sub", "mul", "div", "ratio", "pct_change"]
+    args: list[FormulaNode] = Field(min_length=1)
+
+
+FormulaNode = ConstFormulaNode | ColFormulaNode | AggFormulaNode | OpFormulaNode
+OpFormulaNode.model_rebuild()
+# El modelo Python es recursivo sin limite (`ClaimSpecPayload.model_validate`
+# acepta `op` anidado dentro de `op`, e `_eval_node` en claims.py lo evalua
+# igual sin tope de profundidad). El unico limite real esta en que el LLM
+# puede *generar*: `convert_to_openai_tool` (usado por
+# `with_structured_output`) inlinea la union recursiva para el esquema de
+# function-calling pero corta esa expansion en profundidad 1 -- dentro de
+# `OpFormulaNode.args` el proveedor solo puede ofrecer `const`/`col`/`agg`,
+# no otro `op` anidado (verificado: 2026-07-11, la palabra "OpFormulaNode"
+# aparece una sola vez en el JSON schema generado por
+# `convert_to_openai_tool(RouterOutput)`). Limitacion aceptada (Art. III
+# YAGNI) del lado del LLM: cubre "suma de una columna" u "operacion sobre
+# columnas/agregados simples", que es todo lo que T-402 encontro necesario;
+# una formula con dos niveles de `op` anidados (p. ej. "(a+b)/c") debe
+# expresarse pidiendo esos subtotales como claims `derived` separados.
+
+
 class ClaimSpecPayload(BaseModel):
     """Hallazgo T-303 (2026-07-10, ejecucion real): `claim_type` como `str`
     libre permitia que el LLM alucinara valores como `direct_value`, que
@@ -85,6 +140,15 @@ class ClaimSpecPayload(BaseModel):
     `Literal` hace que el proveedor de structured output (Gemini/Claude)
     nunca pueda producir un valor fuera de esos dos, en vez de depender de
     que T7 lo rechace despues de gastar un paso completo del presupuesto.
+
+    Hallazgo T-402 (2026-07-11, ejecucion real con LLM real): `formula` como
+    `dict[str, Any]` sufria el mismo problema para claims `derived` -- el LLM
+    inventaba formas de nodo fuera de la DSL real de `app.quality.claims`
+    (`_eval_node` solo reconoce `{const}`/`{col}`/{agg,col}`/{op,args}`) y
+    `build_claims` las rechazaba con "forma de nodo desconocida" tras gastar
+    un paso completo. `FormulaNode` (union discriminada, recursiva en `args`)
+    aplica la misma correccion: el esquema de function-calling del proveedor
+    ya no puede producir una quinta forma inventada.
     """
 
     claim_type: Literal["direct", "derived"]
@@ -93,7 +157,7 @@ class ClaimSpecPayload(BaseModel):
     columns: list[str] = Field(min_length=1)
     unit: str | None = None
     rounding: int | None = Field(default=None, ge=0, le=8)
-    formula: dict[str, Any] | None = None
+    formula: FormulaNode | None = None
 
 
 class EvidenceClaimSpecs(BaseModel):
@@ -234,7 +298,7 @@ async def _invoke_structured(
         SystemMessage(content=load_prompt(prompt_name)),
         HumanMessage(content=json.dumps(json_safe(payload), ensure_ascii=False)),
     ]
-    result = await ainvoke_structured_chat_model(model, messages)
+    result = await ainvoke_structured_chat_model(model, messages, schema=schema)
     parsed = schema.model_validate(result.parsed)
     if result.raw_message is None:
         return parsed, None
@@ -578,7 +642,7 @@ def _tool_node(deps: GraphDependencies, tool_name: str):
             result["pending_t5"] = {"input": raw_input, "output": output}
             return result
         code = output.get("error", {}).get("code", "SOCRATA_ERROR")
-        if code == "SOQL_SYNTAX":
+        if code in _CORRECTABLE_SOQL_ERROR_CODES:
             key = f"{raw_input.get('dataset_id', '')}:{raw_input.get('purpose', '')}"
             corrections = {**state.get("soql_corrections", {})}
             corrections[key] = corrections.get(key, 0) + 1
@@ -743,7 +807,10 @@ async def _claim_builder_node(deps: GraphDependencies, state: AgentState) -> Age
     rejected = [*state.get("rejected_claims", [])]
     for evidence in state.get("evidences", []):
         evidence_id = evidence["evidence_id"]
-        if evidence.get("quality", {}).get("eligibility_status") != "eligible":
+        quality = evidence.get("quality", {})
+        if quality.get("eligibility_status") != "eligible":
+            continue
+        if quality.get("classification") == "no_recomendada":
             continue
         payloads = specs_by_id.get(evidence_id, [])
         specs = tuple(
