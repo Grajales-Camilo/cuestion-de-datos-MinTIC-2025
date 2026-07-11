@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select, text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.agent import durability, heartbeat_sweep, runner, worker_lease
@@ -620,6 +620,24 @@ async def handle_request_validation_error(
     )
 
 
+def _require_retention_hash_salt(settings) -> str:
+    """RETENTION_HASH_SALT es secreto servidor obligatorio para el borrado
+    (plan.md §12, data-model.md §7): sin él no se puede calcular
+    `source_run_hash` y no hay forma segura de copiar métricas antes de
+    borrar la corrida."""
+
+    salt = getattr(settings, "retention_hash_salt", None)
+    value = salt.get_secret_value() if salt else None
+    if not value:
+        raise ApiError(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "No fue posible completar la operación. Intenta de nuevo más tarde.",
+            message_dev="RETENTION_HASH_SALT no esta configurado.",
+        )
+    return value
+
+
 async def require_run_access(
     request: Request,
     run_id: uuid.UUID,
@@ -638,7 +656,11 @@ async def require_run_access(
         raise _run_not_found()
     if run.run_access_token_expires_at <= datetime.now(UTC):
         await _delete_run_with_platform_loop(
-            settings.sqlalchemy_database_url, settings.psycopg_database_url, run_id
+            settings.sqlalchemy_database_url,
+            settings.psycopg_database_url,
+            run_id,
+            deletion_reason="retention_expired",
+            retention_hash_salt=_require_retention_hash_salt(settings),
         )
         raise _run_not_found()
 
@@ -975,9 +997,14 @@ async def delete_agent_run(
 
     await require_run_access(request, run_id, authorization)
     settings = request.app.state.settings
+    retention_hash_salt = _require_retention_hash_salt(settings)
     await runner.request_cancel_and_wait(run_id, settings.delete_active_grace_s)
     await _delete_run_with_platform_loop(
-        settings.sqlalchemy_database_url, settings.psycopg_database_url, run_id
+        settings.sqlalchemy_database_url,
+        settings.psycopg_database_url,
+        run_id,
+        deletion_reason="user_requested",
+        retention_hash_salt=retention_hash_salt,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1181,43 +1208,82 @@ async def poc_delete_agent_run(request: Request, run_id: uuid.UUID) -> Response:
 
     await runner.request_cancel_and_wait(run_id, settings.delete_active_grace_s)
     await _delete_run_with_platform_loop(
-        settings.sqlalchemy_database_url, settings.psycopg_database_url, run_id
+        settings.sqlalchemy_database_url,
+        settings.psycopg_database_url,
+        run_id,
+        deletion_reason="user_requested",
+        retention_hash_salt=_require_retention_hash_salt(settings),
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 async def _delete_run_with_platform_loop(
-    sqlalchemy_database_url: str, psycopg_database_url: str, run_id: uuid.UUID
+    sqlalchemy_database_url: str,
+    psycopg_database_url: str,
+    run_id: uuid.UUID,
+    *,
+    deletion_reason: durability.DeletionReason,
+    retention_hash_salt: str,
 ) -> None:
     if sys.platform == "win32":
         await asyncio.to_thread(
-            _run_delete_run_with_selector, sqlalchemy_database_url, psycopg_database_url, run_id
+            _run_delete_run_with_selector,
+            sqlalchemy_database_url,
+            psycopg_database_url,
+            run_id,
+            deletion_reason,
+            retention_hash_salt,
         )
     else:
-        await _delete_run_async(sqlalchemy_database_url, psycopg_database_url, run_id)
+        await _delete_run_async(
+            sqlalchemy_database_url,
+            psycopg_database_url,
+            run_id,
+            deletion_reason=deletion_reason,
+            retention_hash_salt=retention_hash_salt,
+        )
 
 
 def _run_delete_run_with_selector(
-    sqlalchemy_database_url: str, psycopg_database_url: str, run_id: uuid.UUID
+    sqlalchemy_database_url: str,
+    psycopg_database_url: str,
+    run_id: uuid.UUID,
+    deletion_reason: durability.DeletionReason,
+    retention_hash_salt: str,
 ) -> None:
     asyncio.run(
-        _delete_run_async(sqlalchemy_database_url, psycopg_database_url, run_id),
+        _delete_run_async(
+            sqlalchemy_database_url,
+            psycopg_database_url,
+            run_id,
+            deletion_reason=deletion_reason,
+            retention_hash_salt=retention_hash_salt,
+        ),
         loop_factory=asyncio.SelectorEventLoop,
     )
 
 
 async def _delete_run_async(
-    sqlalchemy_database_url: str, psycopg_database_url: str, run_id: uuid.UUID
+    sqlalchemy_database_url: str,
+    psycopg_database_url: str,
+    run_id: uuid.UUID,
+    *,
+    deletion_reason: durability.DeletionReason,
+    retention_hash_salt: str,
 ) -> None:
     """Orden normativo (plan.md §11/data-model.md §7): checkpoints primero,
-    luego la fila de la corrida."""
+    luego copiar métricas no identificables a `technical_metrics` y borrar
+    la fila de la corrida (research.md §4, contracts/api-rest.md §7b)."""
 
     async with AsyncPostgresSaver.from_conn_string(psycopg_database_url) as saver:
         await saver.adelete_thread(str(run_id))
     engine = create_app_async_engine(sqlalchemy_database_url, pool_pre_ping=True)
     try:
-        session_factory = async_sessionmaker(engine, expire_on_commit=False)
-        async with session_factory() as session, session.begin():
-            await session.execute(delete(AgentRun).where(AgentRun.id == run_id))
+        await durability.delete_run_with_metrics(
+            engine,
+            run_id,
+            deletion_reason=deletion_reason,
+            retention_hash_salt=retention_hash_salt,
+        )
     finally:
         await engine.dispose()

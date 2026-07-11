@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 
 class DummySettings:
@@ -16,6 +17,7 @@ class DummySettings:
     retention_user_days = 90
     delete_active_grace_s = 0
     eval_mode = False
+    retention_hash_salt = SecretStr("test-retention-hash-salt-32-bytes")
 
 
 def _run(*, status: str = "running", expires_at: datetime | None = None):
@@ -60,7 +62,7 @@ def _client(monkeypatch, current_run):
         run = current_run["value"]
         return None if run is None else (run, [], [])
 
-    async def delete_run(*_args):
+    async def delete_run(*_args, **_kwargs):
         current_run["value"] = None
 
     async def emit_started(*_args):
@@ -207,3 +209,25 @@ def test_get_all_five_states_and_delete_is_idempotent(monkeypatch) -> None:
     second = client.delete(path, headers={"Authorization": f"Bearer {token}"})
     assert first.status_code == 204
     assert second.status_code == 404
+
+
+def test_delete_without_retention_hash_salt_fails_clearly(monkeypatch) -> None:
+    """research.md §4/data-model.md §7: sin `RETENTION_HASH_SALT` no hay forma
+    segura de copiar métricas antes de borrar; debe fallar claro, no en silencio."""
+
+    import hashlib
+
+    import app.main as main
+
+    token = "cdt_rt_missing_salt"
+    current_run = {"value": _run()}
+    current_run["value"].run_access_token_hash = hashlib.sha256(token.encode()).hexdigest()
+    client = _client(monkeypatch, current_run)
+    main.app.state.settings.retention_hash_salt = None
+
+    response = client.delete(
+        f"/v2/agent/runs/{current_run['value'].id}", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "INTERNAL"

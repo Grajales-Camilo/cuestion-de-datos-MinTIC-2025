@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import uuid
 from datetime import timedelta
@@ -9,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -16,6 +18,8 @@ from app.agent.durability import get_run, reserve_and_emit_event, write_terminal
 from app.agent.persistence import persist_final_answer
 from app.agent.runner import create_public_run
 from app.config import normalize_database_url_for_sqlalchemy
+
+RETENTION_HASH_SALT = "test-retention-hash-salt-32-bytes-integration"
 
 pytestmark = pytest.mark.integration
 
@@ -30,6 +34,7 @@ async def test_t304_real_postgres_stream_status_and_delete() -> None:
         normalize_database_url_for_sqlalchemy(os.environ["DATABASE_URL"]), pool_pre_ping=True
     )
     run_id: uuid.UUID | None = None
+    created_run_id: uuid.UUID | None = None
     try:
         run_id, token, expires_at = await create_public_run(
             engine,
@@ -38,6 +43,7 @@ async def test_t304_real_postgres_stream_status_and_delete() -> None:
             context_hint="Prueba de integracion PostgreSQL real",
             retention_user_days=1,
         )
+        created_run_id = run_id
         persisted_run = await get_run(engine, run_id)
         assert persisted_run is not None
         assert persisted_run.retention_class == "user"
@@ -86,6 +92,7 @@ async def test_t304_real_postgres_stream_status_and_delete() -> None:
             ),
             psycopg_database_url=os.environ["DATABASE_URL"],
             delete_active_grace_s=0,
+            retention_hash_salt=SecretStr(RETENTION_HASH_SALT),
         )
         headers = {"Authorization": f"Bearer {token}"}
         client = TestClient(main.app)
@@ -102,11 +109,39 @@ async def test_t304_real_postgres_stream_status_and_delete() -> None:
         deleted = client.delete(f"/v2/agent/runs/{run_id}", headers=headers)
         assert deleted.status_code == 204
         assert client.get(f"/v2/agent/runs/{run_id}", headers=headers).status_code == 404
+
+        source_run_hash = hashlib.sha256(f"{run_id}{RETENTION_HASH_SALT}".encode()).hexdigest()
+        async with engine.begin() as connection:
+            metric_row = (
+                await connection.execute(
+                    text(
+                        "SELECT retention_class_origin, status_final, llm_provider, llm_model, "
+                        "steps_used, latency_ms, estimated_cost_usd, deletion_reason "
+                        "FROM technical_metrics WHERE source_run_hash = :hash"
+                    ),
+                    {"hash": source_run_hash},
+                )
+            ).mappings().one()
+        assert metric_row["retention_class_origin"] == "user"
+        assert metric_row["status_final"] == "completed"
+        assert metric_row["llm_provider"] == "google"
+        assert metric_row["llm_model"] == "scripted-test"
+        assert metric_row["latency_ms"] == 10
+        assert metric_row["deletion_reason"] == "user_requested"
         run_id = None
     finally:
         if run_id is not None:
             async with engine.begin() as connection:
                 await connection.execute(
                     text("DELETE FROM agent_runs WHERE id = :id"), {"id": run_id}
+                )
+        if created_run_id is not None:
+            cleanup_hash = hashlib.sha256(
+                f"{created_run_id}{RETENTION_HASH_SALT}".encode()
+            ).hexdigest()
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text("DELETE FROM technical_metrics WHERE source_run_hash = :hash"),
+                    {"hash": cleanup_hash},
                 )
         await engine.dispose()
