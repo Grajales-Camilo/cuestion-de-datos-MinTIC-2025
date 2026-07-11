@@ -79,6 +79,65 @@ def test_unrecognized_column_defaults_to_unknown() -> None:
     assert result.risk_level == "unknown"
 
 
+def test_reviewed_roadmap_column_is_scoped_to_dataset_and_exact_schema() -> None:
+    reviewed = classify_column(
+        "monto_aporte_en_usd",
+        "MONTO APORTE EN USD",
+        "Monto institucional de cooperación",
+        FIXTURE,
+        dataset_id="2d3i-f9wd",
+    )
+    other_dataset = classify_column(
+        "monto_aporte_en_usd",
+        "MONTO APORTE EN USD",
+        "Monto sin contexto revisado",
+        FIXTURE,
+        dataset_id="otro-dataset",
+    )
+    changed_schema = classify_column(
+        "monto_aporte_usd_nuevo",
+        "MONTO APORTE USD NUEVO",
+        None,
+        FIXTURE,
+        dataset_id="2d3i-f9wd",
+    )
+
+    assert reviewed.risk_level == "low"
+    assert reviewed.matched_pattern_id == "reviewed_dataset:2d3i-f9wd"
+    assert other_dataset.risk_level == "unknown"
+    assert changed_schema.risk_level == "unknown"
+
+
+def test_high_signal_wins_over_reviewed_roadmap_column() -> None:
+    result = classify_column(
+        "nombre_del_actor",
+        "NOMBRE DEL ACTOR",
+        "Número de identificación personal del actor",
+        FIXTURE,
+        dataset_id="2d3i-f9wd",
+    )
+
+    assert result.risk_level == "high"
+
+
+def test_roadmap_person_name_and_identifier_columns_are_high() -> None:
+    for field_name in ("primer_nombre_declarante_pn", "segundo_apellido", "numero_identificacion"):
+        result = classify_column(field_name, None, None, FIXTURE, dataset_id="c82u-588k")
+        assert result.risk_level == "high", field_name
+
+
+def test_non_personal_site_identifier_is_not_misclassified_as_personal() -> None:
+    result = classify_column(
+        "nusd",
+        "NUSD",
+        "Número único de identificación del sitio de disposición final",
+        FIXTURE,
+        dataset_id="84tn-nnhf",
+    )
+
+    assert result.risk_level == "low"
+
+
 def test_description_can_trigger_classification() -> None:
     result = classify_column("valor", None, "Historia clinica del paciente", FIXTURE)
     assert result.risk_level == "high"
@@ -134,4 +193,17 @@ def test_dataset_with_no_columns_defaults_to_unknown() -> None:
 def test_dataset_all_low_columns_stay_low() -> None:
     columns = [ColumnPiiClassification(risk_level="low")] * 4
     result = classify_dataset(columns, "Codigos DIVIPOLA por municipio", None, None, FIXTURE)
+    assert result.risk_level == "low"
+
+
+def test_nomina_dataset_keyword_does_not_match_denominaba() -> None:
+    columns = [ColumnPiiClassification(risk_level="low")]
+    result = classify_dataset(
+        columns,
+        "Temperatura ambiente del aire",
+        "Anteriormente este conjunto de datos se denominaba datos hidrometeorológicos",
+        "Ambiente",
+        FIXTURE,
+    )
+
     assert result.risk_level == "low"

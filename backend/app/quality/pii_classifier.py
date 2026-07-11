@@ -50,6 +50,15 @@ class PiiPattern(BaseModel):
     reason: str
 
 
+class ReviewedDatasetColumns(BaseModel):
+    """Clasificaciones acotadas a un esquema observado y una fuente auditable."""
+
+    risk_level: str
+    columns: set[str] = Field(default_factory=set)
+    source: str
+    reason: str
+
+
 class PiiPatternsFixture(BaseModel):
     fixture_version: str
     updated_at: datetime
@@ -58,6 +67,7 @@ class PiiPatternsFixture(BaseModel):
     medium_risk_column_patterns: list[PiiPattern] = Field(default_factory=list)
     low_risk_column_allowlist: list[PiiPattern] = Field(default_factory=list)
     dataset_level_keywords: dict[str, list[str]] = Field(default_factory=dict)
+    reviewed_dataset_columns: dict[str, ReviewedDatasetColumns] = Field(default_factory=dict)
 
 
 def load_pii_patterns(path: Path = DEFAULT_PII_FIXTURE_PATH) -> PiiPatternsFixture:
@@ -85,6 +95,8 @@ def classify_column(
     display_name: str | None,
     description: str | None,
     fixture: PiiPatternsFixture,
+    *,
+    dataset_id: str | None = None,
 ) -> ColumnPiiClassification:
     haystack = _normalized_haystack(field_name, display_name, description)
 
@@ -94,6 +106,16 @@ def classify_column(
     for pattern in fixture.medium_risk_column_patterns:
         if re.search(pattern.pattern, haystack):
             return ColumnPiiClassification(risk_level="medium", matched_pattern_id=pattern.id)
+
+    # Una revisión temática nunca rebaja señales high/medium y solo aplica a
+    # nombres de columna exactos del esquema observado. Una columna nueva o
+    # renombrada vuelve al default seguro `unknown`.
+    reviewed = fixture.reviewed_dataset_columns.get(dataset_id or "")
+    if reviewed is not None and field_name in reviewed.columns:
+        return ColumnPiiClassification(
+            risk_level=reviewed.risk_level,
+            matched_pattern_id=f"reviewed_dataset:{dataset_id}",
+        )
 
     name_only = _normalized_haystack(display_name or field_name)
     for pattern in fixture.low_risk_column_allowlist:

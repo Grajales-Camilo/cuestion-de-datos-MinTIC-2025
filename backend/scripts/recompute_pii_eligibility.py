@@ -87,7 +87,11 @@ async def recompute(engine: AsyncEngine, dataset_ids: list[str] | None) -> dict[
             per_column_updates = []
             for column in column_rows:
                 classification = classify_column(
-                    column["field_name"], column["display_name"], column["description"], fixture
+                    column["field_name"],
+                    column["display_name"],
+                    column["description"],
+                    fixture,
+                    dataset_id=dataset["id"],
                 )
                 column_classifications.append(classification)
                 per_column_updates.append((column["id"], classification))

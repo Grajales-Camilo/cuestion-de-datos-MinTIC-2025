@@ -191,8 +191,6 @@ T-205 debe comprobar y fijar versiones compatibles con Python 3.12 antes de ejec
 
 **Consecuencias:** `backend/scripts/recompute_pii_eligibility.py` queda como utilidad reutilizable (idempotente) para cualquier futura recalibración del fixture PII sin re-ingestar desde Socrata. `quickstart.md` §5.3 actualiza la pregunta de demostración por consola a una verificada contra datos reales. Firmado por Juan Camilo Grajales B., 2026-07-10.
 
----
-
 ## 14. Hallazgo registrado: T4 `explorar_valores` incompatible con la gramática SoQL real — `RESUELTO`
 
 **Problema.** Una verificación independiente de T-303 (posterior al cierre documentado en §13) encontró que el criterio literal seguía sin cumplirse: la demostración oficial terminó en `no_evidence`/`STEP_BUDGET_EXCEEDED` porque `explorar_valores` (T4, T-302) consumía dos ciclos de autocorrección fallidos antes de que el grafo forzara la síntesis sin llegar a `ejecutar_soql`. Causa raíz: `app/tools/explorar_valores.py` construía `upper(columna) LIKE upper('%termino%') ESCAPE '\'` — la cláusula `ESCAPE` es sintaxis SQL estándar que **la gramática SoQL de Socrata no soporta**; Socrata la rechaza con `400 query.compiler.malformed`. Las pruebas de T-302 (`test_tools_explorar_valores.py`) usan mocks (`respx`) que nunca validan la gramática real de Socrata, por lo que este bug existía desde T-302 y sobrevivió sin detectarse hasta esta segunda verificación real. El cierre documentado en §13 no lo detectó porque la corrida exitosa citada allí resolvió la ambigüedad geográfica sin pasar por T4 (fue directo a `perfilar_dataset` + `ejecutar_soql`); cerrar T-303 sin haber ejercitado esa ruta fue un descuido de cobertura, no solo un bug de código.
@@ -207,6 +205,35 @@ T-205 debe comprobar y fijar versiones compatibles con Python 3.12 antes de ejec
 **Verificación real posterior al fix:** una corrida real del grafo con una pregunta que fuerza al router a pasar por `explorar_valores` antes de `ejecutar_soql` muestra `tool:explorar_valores` con `{"ok": true, ...}` contra Socrata real (antes: `SOQL_SYNTAX`/`SOCRATA_TIMEOUT` según qué otro bug estuviera activo). Esa corrida específica terminó en `no_evidence` de todas formas, pero por la aritmética de presupuesto de pasos ya documentada (3 acciones de exploración antes de `ejecutar_soql` deja solo 4 de los 5 pasos que exige la cola obligatoria T5→T6→router→T7→sintetizador) — un comportamiento ya entendido y correcto (protege que la cola obligatoria siempra quepa), no un bug nuevo. Una corrida separada con una formulación más eficiente (columnas exactas provistas) reconfirmó el camino feliz completo: `status=completed`, 2 `claims[]`, calidad `alta`, 7 pasos.
 
 **Consecuencias:** T4 queda funcional contra Socrata real por primera vez. La variabilidad de cuántos pasos de verificación decide tomar el LLM antes de consultar (0, 1 o 2 pasos de exploración) sigue siendo inherente a un agente basado en LLM real; el criterio de aceptación exige que el grafo PUEDA producir una respuesta completa en ≤10 pasos con una pregunta real, no que toda formulación posible lo logre — eso ya está demostrado. Firmado por Juan Camilo Grajales B., 2026-07-10.
+
+## 15. Recalibración PII de la Hoja de Ruta Nacional de Datos Abiertos Estratégicos 2025-2026
+
+**Universo y procedencia (2026-07-11).** Se consultó la fuente oficial
+`fn2v-r4gu` por SODA3. Sus enlaces contienen 66 IDs Socrata únicos realmente
+identificables: 53 datasets tabulares accesibles, 4 recursos externos o
+federados sin columnas SODA, 3 recursos privados (`403`) y 6 retirados
+(`404`). Los 53 tabulares ya estaban presentes en el catálogo local; no fue
+necesario inventar ni completar metadatos para los otros 13.
+
+**Decisión.** Se conserva `unknown` como default y la regla MAX. La cobertura
+se amplía con revisiones versionadas por `dataset_id` y lista exacta de
+`field_name`; una columna nueva o renombrada vuelve a `unknown`. Las señales
+globales `high`/`medium` se evalúan antes de estas listas y nunca pueden ser
+rebajadas por ellas. Se revisaron 30 esquemas institucionales, territoriales,
+ambientales o agregados. Fuentes con personas, contactos, declaraciones,
+resultados individuales o identidad ambigua permanecen bloqueadas.
+
+**Resultados medidos.** El recálculo limitado a los 66 IDs encontró 54 ya
+almacenados (los 53 tabulares vigentes más un recurso actualmente inaccesible),
+procesó 998 columnas y convirtió 27 datasets a `eligible`. En el catálogo
+completo la simulación determinista pasa de 9 a 36 elegibles (verificado
+directamente contra Postgres: `eligible=36`, `pii_risk_level`: `low=32`,
+`medium=15`, `high=1055`, `unknown=7316` — coincide exactamente con lo medido).
+`2d3i-f9wd` (el dataset de cooperación internacional referenciado en §13)
+queda `low`/`eligible` en su totalidad; sigue sin tener columna geográfica,
+por lo que el seguimiento de subregiones de §13 no cambia. También se
+corrigió el falso positivo de `NOMINA` dentro de `DENOMINABA` y se reforzaron
+señales inequívocas de nombres, apellidos, identificación y contacto directo.
 
 ---
 

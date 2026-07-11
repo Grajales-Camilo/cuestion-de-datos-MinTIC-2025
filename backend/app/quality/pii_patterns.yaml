@@ -18,19 +18,19 @@
 # texto adicional (hallazgo T-303, verificado contra el catálogo real).
 # Orden de evaluación: high -> medium -> low -> default.
 
-fixture_version: "1.0.0"
-updated_at: "2026-07-08T00:00:00Z"
+fixture_version: "1.1.0"
+updated_at: "2026-07-11T00:00:00Z"
 default_column_risk: unknown
 
 high_risk_column_patterns:
   - id: identificacion_persona
-    pattern: 'CEDULA|C\.C\.|DOCUMENTO.*IDENTIDAD|\bNUIP\b|TARJETA.*IDENTIDAD|PASAPORTE|\bRC\b|NUMERO.*IDENTIFICACION.*PERSONAL'
+    pattern: 'CEDULA|C\.C\.|DOCUMENTO.*IDENTIDAD|\bNUIP\b|TARJETA.*IDENTIDAD|PASAPORTE|\bRC\b|NUMERO.*IDENTIFICACION.*PERSONAL|^NUMERO[ _](DOCUMENTO|IDENTIFICACION)\b|NUMERO.*(DOCUMENTO|IDENTIFICACION).*(PERSONA|DECLARANTE|SUJETO|NATURAL)'
     reason: "Identificador nacional de persona natural"
   - id: nombre_completo_persona
-    pattern: 'NOMBRE.*APELLIDO|NOMBRE.*COMPLETO|APELLIDOS?\s*Y\s*NOMBRES?|\bAFILIADO\b|\bPACIENTE\b|\bBENEFICIARIO\b(?!.*(TOTAL|CANTIDAD|NUMERO DE))'
+    pattern: 'NOMBRE.*APELLIDO|NOMBRE.*COMPLETO|APELLIDOS?\s*Y\s*NOMBRES?|PRIMER.*NOMBRE|SEGUNDO.*NOMBRE|PRIMER.*APELLIDO|SEGUNDO.*APELLIDO|1ER.*APELLIDO|2.?\s*APELLIDO|NOMBRE.*FAMILIAR|REPRESENTANTE.*LEGAL|\bAFILIADO\b|\bPACIENTE\b|\bBENEFICIARIO\b(?!.*(TOTAL|CANTIDAD|NUMERO DE))'
     reason: "Nombre propio identificable de persona"
   - id: contacto_directo
-    pattern: 'TELEFONO|CELULAR|CORREO.*ELECTRONICO|\bEMAIL\b|WHATSAPP|\bCONTACTO\b'
+    pattern: 'TELEFONO|CELULAR|CORREO.*ELECTRONICO|\bEMAIL\b|\bFAX\b|WHATSAPP|\bCONTACTO\b'
     reason: "Dato de contacto directo"
   - id: direccion_domicilio
     pattern: 'DIRECCION.*RESIDENCIA|DIRECCION.*DOMICILIO|\bDOMICILIO\b|DIRECCION.*NOTIFICACION'
@@ -111,10 +111,167 @@ dataset_level_keywords:
     - "SISBEN"
     - "REGISTRO CIVIL"
     - "HISTORIA CLINICA"
-    - "NOMINA"
+    - '\bNOMINA\b'
     - "PLANILLA.*EMPLEADOS"
     - "VICTIMAS.*CONFLICTO"
   medium:
     - "BENEFICIARIOS"
     - "ENCUESTA.*HOGARES"
     - "CENSO.*POBLACIONAL"
+
+# Revisión acotada a los esquemas enlazados explícitamente por la Hoja de
+# Ruta Nacional de Datos Abiertos Estratégicos 2025-2026. Solo se aceptan
+# field_name exactos observados el 2026-07-11; cualquier columna nueva vuelve
+# a `unknown`. Estas reglas se aplican después de high/medium, por lo que no
+# pueden rebajar una señal sensible.
+reviewed_dataset_columns:
+  2d3i-f9wd:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Intervenciones y actores institucionales de cooperación internacional"
+    columns: [codigo_intervencion, es_adicion, estado_intervencion, fecha_final, fecha_inicial, fecha_registro_intervencion, hoja_ruta, modalidad_cooperacion, monto_aporte_en_usd, nombre_del_actor, nombre_intervencion, objetivo_general, ods, pais_del_actor, plan_nacional_desarrollo, rol_del_actor, sectores_gobierno, tipo_de_actor, tipo_de_asistencia]
+  2pnw-mmge:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Producción agrícola agregada por cultivo y municipio"
+    columns: [c_d_dep, c_d_mun, ciclo_de_cultivo, cultivo, desagregaci_n_regional_y, estado_fisico_produccion, grupo_de_cultivo, nombre_cientifico, producci_n_t, rea_cosechada_ha, rea_sembrada_ha, rendimiento_t_ha, subgrupo_de_cultivo]
+  5phs-yqfw:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Ejecución presupuestal institucional"
+    columns: [adiciones, apropiacioninicial, apropiacionvigente, codigocuartonivel, codigodetallegasto, codigoentidad, codigonivelrubrogasto, codigoquintonivel, codigotipogasto, compromisos, detalleprogramas, fuente, nombrecuartonivel, nombredetallegasto, nombreentidad, nombrenivelrubrogasto, nombrequintonivel, nombretipogasto, obligaciones, pagos, recursospresupuestales, reducciones, situacion]
+  5r3g-zv5z:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Tráfico portuario agregado"
+    columns: [anno_vigencia, cabotaje, exportacion, fluvial, importacion, mes_vigencia, movilizaciones_a_bordo, sociedad_portuaria, tipo_carga, tipo_servicio, transbordo, transito_internacional, transitoria, zona_portuaria]
+  5xue-fyeb:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Conteos de afiliaciones por administradora y régimen"
+    columns: [administradoradesc, componentedesc, estadoafiliacionesdesc, fechacorte, numafiliados, regimenadministradoradesc]
+  7atu-2b28:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Operación ferroviaria agregada por ruta y carga"
+    columns: [concesion, fecha_operacion, latitud_destino, latitud_origen, longitud_destino, longitud_origen, municipio_destino, municipio_origen, operador, peso, producto, red, tipo_carga, vagones_carga, vagones_pasajeros]
+  84tn-nnhf:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Infraestructura institucional de disposición final"
+    columns: [capacidad_diseno_m3, estado_del_sitio_de_disposici, fecha_aplicaci_n_metodologia, fecha_de_certificaci_n, fecha_estado, fecha_inicio_operaci_n, fecha_vida_util, id_empresa, nombre_del_sitio_disposici, nombre_empresa, nusd, tipo_sitio_de_disposici_n]
+  88h2-dykw:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Metadatos de normativa nacional"
+    columns: [descripcion, fecha, titulo, url]
+  88y7-7cki:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Zonificación geoespacial de pesca"
+    columns: [aptitud, area_ha, consecutiv, gridcode, the_geom]
+  bz43-8ahq:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Conteos territoriales agregados de delitos; sexo conserva riesgo medium"
+    columns: [cod_depto, cod_muni, fecha_hecho, zona]
+  cqs7-ti4m:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Suspensiones agregadas por empresa prestadora"
+    columns: [duracion_min, fecha_de_suspension, id_empresa, mensual, nombre, suscrip_usuarios_afectados]
+  eh75-8ah6:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Operación agregada de terminales y rutas"
+    columns: [clase_vehiculo, despachos, fecha_despacho, hora_despacho, municipio_destino_ruta, municipio_origen_ruta, nivel_servicio, pasajeros, terminal, tipo_despacho]
+  gdxc-w37w:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Maestro geográfico DIVIPOLA"
+    columns: [cod_dpto, cod_mpio, dpto, latitud, longitud, nom_mpio, tipo_municipio]
+  ie7y-asdn:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Geometría y atributos de red vial"
+    columns: [administrador, calzada, codigo_tramo, distancia_final, distancia_inicial, fuente, grupo_administrador_vial, multiline, nombre_ruta, nombre_tramo, poste_de_referencia_final, poste_de_referencia_inicial, ruta, shape__length, superficie, territorial]
+  ixig-z8b5:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Límites territoriales de códigos postales"
+    columns: [barrios_contenidos_en_el, codigo_postal, limite_este, limite_norte, limite_oeste, limite_sur, noid, nombre_departamento, nombre_municipio, veredas_contenidas_en_el, zona_postal]
+  kekd-7v7h:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Mediciones agregadas de estaciones de calidad del aire"
+    columns: [autoridad_ambiental, c_digo_del_departamento, c_digo_del_municipio, d_as_de_excedencias, estaci_n, excedencias_limite_actual, fechas_horas_del_m_nimo, fechas_horas_del_m_ximo, id_estacion, latitud, longitud, mediana, m_nimo, m_ximo, no_de_datos, nombre_del_departamento, nombre_del_municipio, percentil_98, representatividad_temporal, suma, tiempo_de_exposici_n_horas, tipo_de_estaci_n, ubicacion, unidades, variable]
+  mv2e-prx5:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Georreferenciación de puestos electorales y corporaciones"
+    columns: [alcalde, asamblea, concejo, direccion, gobernacion, jal, latitud, longitud, puesto]
+  n48w-gutb:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Accesos de internet agregados por tecnología y territorio"
+    columns: [no_de_accesos, proveedor, segmento, tecnologia, velocidad_bajada, velocidad_subida]
+  nxt2-39c3:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Índices municipales agregados de calidad del agua"
+    columns: [departamentocodigo, irca, ircarural, ircaurbano, municipiocodigo, nivel_de_riesgo, nivel_de_riesgo_rural, nivel_de_riesgo_urbano]
+  s54a-sgyg:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Mediciones de sensores de precipitación"
+    columns: [codigoestacion, codigosensor, descripcionsensor, fechaobservacion, latitud, longitud, nombreestacion, unidadmedida, valorobservado, zonahidrografica]
+  sbwg-7ju4:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Mediciones de sensores de temperatura ambiente"
+    columns: [codigoestacion, codigosensor, descripcionsensor, fechaobservacion, latitud, longitud, nombreestacion, unidadmedida, valorobservado, zonahidrografica]
+  tmk8-iihq:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Registro institucional de proyectos APP"
+    columns: [codigo, entidad_encargada, etapa_en_ruapp, fecha_radicacion, lugar_desarrollo, nombre_proyecto, objeto_proyecto, originador, subsector, tipo_app, tipo_infraestructura]
+  u3vn-bdcy:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Conteos agregados del parque automotor"
+    columns: [a_o_de_publicacion, estado_del_vehiculo, fecha_de_registro, mes_de_publicacion, nombre_de_la_clase, nombre_departamento, nombre_municipio, nombre_servicio]
+  v8jr-kywh:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Ventas agregadas de gas vehicular por territorio"
+    columns: [anio_venta, codigo_municipio_dane, dia_venta, eds_activas, fecha_venta, latitud, longitud, mes_venta, tipo_agente, tipo_de_combustible, vehiculos_atendidos]
+  vfjy-6fka:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Cuentas institucionales agregadas de subsidios y contribuciones"
+    columns: [anio, cont_no_recau_a_6m, cont_recau_last_conc, contribuciones, devolucion_foes, empresa, estra_sector, foes, giros_efect_mminas, giros_efect_otros, giros_recib_otros, g_rec_mmin_fssri_pgn, id_empresa, id_mercado, subsidios]
+  vy9n-w6hc:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Proyectos institucionales de generación renovable"
+    columns: [capacidad, codigo_departamento, codigo_municipio, emisiones_co2_ton_a_o, empleos_estimados, energia_kwh_d_a, fecha_estimada_fpo, inversi_n_estimada_cop, proyecto, usuarios]
+  wasc-xi4h:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Resultados agregados de auditoría a sujetos institucionales"
+    columns: [cuant_a, hallazgos_administrativos, hallazgos_disciplinarios, hallazgos_fiscales, hallazgos_penales, modalidad_de_auditor_a, sujeto_auditado]
+  wwkg-r6te:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Afectaciones y ayudas agregadas por evento y municipio"
+    columns: [acueducto, alcantarillado, apoyo_aereo_terrestre, apoyo_alimentario, asistencia_no_alimentaria, carrotanques_motobombas_planta, centros_comunitarios, centros_de_salud, centros_educativos, desaparecidos, descripcion_materiales_de, divipola, evento, fallecidos, familias, fecha, fic_transferencias_economicas, hectareas, heridos, horas_maquina_retroexcavadora, infraesctructura_tecnologica, materiales_construccion, obras_de_emergencia, otros, otros_afectacion, personas, puentes_peatonales, puentes_vehiculares, recursos_ejecutados, sacos_bigbag, subsidio_de_arriendo, valor_big_bag, valor_carpas, valor_cemento, valor_colchoneta, valor_frazadas_sobrecamas, valor_hamacas, valor_kit_aseo, valor_kit_cocina, valor_kit_de_alimento, valor_materiales_de, valor_plastico_negro, valor_raciones_de_campa_a, valor_sabanas_cobija_sencilla, valor_sacos, valor_tejas_de_fibrocemento, valor_tejas_de_zinc, valor_toldillos, valor_total_apoyo_del_fngrd, valor_total_asistencia_no, vias_averiadas, viviendas_averiadas, viviendas_destruidas]
+  xjxk-qhsc:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Ejecución presupuestal institucional"
+    columns: [apropiaci_n_vigente, codigo_del_sector, codigo_entidad, compromisos, fuente_de_financiaci_n, nombre_del_sector, nombre_entidad, obligaciones, pagos, recurso_presupuestal, situacion_de_fondos]
+  y97c-tfd9:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
+    reason: "Infraestructura institucional de aprovechamiento de residuos"
+    columns: [autorizaci_n_ambiental, capacidad_de_almacenamiento, capacidad_de_almacenamiento_1, capacidad_de_operacion, estado_nueca, fecha_de_certificaci_n, fecha_estado, fecha_inicio_de_operaci_n, id_de_la_empresa, nombre_de_la_eca, nombre_empresa, nueca, suelo_compatible]
