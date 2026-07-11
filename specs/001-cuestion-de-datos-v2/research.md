@@ -257,6 +257,31 @@ interfaz interna del runner OE3 con `EVAL_MODE=true`. La excepción para
 vencimiento conserva la semántica contractual: se borra oportunistamente y
 se observa solo `404 RUN_NOT_FOUND`, nunca un estado de token vencido.
 
+## 17. Decisión registrada: operación compartida de borrado RF-803/RF-804 — `DECIDIDA`
+
+**Problema.** T-304 implementó el orden requerido para borrar una corrida
+(`adelete_thread(run_id)` y después copia atómica de métricas + borrado de la
+fila) dentro de `main.py`. T-306 necesita exactamente esa operación; importarla
+desde la capa HTTP invertiría la dependencia y duplicarla arriesgaría que
+RF-803 y RF-804 divergieran.
+
+**Alternativas.** (a) importar la función privada de `main.py` desde el job;
+(b) copiar la secuencia en un módulo nuevo; (c) mover la operación de negocio a
+`app.agent.durability` y dejar en `main.py` solo el adaptador de event loop de
+Windows.
+
+**Decisión.** Se adopta (c): `durability.delete_run_with_checkpoints` es la
+única operación compartida. Recibe el engine y la URL psycopg de forma
+explícita, ejecuta checkpoints primero y delega la copia/borrado transaccional
+en `delete_run_with_metrics`. T-304 conserva sus adaptadores
+`_delete_run_with_platform_loop` para `SelectorEventLoop`; T-306 y su CLI
+llaman a la misma función de servicio sin importar `main.py`.
+
+**Consecuencias.** Un fallo de checkpoints deja intacta la corrida; un fallo
+posterior se puede reintentar y `ON CONFLICT (source_run_hash) DO NOTHING`
+evita duplicar `technical_metrics`. La FK `ON DELETE SET NULL` conserva el
+snapshot no identificable de `eval_case_results` sin un mecanismo paralelo.
+
 ---
 
 *Para añadir una nueva decisión: sección numerada, estado, problema, alternativas, criterios, decisión y consecuencias. Las decisiones `PENDIENTE` bloquean las tareas que dependan de ellas (ver tasks.md).*

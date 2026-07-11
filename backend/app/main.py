@@ -15,12 +15,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.agent import durability, heartbeat_sweep, runner, worker_lease
+from app.agent import durability, heartbeat_sweep, retention_sweep, runner, worker_lease
 from app.catalog.search import CatalogSearchSummary, search_catalog
 from app.config import get_settings
 from app.db.checkpointer import setup_checkpointer
@@ -414,6 +413,107 @@ async def _reload_publishers_async(
     engine = create_app_async_engine(database_url, pool_pre_ping=True)
     try:
         return await reload_official_publishers(engine, fixture)
+    finally:
+        await engine.dispose()
+
+
+@app.post(
+    "/v2/admin/retention/run",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_admin_token)],
+)
+async def run_admin_retention_sweep(request: Request) -> dict[str, object]:
+    """T-306/RF-804: ejecuta manualmente el barrido idempotente de retención."""
+
+    settings = request.app.state.settings
+    summary = await _run_retention_sweep_with_platform_loop(
+        settings.sqlalchemy_database_url,
+        settings.psycopg_database_url,
+        now=datetime.now(UTC),
+        retention_user_days=settings.retention_user_days,
+        retention_eval_months=settings.retention_eval_months,
+        retention_tech_months=settings.retention_tech_months,
+        retention_hash_salt=_require_retention_hash_salt(settings),
+    )
+    return summary.as_api_response()
+
+
+async def _run_retention_sweep_with_platform_loop(
+    sqlalchemy_database_url: str,
+    psycopg_database_url: str,
+    *,
+    now: datetime,
+    retention_user_days: int,
+    retention_eval_months: int,
+    retention_tech_months: int,
+    retention_hash_salt: str,
+) -> retention_sweep.RetentionSweepSummary:
+    if sys.platform == "win32":
+        return await asyncio.to_thread(
+            _run_retention_sweep_with_selector,
+            sqlalchemy_database_url,
+            psycopg_database_url,
+            now,
+            retention_user_days,
+            retention_eval_months,
+            retention_tech_months,
+            retention_hash_salt,
+        )
+    return await _run_retention_sweep_async(
+        sqlalchemy_database_url,
+        psycopg_database_url,
+        now=now,
+        retention_user_days=retention_user_days,
+        retention_eval_months=retention_eval_months,
+        retention_tech_months=retention_tech_months,
+        retention_hash_salt=retention_hash_salt,
+    )
+
+
+def _run_retention_sweep_with_selector(
+    sqlalchemy_database_url: str,
+    psycopg_database_url: str,
+    now: datetime,
+    retention_user_days: int,
+    retention_eval_months: int,
+    retention_tech_months: int,
+    retention_hash_salt: str,
+) -> retention_sweep.RetentionSweepSummary:
+    return asyncio.run(
+        _run_retention_sweep_async(
+            sqlalchemy_database_url,
+            psycopg_database_url,
+            now=now,
+            retention_user_days=retention_user_days,
+            retention_eval_months=retention_eval_months,
+            retention_tech_months=retention_tech_months,
+            retention_hash_salt=retention_hash_salt,
+        ),
+        loop_factory=asyncio.SelectorEventLoop,
+    )
+
+
+async def _run_retention_sweep_async(
+    sqlalchemy_database_url: str,
+    psycopg_database_url: str,
+    *,
+    now: datetime,
+    retention_user_days: int,
+    retention_eval_months: int,
+    retention_tech_months: int,
+    retention_hash_salt: str,
+) -> retention_sweep.RetentionSweepSummary:
+    engine = create_app_async_engine(sqlalchemy_database_url, pool_pre_ping=True)
+    try:
+        return await retention_sweep.run_retention_sweep(
+            engine,
+            psycopg_database_url,
+            now=now,
+            retention_user_days=retention_user_days,
+            retention_eval_months=retention_eval_months,
+            retention_tech_months=retention_tech_months,
+            retention_hash_salt=retention_hash_salt,
+        )
     finally:
         await engine.dispose()
 
@@ -1271,16 +1371,13 @@ async def _delete_run_async(
     deletion_reason: durability.DeletionReason,
     retention_hash_salt: str,
 ) -> None:
-    """Orden normativo (plan.md §11/data-model.md §7): checkpoints primero,
-    luego copiar métricas no identificables a `technical_metrics` y borrar
-    la fila de la corrida (research.md §4, contracts/api-rest.md §7b)."""
+    """Adaptador Windows para la operación compartida de RF-803/RF-804."""
 
-    async with AsyncPostgresSaver.from_conn_string(psycopg_database_url) as saver:
-        await saver.adelete_thread(str(run_id))
     engine = create_app_async_engine(sqlalchemy_database_url, pool_pre_ping=True)
     try:
-        await durability.delete_run_with_metrics(
+        await durability.delete_run_with_checkpoints(
             engine,
+            psycopg_database_url,
             run_id,
             deletion_reason=deletion_reason,
             retention_hash_salt=retention_hash_salt,
