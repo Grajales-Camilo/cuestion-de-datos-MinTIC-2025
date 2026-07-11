@@ -5,10 +5,12 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from pydantic import ValidationError
 
 from app.agent.graph import (
     EVIDENCE_EVENT_MAX_BYTES,
     EVIDENCE_ROWS_MAX_BYTES,
+    ClaimSpecPayload,
     GraphDependencies,
     NoEvidenceReport,
     PlannerOutput,
@@ -16,9 +18,11 @@ from app.agent.graph import (
     RouterOutput,
     SynthesisOutput,
     _bounded_rows,
+    _claim_builder_node,
     _evidence_event_payload,
     build_graph,
     initial_state,
+    load_prompt,
 )
 from app.agent.persistence import DatasetEvidenceMetadata
 
@@ -231,6 +235,152 @@ def deps(router, synthesizer, *, max_steps=10):
     )
 
 
+def _claim_builder_deps() -> GraphDependencies:
+    return GraphDependencies(
+        engine=None,
+        planner_model=None,
+        router_model=None,
+        synthesizer_model=None,
+        tools={},
+        llm_provider="google",
+        llm_model="gemini-2.5-flash",
+        persist=False,
+    )
+
+
+def _claim_builder_state(*, eligibility_status: str, classification: str) -> dict:
+    evidence_id = str(uuid.uuid4())
+    return {
+        "run_id": str(uuid.uuid4()),
+        "evidences": [
+            {
+                "evidence_id": evidence_id,
+                "dataset_id": "abcd-1234",
+                "soql_query": "SELECT sector, sum(monto) AS total GROUP BY sector LIMIT 50",
+                "rows": [{"sector": "Educación", "total": "100"}],
+                "quality": {
+                    "eligibility_status": eligibility_status,
+                    "classification": classification,
+                    "score_total": 20 if classification == "no_recomendada" else 82,
+                },
+            }
+        ],
+        "claim_specs_by_evidence": [
+            {
+                "evidence_id": evidence_id,
+                "claim_specs": [
+                    {
+                        "claim_type": "direct",
+                        "description": "Recursos del sector educación",
+                        "source_row_indexes": [0],
+                        "columns": ["total"],
+                        "unit": "COP",
+                        "rounding": 0,
+                    }
+                ],
+            }
+        ],
+        "claims": [],
+        "rejected_claims": [],
+        "steps_used": 0,
+        "usage": [],
+    }
+
+
+def test_synthesizer_prompt_ties_narrative_limitation_to_classification():
+    """contracts/validacion-calidad.md §3.1: `baja` debe mencionar la
+    limitación en la narrativa; `no_recomendada` no debe presentarse como
+    sustento. El prompt debe atar esa regla al campo `classification`, no
+    dejarla como una instrucción genérica de "explica las limitaciones" que
+    el LLM puede ignorar sin que ninguna prueba lo detecte.
+    """
+    text = load_prompt("synthesizer")
+
+    assert "quality.classification" in text
+    assert '"baja"' in text
+    assert '"no_recomendada"' in text
+    assert "warnings_user" in text
+    # La regla debe pedir parafraseo cualitativo, no cita textual: una cifra
+    # copiada de `warnings_user` no es un `display_value` aceptado y
+    # `_orphan_figures` la rechazaría (ver test_t402_quality_claims_integration.py).
+    assert "CUALITATIVOS" in text or "cualitativos" in text
+
+
+def _claim_spec_payload(formula: dict) -> dict:
+    return {
+        "claim_type": "derived",
+        "description": "Total de producción",
+        "source_row_indexes": [0, 1, 2],
+        "columns": ["producci_n_t"],
+        "unit": "t",
+        "rounding": 0,
+        "formula": formula,
+    }
+
+
+@pytest.mark.parametrize(
+    "formula",
+    [
+        {"const": 42},
+        {"col": "producci_n_t"},
+        {"agg": "sum", "col": "producci_n_t"},
+        {"op": "div", "args": [{"col": "a"}, {"col": "b"}]},
+        {"op": "pct_change", "args": [{"agg": "sum", "col": "x"}, {"const": 10}]},
+        # "op" anidado dentro de "op" SÍ es valido a nivel de modelo (y
+        # _eval_node lo evalúa igual, sin tope de profundidad); el límite de
+        # profundidad 1 solo aplica al esquema que ve el LLM vía
+        # convert_to_openai_tool (ver comentario junto a FormulaNode), no a
+        # esta validación directa con model_validate.
+        {"op": "add", "args": [{"op": "mul", "args": [{"col": "a"}, {"col": "b"}]}]},
+    ],
+)
+def test_claim_spec_payload_accepts_every_real_dsl_shape(formula: dict) -> None:
+    """La union discriminada debe aceptar exactamente las formas que
+    `app.quality.claims._eval_node` reconoce -- ni una menos."""
+    spec = ClaimSpecPayload.model_validate(_claim_spec_payload(formula))
+    assert spec.formula.model_dump() == formula
+
+
+@pytest.mark.parametrize(
+    "formula",
+    [
+        {"sum_of": ["a", "b"]},  # hallazgo T-402: forma inventada por el LLM real
+        {"col": "a", "const": 1},  # mezcla dos nodos distintos (extra=forbid la rechaza)
+        {"op": "unsupported_op", "args": [{"col": "a"}, {"col": "b"}]},
+        {},
+    ],
+)
+def test_claim_spec_payload_rejects_invented_dsl_shapes(formula: dict) -> None:
+    """Hallazgo T-402 (2026-07-11, ejecucion real con LLM real): antes
+    `formula: dict[str, Any]` dejaba pasar cualquier forma hasta que T7 la
+    rechazaba en tiempo de ejecución ("operación DSL no permitida: forma de
+    nodo desconocida"), gastando un paso completo del presupuesto. Ahora el
+    esquema de function-calling del proveedor no puede producir estas formas.
+    """
+    with pytest.raises(ValidationError):
+        ClaimSpecPayload.model_validate(_claim_spec_payload(formula))
+
+
+@pytest.mark.asyncio
+async def test_claim_builder_skips_eligible_no_recomendada_evidence():
+    """RF-404 / contrato §6.2: `no_recomendada` no puede sustentar claims aunque sea `eligible`."""
+    state = _claim_builder_state(eligibility_status="eligible", classification="no_recomendada")
+
+    result = await _claim_builder_node(_claim_builder_deps(), state)
+
+    assert result["claims"] == []
+
+
+@pytest.mark.asyncio
+async def test_claim_builder_builds_claims_for_eligible_alta_evidence():
+    state = _claim_builder_state(eligibility_status="eligible", classification="alta")
+
+    result = await _claim_builder_node(_claim_builder_deps(), state)
+
+    assert len(result["claims"]) == 1
+    assert result["claims"][0]["display_value"] == "100 COP"
+
+
 @pytest.mark.asyncio
 async def test_real_graph_runs_t6_t7_and_blocks_orphans():
     synthesizer = SuccessfulSynthesizer()
@@ -296,6 +446,33 @@ async def test_soql_syntax_allows_only_two_corrections_after_initial_attempt():
 
     graph_deps = deps(RepeatingT5Router(), NoEvidenceSynthesizer(), max_steps=20)
     graph_deps.tools["ejecutar_soql"] = syntax_error
+    graph = build_graph(graph_deps, interrupt=False)
+    result = await graph.ainvoke(
+        initial_state(uuid.uuid4(), "Pregunta válida extensa", max_steps=20)
+    )
+
+    assert calls == 3  # intento inicial + dos autocorrecciones
+    assert result["final_answer"]["status"] == "no_evidence"
+
+
+@pytest.mark.asyncio
+async def test_soql_forbidden_also_allows_only_two_corrections():
+    """Hallazgo T-402 (2026-07-11, ejecucion real): antes solo SOQL_SYNTAX
+    contaba para el presupuesto de correcciones; SOQL_FORBIDDEN (nuestra
+    propia guardia, p. ej. una clausula FROM alucinada) nunca lo hacia y
+    llegaba a repetirse hasta MAX_SOQL_CALLS (4 llamadas) en vez de cortar
+    en 3 como SOQL_SYNTAX. Mismo guion que el test de SOQL_SYNTAX de arriba,
+    solo cambia el codigo de error.
+    """
+    calls = 0
+
+    async def forbidden(_raw_input):
+        nonlocal calls
+        calls += 1
+        return {"ok": False, "error": {"code": "SOQL_FORBIDDEN", "message": "sin FROM"}}
+
+    graph_deps = deps(RepeatingT5Router(), NoEvidenceSynthesizer(), max_steps=20)
+    graph_deps.tools["ejecutar_soql"] = forbidden
     graph = build_graph(graph_deps, interrupt=False)
     result = await graph.ainvoke(
         initial_state(uuid.uuid4(), "Pregunta válida extensa", max_steps=20)

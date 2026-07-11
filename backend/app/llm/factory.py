@@ -30,6 +30,7 @@ import httpx
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable
+from pydantic import BaseModel
 
 from app.config import Settings
 
@@ -250,8 +251,46 @@ async def ainvoke_chat_model(model: BaseChatModel, input: Any, **kwargs: Any) ->
     return result
 
 
+def _truncate_overflowing_strings(args: dict, parsing_error: Exception) -> dict | None:
+    """Recuperacion determinista para el unico patron de fallo que se puede
+    corregir sin volver a llamar al LLM: campos string que exceden su
+    `max_length` de Pydantic (hallazgo T-402, 2026-07-11, ejecucion real --
+    `RouterOutput.reasoning_summary` y `PlannerOutput.recommended_next_action`
+    tumbaban la corrida completa con `LLMProviderError` cuando el LLM real
+    razonaba de forma verbosa, sin ningun mecanismo de reintento como el que
+    ya existe para SoQL/sintesis).
+
+    Deliberadamente conservador: si ALGUN error de `parsing_error` no es
+    `string_too_long` sobre un campo string de primer nivel, no se toca nada
+    (se devuelve `None` y el llamador sigue tratandolo como fallo definitivo)
+    -- truncar es seguro porque preserva el contenido real hasta el limite
+    declarado; adivinar una correccion para otro tipo de error no lo es.
+    """
+    errors = getattr(parsing_error, "errors", None)
+    if not callable(errors):
+        return None
+    coerced = dict(args)
+    changed = False
+    for error in errors():
+        if error.get("type") != "string_too_long":
+            return None
+        loc = error.get("loc") or ()
+        if len(loc) != 1:
+            return None
+        field = loc[0]
+        max_length = (error.get("ctx") or {}).get("max_length")
+        value = coerced.get(field)
+        if not isinstance(field, str) or not isinstance(max_length, int):
+            return None
+        if not isinstance(value, str):
+            return None
+        coerced[field] = value[:max_length]
+        changed = True
+    return coerced if changed else None
+
+
 async def ainvoke_structured_chat_model(
-    model: Runnable, input: Any, **kwargs: Any
+    model: Runnable, input: Any, *, schema: type[BaseModel] | None = None, **kwargs: Any
 ) -> StructuredLLMResult:
     """Invoca un runnable estructurado y conserva el `AIMessage` si existe.
 
@@ -259,6 +298,12 @@ async def ainvoke_structured_chat_model(
     de LangChain ``{raw, parsed, parsing_error}``. Los dobles de prueba pueden
     devolver directamente el objeto Pydantic; ambos caminos mantienen una
     única interfaz para el grafo T-303.
+
+    `schema`, si se pasa, habilita la recuperación de
+    `_truncate_overflowing_strings`: se usa el `AIMessage.tool_calls[0]["args"]`
+    crudo (previo a la validación fallida de LangChain) para reintentar la
+    validación localmente con los campos desbordados truncados, sin gastar
+    una llamada adicional al proveedor.
     """
 
     try:
@@ -271,6 +316,18 @@ async def ainvoke_structured_chat_model(
     if isinstance(result, dict) and "parsed" in result:
         parsing_error = result.get("parsing_error")
         if parsing_error is not None:
+            raw = result.get("raw")
+            if schema is not None and isinstance(raw, AIMessage) and raw.tool_calls:
+                coerced = _truncate_overflowing_strings(
+                    raw.tool_calls[0].get("args", {}), parsing_error
+                )
+                if coerced is not None:
+                    try:
+                        recovered = schema.model_validate(coerced)
+                    except Exception:  # noqa: BLE001 - si tampoco valida, se sigue al fallo normal
+                        pass
+                    else:
+                        return StructuredLLMResult(parsed=recovered, raw_message=raw)
             raise LLMProviderError(f"Salida estructurada inválida del proveedor: {parsing_error}")
         raw = result.get("raw")
         return StructuredLLMResult(
