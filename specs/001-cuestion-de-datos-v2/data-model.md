@@ -344,6 +344,24 @@ Reemplaza el arreglo hardcodeado `utils/maestro_divipola.js` de v1.0 con el maes
 
 - Datos cargados una vez desde el dataset oficial DIVIPOLA de datos.gov.co (script en Fase 2); actualización manual anual.
 
+### `territorio_tipologia`
+Tabla de referencia para comparabilidad territorial (RF-202, T8 de `contracts/agent-tools.md`). Contiene la tipología de capacidades del DNP (Resolución 3910 de 2025) y, de la misma fuente, la categoría Ley 617 de 2000 más reciente disponible.
+
+| Campo | Tipo | Reglas |
+|---|---|---|
+| `divipola_code` | text PK, FK → `divipola_entries.code` | Mismo código de 5 dígitos (municipio) o 2 (departamento). |
+| `level` | text NOT NULL | `department` \| `municipality`. |
+| `tipologia_dnp` | text NOT NULL | `Bogotá` / `Ciudades grandes` / `1`…`5` (municipal) o `1`…`3` (departamental). |
+| `categoria_ley_617` | text | `ESP` / `1`…`6`; nulo si el archivo fuente no trae dato para ese territorio. |
+| `poblacion` | integer | Referencia interna únicamente — **ver regla de uso abajo**. |
+| `ingresos_totales_cop` | numeric | Referencia interna únicamente — mismo alcance que `poblacion`. |
+| `vigencia` | integer NOT NULL | Año de la tipología (p. ej. `2026`). |
+| `fuente_archivo` | text NOT NULL | Nombre del archivo DNP cargado (trazabilidad de origen, no es un `dataset_id` de Socrata). |
+| `cargado_at` | timestamptz NOT NULL | Momento de ejecución del loader. |
+
+- Datos cargados desde el archivo `Base de Datos y Resultados` que el DNP publica cada vigencia en `colaboracion.dnp.gov.co` (no es un recurso Socrata; sin URL estable año a año). Carga manual anual mediante `scripts/load_tipologias_dnp.py` (Fase 2, tarea T-207), recibiendo el archivo como argumento local. Upsert por `divipola_code`; no se conserva histórico por vigencia (YAGNI — Art. III).
+- **Regla de uso (Art. I — evidencia verificable o nada):** `poblacion` e `ingresos_totales_cop` NO llegan por una consulta SoQL ejecutada y por lo tanto NO pueden citarse como cifra en `summary`/`narrative`/`evidence[].narrative` ni convertirse en una `quantitative_claim` (T7). Su único uso permitido es como señal interna para que T8 decida si corresponde una advertencia cualitativa de comparabilidad (sin imprimir el número). Citar población o ingresos como cifra exacta requiere ingestar la fuente correspondiente como dataset Socrata normal por el pipeline T1/T2, igual que cualquier otra evidencia — ver research.md §18.
+
 ## 7. Reglas transversales de datos
 
 1. **Retención diferenciada (RF-804).** Períodos por `retention_class`, todos **configurables** por variables de entorno (valores propuestos para el piloto, revisables en research.md §4):

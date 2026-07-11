@@ -40,6 +40,8 @@ from app.llm.factory import (
     usage_from_message,
 )
 from app.quality.claims import ClaimSpec, EvidenceContext, build_claims, find_orphan_figures
+from app.quality.external_sources import suggest_external_sources
+from app.quality.territorial import comparabilidad_territorial
 from app.quality.validator import EvidenceDraft, SelectedColumn, validate_evidence
 from app.tools.soql_parser import Column, FuncCall, Star, parse_soql
 
@@ -56,6 +58,7 @@ GRAPH_NODES = (
     "planner",
     "router",
     *(f"tool__{name}" for name in TOOL_NAMES),
+    "territorial_comparability",
     "quality_validator",
     "claim_builder",
     "synthesizer",
@@ -69,6 +72,7 @@ EVIDENCE_EVENT_MAX_BYTES = 256 * 1024
 
 ToolCallable = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 MetadataLoader = Callable[[str], Awaitable[DatasetEvidenceMetadata | None]]
+TerritorialLoader = Callable[[list[str]], Awaitable[dict[str, Any]]]
 
 
 class PlannerOutput(BaseModel):
@@ -131,10 +135,20 @@ class ReviewedDataset(BaseModel):
     why_rejected: str
 
 
+class ExternalSourceSuggestion(BaseModel):
+    """Poblado SIEMPRE por código determinista (`suggest_external_sources`),
+    nunca por el LLM -- ver `_synthesizer_node` y research.md §18."""
+
+    entidad: str
+    url: str
+    por_que: str
+
+
 class NoEvidenceReport(BaseModel):
     reason: str
     datasets_reviewed: list[ReviewedDataset] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
+    external_sources: list[ExternalSourceSuggestion] = Field(default_factory=list)
 
 
 class SynthesisOutput(BaseModel):
@@ -153,6 +167,8 @@ class AgentState(TypedDict, total=False):
     observations: list[dict[str, Any]]
     pending_action: dict[str, Any]
     pending_t5: dict[str, Any]
+    territorial_checked_codes: list[str]
+    territorial_comparability: dict[str, Any] | None
     evidences: list[dict[str, Any]]
     claim_specs_by_evidence: list[dict[str, Any]]
     claims: list[dict[str, Any]]
@@ -181,6 +197,7 @@ class GraphDependencies:
     placeholder_min_ratio: float = 0.30
     persist: bool = True
     metadata_loader: MetadataLoader | None = None
+    territorial_loader: TerritorialLoader | None = None
 
 
 def load_prompt(name: str) -> str:
@@ -199,6 +216,8 @@ def initial_state(
         "question": question,
         "context_hint": context_hint,
         "observations": [],
+        "territorial_checked_codes": [],
+        "territorial_comparability": None,
         "evidences": [],
         "claims": [],
         "rejected_claims": [],
@@ -381,6 +400,26 @@ def _selected_columns(
         risk = max(risks or [metadata.pii_risk_level], key=lambda value: severity[value])
         selected.append(SelectedColumn(field_name=output_name, pii_risk_level=risk))
     return tuple(selected)
+
+
+def _resolved_territory_codes(state: AgentState) -> list[str]:
+    """Codigo DIVIPOLA del match de mayor confianza de cada llamada exitosa
+    a T3 (`resolver_geografia`) en la corrida, deduplicado en orden de
+    aparicion (contracts/agent-tools.md §T8: "T3 resuelve >= 2 territorios
+    distintos en la misma corrida")."""
+
+    codes: list[str] = []
+    for observation in state.get("observations", []):
+        if observation.get("tool") != "resolver_geografia":
+            continue
+        output = observation.get("output", {})
+        matches = output.get("matches") if output.get("ok") else None
+        if not matches:
+            continue
+        code = matches[0].get("code")
+        if code and code not in codes:
+            codes.append(code)
+    return codes
 
 
 async def _planner_node(deps: GraphDependencies, state: AgentState) -> AgentState:
@@ -599,6 +638,41 @@ def _tool_node(deps: GraphDependencies, tool_name: str):
         return result
 
     return _run
+
+
+async def _territorial_node(deps: GraphDependencies, state: AgentState) -> AgentState:
+    """T8 `comparabilidad_territorial` (contracts/agent-tools.md §T8). Nodo
+    determinista: no usa LLM. Se ejecuta automaticamente tras T3 cuando el
+    conjunto de territorios resueltos en la corrida crece a >= 2 (ver
+    `_after_resolver_geografia`)."""
+
+    started = time.perf_counter()
+    codes = _resolved_territory_codes(state)
+    if deps.territorial_loader is not None:
+        output = await deps.territorial_loader(codes)
+    else:
+        assert deps.engine is not None
+        output = await comparabilidad_territorial(codes, engine=deps.engine)
+    step, usages = await _record(
+        deps,
+        state,
+        node="territorial_comparability",
+        display_message="Verifiqué si los territorios consultados son comparables entre sí.",
+        detail={"divipola_codes": codes, "comparable": output.get("comparable")},
+        tool_output=output,
+        latency_ms=round((time.perf_counter() - started) * 1000),
+    )
+    observations = [
+        *state.get("observations", []),
+        {"node": "territorial_comparability", "output": output},
+    ]
+    return {
+        "territorial_comparability": output,
+        "territorial_checked_codes": codes,
+        "observations": observations,
+        "steps_used": step,
+        "usage": usages,
+    }
 
 
 async def _quality_node(deps: GraphDependencies, state: AgentState) -> AgentState:
@@ -884,6 +958,7 @@ async def _synthesizer_node(deps: GraphDependencies, state: AgentState) -> Agent
                     "rejected_claims": state.get("rejected_claims", []),
                     "termination_reason": state.get("termination_reason"),
                     "orphan_feedback": orphan_feedback,
+                    "territorial_comparability": state.get("territorial_comparability"),
                 },
             )
             assert isinstance(parsed, SynthesisOutput)
@@ -958,6 +1033,12 @@ async def _synthesizer_node(deps: GraphDependencies, state: AgentState) -> Agent
             for item in output.no_evidence_report.datasets_reviewed
             if item.dataset_id in actual_datasets
         ]
+        # Determinista, NUNCA del LLM (research.md §18): entidad/url/por_que
+        # salen integros de external_sources.yaml, sobrescribiendo lo que el
+        # LLM haya podido producir en este campo.
+        output.no_evidence_report.external_sources = [
+            ExternalSourceSuggestion(**item) for item in suggest_external_sources(state["question"])
+        ]
     final_answer = {
         "run_id": state["run_id"],
         "status": status,
@@ -1017,6 +1098,16 @@ def _after_t5(state: AgentState) -> str:
     return "quality_validator" if state.get("pending_t5") else "router"
 
 
+def _after_resolver_geografia(state: AgentState) -> str:
+    if state.get("terminal_error"):
+        return END
+    codes = _resolved_territory_codes(state)
+    already_checked = set(state.get("territorial_checked_codes", []))
+    if len(codes) >= 2 and set(codes) != already_checked:
+        return "territorial_comparability"
+    return "router"
+
+
 def _after_quality(state: AgentState) -> str:
     return END if state.get("terminal_error") else "router"
 
@@ -1029,6 +1120,7 @@ def build_graph(deps: GraphDependencies, checkpointer: Any = None, *, interrupt:
     graph.add_node("router", partial(_router_node, deps))
     for tool_name in TOOL_NAMES:
         graph.add_node(f"tool__{tool_name}", _tool_node(deps, tool_name))
+    graph.add_node("territorial_comparability", partial(_territorial_node, deps))
     graph.add_node("quality_validator", partial(_quality_node, deps))
     graph.add_node("claim_builder", partial(_claim_builder_node, deps))
     graph.add_node("synthesizer", partial(_synthesizer_node, deps))
@@ -1036,7 +1128,11 @@ def build_graph(deps: GraphDependencies, checkpointer: Any = None, *, interrupt:
     graph.add_conditional_edges("planner", _after_planner)
     graph.add_conditional_edges("router", _after_router)
     for tool_name in TOOL_NAMES[:-1]:
+        if tool_name == "resolver_geografia":
+            continue
         graph.add_edge(f"tool__{tool_name}", "router")
+    graph.add_conditional_edges("tool__resolver_geografia", _after_resolver_geografia)
+    graph.add_edge("territorial_comparability", "router")
     graph.add_conditional_edges("tool__ejecutar_soql", _after_t5)
     graph.add_conditional_edges("quality_validator", _after_quality)
     graph.add_edge("claim_builder", "synthesizer")

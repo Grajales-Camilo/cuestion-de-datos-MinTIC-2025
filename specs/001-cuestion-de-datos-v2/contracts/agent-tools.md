@@ -7,7 +7,7 @@ Cada herramienta es una función pura respecto de sus entradas (más I/O externo
 
 Este contrato define dos categorías distintas:
 - **T1–T5 — herramientas invocables por el enrutador LLM.** El LLM solo puede invocar estas cinco; cualquier otra invocación es un error de grafo.
-- **T6–T7 — nodos deterministas obligatorios del pipeline.** NO son invocables por el LLM ni opcionales: el grafo los ejecuta siempre en su posición fija (T6 tras cada `ejecutar_soql` exitoso; T7 antes del sintetizador). Se especifican aquí porque comparten el formato de contrato entrada/salida.
+- **T6–T8 — nodos deterministas obligatorios del pipeline.** NO son invocables por el LLM ni opcionales: el grafo los ejecuta siempre en su posición fija (T6 tras cada `ejecutar_soql` exitoso; T7 antes del sintetizador; T8 tras T3 cuando resuelve ≥2 territorios). Se especifican aquí porque comparten el formato de contrato entrada/salida.
 
 Reglas comunes:
 - Timeout externo 10 s, 1 reintento con backoff (Art. IV.4).
@@ -224,6 +224,31 @@ Materializa las **afirmaciones cuantitativas** (claims, RF-208) a partir de evid
 - `source_hash` se calcula sobre JSON canónico UTF-8 con claves ordenadas y sin espacios: `{algorithm_version, dataset_id, canonical_soql, source_row_indexes, rows_subset_canonical, columns, formula_dsl_canonical, raw_value, unit, rounding}`. El prefijo visible es `sha256:<hex>`. No incluye `evidence_id`, `claim_id`, `run_id` ni timestamps de ejecución; esos identificadores pueden cambiar entre corridas sin cambiar el hash de contenido.
 - Se considera “cifra” cualquier token numérico visible en español o formato internacional: enteros, decimales con coma o punto, porcentajes, monedas, magnitudes con separador de miles, años usados como valor analítico, rangos numéricos y tasas. No se consideran cifras: IDs técnicos (`dataset_id`, UUID), fechas completas en citas, códigos DIVIPOLA y números de sección si no expresan un dato sustantivo.
 - **El sintetizador SOLO puede citar cifras a través de `display_value` de claims aceptados.** Una cifra en la narrativa sin `claim_id` asociado es un defecto bloqueante (verificado por el chequeo de groundedness, pruebas.md §4.2).
+
+## T8 — `comparabilidad_territorial`
+Advierte cuando dos o más territorios resueltos por T3 en la misma corrida no son comparables entre sí (Cap. 9 del Handbook de CSS para Política, `docs/capitulos-css-politicas-publicas.md`). Nodo determinista: no usa LLM, no acepta invocación libre del enrutador. El grafo lo ejecuta automáticamente cuando T3 devuelve `divipola_code` de ≥2 territorios distintos en el mismo run. Implementado por `app/quality/territorial.py` sobre la tabla `territorio_tipologia` (tarea T-404).
+
+**Entrada**
+```json
+{"divipola_codes": ["11001", "05148"]}
+```
+**Salida**
+```json
+{
+  "ok": true,
+  "comparable": false,
+  "reasons": ["level_mismatch"],
+  "territorios": [
+    {"divipola_code": "11001", "level": "municipality", "tipologia_dnp": "Bogotá", "categoria_ley_617": "ESP"},
+    {"divipola_code": "05148", "level": "municipality", "tipologia_dnp": "5", "categoria_ley_617": "6"}
+  ]
+}
+```
+**Reglas:**
+- `reasons` es una lista de códigos fijos, NO texto libre: `level_mismatch` (un territorio es `department` y otro `municipality`) y/o `tipologia_gap` (las `tipologia_dnp` distan ≥3 posiciones en la escala municipal, o cualquiera de los dos está en `Bogotá`/`Ciudades grandes` mientras el otro no).
+- Si algún `divipola_code` no tiene fila en `territorio_tipologia` (carga pendiente o territorio nuevo), se marca `comparable: null` con `reasons: ["sin_tipologia"]` — el sintetizador debe tratarlo igual que `false` para efectos de advertencia (no asumir comparabilidad ante datos faltantes).
+- **La salida de T8 NUNCA contiene `poblacion` ni `ingresos_totales_cop`** (ver `data-model.md` §6, regla de uso de `territorio_tipologia`) — solo `tipologia_dnp`/`categoria_ley_617`/`level`, que el sintetizador puede mencionar como clasificación, nunca como cifra numérica citada.
+- El sintetizador usa esta salida solo para decidir si agrega una frase de advertencia de comparabilidad; no genera una `quantitative_claim` (T7) a partir de ella.
 
 ---
 

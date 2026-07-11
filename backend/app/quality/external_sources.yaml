@@ -1,0 +1,92 @@
+# Catalogo curado de fuentes oficiales externas al catalogo Socrata de
+# datos.gov.co (T-404, contracts/api-rest.md §4, research.md §18).
+#
+# Lista deliberadamente fija y pequena: cuando el agente no encuentra
+# evidencia en el catalogo, `suggest_external_sources` hace match
+# determinista por palabra clave contra `temas` y devuelve `entidad`/`url`/
+# `por_que` TAL CUAL estan aqui -- sin intervencion del LLM, para no
+# arriesgar una URL alucinada (Art. I extendido a enlaces). Agregar una
+# entidad nueva requiere verificar la URL a mano, mismo criterio que
+# `official_publishers.json` (T-106/T-201A).
+
+fixture_version: "1.0.0"
+updated_at: "2026-07-11T00:00:00Z"
+
+sources:
+  - entidad: "DANE"
+    url: "https://www.dane.gov.co"
+    temas:
+      - poblacion
+      - censo
+      - precios
+      - inflacion
+      - empleo
+      - desempleo
+      - pobreza
+      - demografia
+      - proyecciones de poblacion
+    por_que: >-
+      El DANE es la autoridad estadística nacional; publica censos,
+      proyecciones de población, empleo y precios que no siempre están
+      sincronizados con la API de Socrata.
+
+  - entidad: "DNP - TerriData"
+    url: "https://terridata.dnp.gov.co"
+    temas:
+      - tipologia
+      - categoria municipal
+      - capacidad territorial
+      - desempeno municipal
+      - desempeno departamental
+      - regalias
+      - indicadores territoriales
+    por_que: >-
+      TerriData del DNP concentra indicadores territoriales oficiales por
+      municipio y departamento, incluida la tipología de capacidades usada
+      para comparabilidad territorial.
+
+  - entidad: "Contraloría General de la República"
+    url: "https://www.contraloria.gov.co"
+    temas:
+      - ley 617
+      - categorizacion fiscal
+      - ingresos corrientes de libre destinacion
+      - gasto publico
+      - control fiscal
+    por_que: >-
+      La Contraloría certifica la categorización fiscal de municipios y
+      departamentos bajo la Ley 617 de 2000.
+
+  - entidad: "Ministerio de Salud - SISPRO"
+    url: "https://www.sispro.gov.co"
+    temas:
+      - salud
+      - epidemiologia
+      - mortalidad
+      - natalidad
+      - afiliacion en salud
+    por_que: >-
+      SISPRO integra los sistemas de información oficiales del sector
+      salud colombiano.
+
+  - entidad: "Ministerio de Educación Nacional"
+    url: "https://www.mineducacion.gov.co"
+    temas:
+      - educacion
+      - matricula
+      - desercion escolar
+      - cobertura educativa
+    por_que: >-
+      El Ministerio de Educación publica estadísticas del sector educativo
+      que complementan el catálogo de datos.gov.co.
+
+  - entidad: "IGAC"
+    url: "https://www.igac.gov.co"
+    temas:
+      - catastro
+      - cartografia
+      - uso del suelo
+      - limites territoriales
+    por_que: >-
+      El IGAC es la autoridad catastral y cartográfica oficial de
+      Colombia.

@@ -590,3 +590,34 @@ class DivipolaEntry(Base):
     level: Mapped[str] = mapped_column(Text, nullable=False)
     name_normalized: Mapped[str] = mapped_column(Text, nullable=False)
     alt_names: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+
+
+class TerritorioTipologia(Base):
+    """Tipologia DNP de comparabilidad territorial (T-207, data-model.md #6).
+
+    `poblacion`/`ingresos_totales_cop` son solo senal interna para T8
+    (contracts/agent-tools.md): no llegan por SoQL, por lo que el Art. I
+    prohibe citarlos como cifra (ver research.md #18).
+    """
+
+    __tablename__ = "territorio_tipologia"
+    __table_args__ = (
+        CheckConstraint(
+            "level IN ('department', 'municipality')",
+            name="ck_territorio_tipologia_level",
+        ),
+    )
+
+    divipola_code: Mapped[str] = mapped_column(
+        ForeignKey("divipola_entries.code"), primary_key=True
+    )
+    level: Mapped[str] = mapped_column(Text, nullable=False)
+    tipologia_dnp: Mapped[str] = mapped_column(Text, nullable=False)
+    categoria_ley_617: Mapped[str | None] = mapped_column(Text)
+    poblacion: Mapped[int | None] = mapped_column(BigInteger)
+    ingresos_totales_cop: Mapped[Decimal | None] = mapped_column(Numeric)
+    vigencia: Mapped[int] = mapped_column(Integer, nullable=False)
+    fuente_archivo: Mapped[str] = mapped_column(Text, nullable=False)
+    cargado_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )

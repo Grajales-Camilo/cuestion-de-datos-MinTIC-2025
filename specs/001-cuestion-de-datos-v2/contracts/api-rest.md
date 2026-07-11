@@ -118,9 +118,13 @@ Reglas: primer evento ≤ 2 s tras la conexión (RNF-008); heartbeat `: ping` ca
 {
   "reason": "No se encontraron datos de deserción desagregados para Sonsón.",
   "datasets_reviewed": [{"dataset_id": "abcd-1234", "name": "...", "why_rejected": "Solo tiene nivel departamental"}],
-  "suggestions": ["Consultar la cifra a nivel de Antioquia", "Reformular por 'cobertura educativa'"]
+  "suggestions": ["Consultar la cifra a nivel de Antioquia", "Reformular por 'cobertura educativa'"],
+  "external_sources": [
+    {"entidad": "DNP - TerriData", "url": "https://terridata.dnp.gov.co", "por_que": "Publica indicadores de capacidad territorial por municipio que no están sincronizados con la API de Socrata."}
+  ]
 }
 ```
+- `external_sources` (opcional, puede ser `[]`): entidades oficiales sugeridas para buscar el dato fuera del catálogo Socrata. `entidad`/`url`/`por_que` salen ÍNTEGROS de `backend/app/quality/external_sources.yaml` (catálogo curado y fijo — DANE, DNP/TerriData, Contraloría, MinSalud/SISPRO, MinEducación, IGAC), seleccionados por coincidencia determinista de palabras clave contra la pregunta (`suggest_external_sources`, sin LLM). El LLM **no interviene en este campo en absoluto**: `_synthesizer_node` sobrescribe `external_sources` después de la respuesta del modelo con el resultado del match determinista, descartando cualquier valor que el LLM haya podido producir ahí — garantía más fuerte que "el LLM solo redacta el texto", cero superficie para una URL o entidad alucinada (Art. I extendido a enlaces, T-404). El frontend usa esto para ofrecer el botón "Agregar manualmente" (T-506) que abre el módulo de aporte manual del usuario, pre-rellenado con la entidad sugerida.
 - **Invariante (Art. I, RF-208):** toda cifra presente en `summary`, `narrative` o `evidence[].narrative` DEBE corresponder al `display_value` de un elemento de `claims`. El LLM NO calcula cifras: los claims `derived` los computa el módulo determinista (herramienta T7 de agent-tools.md). La coincidencia literal con `evidence[].rows` NO es suficiente por sí sola ni necesaria (los valores derivados no aparecen literalmente en las filas).
 - `source_hash` identifica el contenido canónico que sustenta el claim; NO incluye `run_id`, `evidence_id`, `claim_id` ni otros UUIDs de instancia. Dos corridas distintas con las mismas filas, fórmula, valor bruto, unidad y redondeo deben producir el mismo hash.
 - `status = "interrupted"`: la corrida fue cortada por reinicio, heartbeat vencido o worker desaparecido (plan.md §11); `summary` es `string | null`, `narrative` es `null`, `evidence` y `claims` contienen solo lo validado hasta ese punto y pueden ser `[]`, `no_evidence_report` es `null`, y `usage` incluye `termination_reason` (`RUN_INTERRUPTED` | `WORKER_LOST` | `HEARTBEAT_EXPIRED`) con `latency_ms`/`estimated_cost_usd` nullable si no se alcanzaron a calcular.

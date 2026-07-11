@@ -284,4 +284,20 @@ snapshot no identificable de `eval_case_results` sin un mecanismo paralelo.
 
 ---
 
+## 18. Decisión registrada: comparabilidad territorial y aportes manuales del usuario — `DECIDIDA (fuente) / PENDIENTE (ingesta de población como cifra citable)`
+
+**Problema.** El agente resuelve territorios por nombre (T3) pero no advierte cuando dos territorios resueltos en la misma corrida no son comparables entre sí (municipio vs. departamento que lo contiene, o municipios de capacidad/escala muy distinta) — riesgo señalado por el cap. 9 de `docs/capitulos-css-politicas-publicas.md`. Además, cuando el catálogo Socrata no tiene el dato, el agente hoy solo dice "sin evidencia" sin orientar al usuario sobre dónde más buscarlo, y el usuario no tiene forma de incorporar un dato externo al canvas de forma distinguible de la evidencia verificada.
+
+**Alternativas evaluadas para la fuente de comparabilidad:**
+(a) Dataset suelto de Ley 617 de la Contraloría en Socrata (`vztn-viv4`) — descartado: congelado en `vigencia=2020` (última actualización 2021-04-19), llave de unión es código CHIP (no DIVIPOLA, requiere fuzzy-match por nombre) y, sobre todo, agrupa al 86,3% de los municipios en una sola categoría (Sexta), sin poder discriminatorio para la mayoría del país (verificado contra el archivo real).
+(b) Tipologías del DNP, Resolución 3910 de 2025 (`Tipologías de las entidades territoriales para el reconocimiento de capacidades`, vigencia 2026) — **elegida**. Verificado contra el archivo real `01_ResultadosTipologias2026.xlsx`: 1.103 filas municipales con `CodDANE_txt` = código DIVIPOLA exacto de 5 dígitos (join directo, sin fuzzy-match), incluye además `Cat 617_2025` en la misma fila (más reciente que (a)), y discrimina dentro del 86,3% que (a) agrupa en una sola categoría (tabla 6-1 del informe DNP, cruzada contra 1.103 municipios).
+
+**Decisión sobre citar población/ingresos como cifra:** `PENDIENTE` deliberadamente, no resuelta implícitamente en código. `territorio_tipologia.poblacion`/`ingresos_totales_cop` (cargados del mismo archivo DNP) se usan solo como señal interna para T8; el Art. I exige que toda cifra citada en el documento venga de una consulta SoQL ejecutada con `dataset_id` trazable, y el archivo DNP no es un recurso Socrata. Citar población exacta como cifra requeriría ingestar una fuente de población por el pipeline T1/T2 normal — evaluado y descartado por ahora por costo/alcance frente al golden set actual; queda como trabajo futuro si el golden set demuestra que hace falta.
+
+**Decisión sobre recomendación de fuentes externas:** catálogo curado y fijo (`external_sources.yaml`) con match determinista por palabras clave, NO generación libre de URLs por el LLM — mismo principio del Art. I extendido a enlaces: nunca presentar como verificado algo que el modelo pudo haber alucinado.
+
+**Consecuencias.** Tabla nueva `territorio_tipologia` (data-model.md §6) cargada una vez al año por `scripts/load_tipologias_dnp.py` (T-207) desde un archivo local (el DNP no publica URL estable por vigencia). Nodo determinista T8 (`contracts/agent-tools.md`) advierte comparabilidad sin fabricar cifras. Campo `external_sources` en `no_evidence_report` (`contracts/api-rest.md` §4). Módulo de aporte manual en el frontend (T-506) persiste como nodo del documento, NUNCA en `evidence`/`claims`, y debe ser visualmente distinguible de una tarjeta de evidencia verificada (Art. I + V) — evita que el documento final mezcle cifras verificadas con cifras que el usuario escribió a mano sin que el lector pueda distinguirlas.
+
+---
+
 *Para añadir una nueva decisión: sección numerada, estado, problema, alternativas, criterios, decisión y consecuencias. Las decisiones `PENDIENTE` bloquean las tareas que dependan de ellas (ver tasks.md).*
