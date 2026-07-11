@@ -33,6 +33,26 @@ def test_sanitize_like_term_escapes_backslash_before_wildcards() -> None:
 
 
 @respx.mock
+async def test_explorar_valores_where_clause_has_no_escape_keyword(http_client) -> None:
+    """Regresion T-303 (2026-07-10): SoQL no soporta `LIKE ... ESCAPE '\\'`
+    (SQL estandar); Socrata la rechaza con 400 `query.compiler.malformed`.
+    Verificado empiricamente que Socrata escapa `\\` por defecto sin esa
+    clausula, asi que el `$where` real nunca debe incluir la palabra
+    `ESCAPE`."""
+    route = respx.get(f"{SOCRATA_RESOURCE_BASE_URL}{PATH}").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+
+    await explorar_valores(
+        {"dataset_id": DATASET_ID, "columna": "departamento", "termino_busqueda": "Antioquia"},
+        http_client=http_client,
+    )
+
+    sent_where = route.calls.last.request.url.params["$where"]
+    assert "ESCAPE" not in sent_where.upper()
+
+
+@respx.mock
 async def test_explorar_valores_returns_matching_distinct_values(http_client) -> None:
     respx.get(f"{SOCRATA_RESOURCE_BASE_URL}{PATH}").mock(
         return_value=httpx.Response(

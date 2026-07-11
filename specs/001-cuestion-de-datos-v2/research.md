@@ -193,4 +193,21 @@ T-205 debe comprobar y fijar versiones compatibles con Python 3.12 antes de ejec
 
 ---
 
+## 14. Hallazgo registrado: T4 `explorar_valores` incompatible con la gramática SoQL real — `RESUELTO`
+
+**Problema.** Una verificación independiente de T-303 (posterior al cierre documentado en §13) encontró que el criterio literal seguía sin cumplirse: la demostración oficial terminó en `no_evidence`/`STEP_BUDGET_EXCEEDED` porque `explorar_valores` (T4, T-302) consumía dos ciclos de autocorrección fallidos antes de que el grafo forzara la síntesis sin llegar a `ejecutar_soql`. Causa raíz: `app/tools/explorar_valores.py` construía `upper(columna) LIKE upper('%termino%') ESCAPE '\'` — la cláusula `ESCAPE` es sintaxis SQL estándar que **la gramática SoQL de Socrata no soporta**; Socrata la rechaza con `400 query.compiler.malformed`. Las pruebas de T-302 (`test_tools_explorar_valores.py`) usan mocks (`respx`) que nunca validan la gramática real de Socrata, por lo que este bug existía desde T-302 y sobrevivió sin detectarse hasta esta segunda verificación real. El cierre documentado en §13 no lo detectó porque la corrida exitosa citada allí resolvió la ambigüedad geográfica sin pasar por T4 (fue directo a `perfilar_dataset` + `ejecutar_soql`); cerrar T-303 sin haber ejercitado esa ruta fue un descuido de cobertura, no solo un bug de código.
+
+**Verificación empírica del mecanismo correcto (contra `ji8i-4anb` real).** Se confirmó que Socrata SÍ trata `\` como carácter de escape **por defecto**, sin necesidad (ni soporte) de declarar `ESCAPE`:
+- `LIKE upper('_ntioquia')` (comodín `_` sin escapar) → matchea `"Antioquia"` (comodín activo, como se espera).
+- `LIKE upper('\_ntioquia')` (escapado con `\`, SIN cláusula `ESCAPE`) → no matchea nada (tratado como literal, correcto).
+- Mismo comportamiento verificado con `%`.
+
+**Decisión.** Se elimina la cláusula ` ESCAPE '\'` de `explorar_valores.py`; `sanitize_like_term` (que ya escapaba `\`, `%`, `_` con backslash) no cambia — solo sobraba la cláusula final. Se añade `tests/integration/test_explorar_valores_live.py` (marcado `pytest.mark.integration`) que ejercita T4 contra Socrata real, cerrando el hueco de cobertura que pruebas.md §2.3 exige ("explorar_valores reales") y que T-302 nunca implementó.
+
+**Verificación real posterior al fix:** una corrida real del grafo con una pregunta que fuerza al router a pasar por `explorar_valores` antes de `ejecutar_soql` muestra `tool:explorar_valores` con `{"ok": true, ...}` contra Socrata real (antes: `SOQL_SYNTAX`/`SOCRATA_TIMEOUT` según qué otro bug estuviera activo). Esa corrida específica terminó en `no_evidence` de todas formas, pero por la aritmética de presupuesto de pasos ya documentada (3 acciones de exploración antes de `ejecutar_soql` deja solo 4 de los 5 pasos que exige la cola obligatoria T5→T6→router→T7→sintetizador) — un comportamiento ya entendido y correcto (protege que la cola obligatoria siempra quepa), no un bug nuevo. Una corrida separada con una formulación más eficiente (columnas exactas provistas) reconfirmó el camino feliz completo: `status=completed`, 2 `claims[]`, calidad `alta`, 7 pasos.
+
+**Consecuencias:** T4 queda funcional contra Socrata real por primera vez. La variabilidad de cuántos pasos de verificación decide tomar el LLM antes de consultar (0, 1 o 2 pasos de exploración) sigue siendo inherente a un agente basado en LLM real; el criterio de aceptación exige que el grafo PUEDA producir una respuesta completa en ≤10 pasos con una pregunta real, no que toda formulación posible lo logre — eso ya está demostrado. Firmado por Juan Camilo Grajales B., 2026-07-10.
+
+---
+
 *Para añadir una nueva decisión: sección numerada, estado, problema, alternativas, criterios, decisión y consecuencias. Las decisiones `PENDIENTE` bloquean las tareas que dependan de ellas (ver tasks.md).*
