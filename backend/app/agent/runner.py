@@ -21,18 +21,42 @@ import hashlib
 import secrets
 import sys
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
+import httpx
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from app.agent.durability import touch_run_heartbeat, write_terminal_event_once
+from app.agent.durability import get_run, touch_run_heartbeat, write_terminal_event_once
+from app.agent.graph import (
+    GraphDependencies,
+    PlannerOutput,
+    RouterOutput,
+    SynthesisOutput,
+    build_graph,
+    initial_state,
+)
+from app.agent.persistence import persist_final_answer
 from app.agent.toy_graph import NODES, build_toy_graph
+from app.config import Settings
 from app.db.engine import create_app_async_engine
 from app.db.models import AgentRun
+from app.llm.factory import (
+    LLMConfigurationError,
+    LLMProviderError,
+    get_structured_chat_model,
+)
 from app.schemas import ErrorDetail, ErrorEnvelope
+from app.tools.buscar_catalogo import buscar_catalogo
+from app.tools.ejecutar_soql import ejecutar_soql
+from app.tools.explorar_valores import explorar_valores
+from app.tools.perfilar_dataset import perfilar_dataset
+from app.tools.resolver_geografia import resolver_geografia
+from app.tools.soda_client import SOCRATA_RESOURCE_BASE_URL
 
 DEFAULT_STEP_DELAY_S = 1.0
 CANCEL_POLL_INTERVAL_S = 0.2
@@ -85,7 +109,7 @@ async def create_run(
     return run_id
 
 
-def start_run_task(
+def start_toy_run_task(
     sqlalchemy_database_url: str, psycopg_database_url: str, run_id: uuid.UUID, step_delay_s: float
 ) -> None:
     """Lanza la corrida como tarea cancelable y la registra para DELETE.
@@ -102,6 +126,15 @@ def start_run_task(
             sqlalchemy_database_url, psycopg_database_url, run_id, step_delay_s, cancel_event
         )
     )
+    ACTIVE_RUNS[run_id] = ActiveRun(task=task, cancel_event=cancel_event)
+    task.add_done_callback(lambda _task: ACTIVE_RUNS.pop(run_id, None))
+
+
+def start_run_task(settings: Settings, run_id: uuid.UUID) -> None:
+    """Lanza el grafo real T-303 como tarea cancelable (T-304 lo expondrá)."""
+
+    cancel_event = threading.Event()
+    task = asyncio.create_task(_execute_agent_run(settings, run_id, cancel_event))
     ACTIVE_RUNS[run_id] = ActiveRun(task=task, cancel_event=cancel_event)
     task.add_done_callback(lambda _task: ACTIVE_RUNS.pop(run_id, None))
 
@@ -143,6 +176,222 @@ async def _execute_toy_run(
         await _execute_toy_run_async(
             sqlalchemy_database_url, psycopg_database_url, run_id, step_delay_s, cancel_event
         )
+
+
+async def _execute_agent_run(
+    settings: Settings, run_id: uuid.UUID, cancel_event: threading.Event
+) -> None:
+    if sys.platform == "win32":
+        await asyncio.to_thread(_run_agent_with_selector, settings, run_id, cancel_event)
+    else:
+        await execute_agent_run_async(settings, run_id, cancel_event)
+
+
+def _run_agent_with_selector(
+    settings: Settings, run_id: uuid.UUID, cancel_event: threading.Event
+) -> None:
+    asyncio.run(
+        execute_agent_run_async(settings, run_id, cancel_event),
+        loop_factory=asyncio.SelectorEventLoop,
+    )
+
+
+def _secret_value(secret) -> str | None:
+    return secret.get_secret_value() if secret else None
+
+
+def _structured_model(settings: Settings, schema):
+    return get_structured_chat_model(
+        settings.llm_provider,
+        settings.llm_model,
+        schema,
+        google_api_key=_secret_value(settings.google_api_key),
+        anthropic_api_key=_secret_value(settings.anthropic_api_key),
+        include_raw=True,
+        temperature=0,
+        timeout=30,
+        max_retries=1,
+    )
+
+
+def _usage_totals(state: dict) -> tuple[int, int, float]:
+    usages = state.get("usage", [])
+    return (
+        sum(int(item.get("input_tokens", 0)) for item in usages),
+        sum(int(item.get("output_tokens", 0)) for item in usages),
+        round(sum(float(item.get("estimated_cost_usd", 0)) for item in usages), 6),
+    )
+
+
+async def execute_agent_run_async(
+    settings: Settings,
+    run_id: uuid.UUID,
+    cancel_event: threading.Event | None = None,
+) -> dict:
+    """Ejecuta el grafo real nodo a nodo y escribe un único terminal."""
+
+    cancel_event = cancel_event or threading.Event()
+    engine = create_app_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
+    started = time.monotonic()
+    try:
+        run = await get_run(engine, run_id)
+        if run is None:
+            raise LookupError(f"run_id={run_id} no existe")
+        if settings.embedding_model is None:
+            raise LLMConfigurationError("EMBEDDING_MODEL es obligatorio para buscar_catalogo")
+        embedding_client = GoogleGenerativeAIEmbeddings(
+            model=settings.embedding_model,
+            google_api_key=_secret_value(settings.google_api_key),
+        )
+        async with httpx.AsyncClient(base_url=SOCRATA_RESOURCE_BASE_URL) as http_client:
+            app_token = _secret_value(settings.socrata_app_token)
+
+            async def call_buscar(raw_input):
+                return await buscar_catalogo(
+                    raw_input, engine=engine, embedding_client=embedding_client
+                )
+
+            async def call_perfilar(raw_input):
+                return await perfilar_dataset(
+                    raw_input,
+                    engine=engine,
+                    http_client=http_client,
+                    app_token=app_token,
+                )
+
+            async def call_geografia(raw_input):
+                return await resolver_geografia(raw_input, engine=engine)
+
+            async def call_explorar(raw_input):
+                return await explorar_valores(
+                    raw_input, http_client=http_client, app_token=app_token
+                )
+
+            async def call_soql(raw_input):
+                return await ejecutar_soql(
+                    raw_input,
+                    engine=engine,
+                    http_client=http_client,
+                    app_token=app_token,
+                )
+
+            deps = GraphDependencies(
+                engine=engine,
+                planner_model=_structured_model(settings, PlannerOutput),
+                router_model=_structured_model(settings, RouterOutput),
+                synthesizer_model=_structured_model(settings, SynthesisOutput),
+                tools={
+                    "buscar_catalogo": call_buscar,
+                    "perfilar_dataset": call_perfilar,
+                    "resolver_geografia": call_geografia,
+                    "explorar_valores": call_explorar,
+                    "ejecutar_soql": call_soql,
+                },
+                llm_provider=settings.llm_provider,
+                llm_model=settings.llm_model,
+                max_steps=settings.agent_max_steps,
+                placeholder_min_ratio=settings.placeholder_min_ratio,
+            )
+            config = {"configurable": {"thread_id": str(run_id)}}
+            state: dict | None = initial_state(
+                run_id,
+                run.question,
+                max_steps=settings.agent_max_steps,
+                context_hint=run.context_hint,
+            )
+            async with AsyncPostgresSaver.from_conn_string(
+                settings.psycopg_database_url
+            ) as saver:
+                await saver.setup()
+                graph = build_graph(deps, saver, interrupt=True)
+                while True:
+                    if cancel_event.is_set():
+                        return {}
+                    state = await graph.ainvoke(state, config, durability="sync")
+                    await touch_run_heartbeat(engine, run_id)
+                    snapshot = await graph.aget_state(config)
+                    if not snapshot.next:
+                        break
+                    state = None
+
+        assert state is not None
+        latency_ms = round((time.monotonic() - started) * 1000)
+        if state.get("terminal_error"):
+            error = state["terminal_error"]
+            await write_terminal_event_once(
+                engine,
+                run_id,
+                status="failed",
+                error_code=error["error"]["code"],
+                payload=error,
+            )
+            return state
+        final_answer = state["final_answer"]
+        input_tokens, output_tokens, estimated_cost = _usage_totals(state)
+        final_answer["usage"]["latency_ms"] = latency_ms
+        final_answer["usage"]["estimated_cost_usd"] = estimated_cost
+        await persist_final_answer(
+            engine,
+            run_id,
+            final_answer,
+            latency_ms=latency_ms,
+            llm_provider=settings.llm_provider,
+            llm_model=settings.llm_model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated_cost_usd=estimated_cost,
+        )
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status=final_answer["status"],
+            error_code=None,
+            payload=final_answer,
+        )
+        return state
+    except (LLMProviderError, LLMConfigurationError) as exc:
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code="LLM_PROVIDER_ERROR",
+                status="failed",
+                message_user=(
+                    "El servicio de inteligencia artificial no está disponible en este momento."
+                ),
+                message_dev=str(exc),
+                retryable=False,
+            )
+        ).model_dump()
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status="failed",
+            error_code="LLM_PROVIDER_ERROR",
+            payload=payload,
+        )
+        return {"terminal_error": payload}
+    except Exception as exc:
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code="INTERNAL",
+                status="failed",
+                message_user="Ocurrió un error inesperado durante la investigación.",
+                message_dev=str(exc),
+                retryable=False,
+            )
+        ).model_dump()
+        try:
+            await write_terminal_event_once(
+                engine,
+                run_id,
+                status="failed",
+                error_code="INTERNAL",
+                payload=payload,
+            )
+        except Exception:
+            pass
+        return {"terminal_error": payload}
+    finally:
+        await engine.dispose()
 
 
 def _run_with_selector(

@@ -81,7 +81,13 @@ async def _process_item(
     )
 
     column_classifications = [
-        classify_column(column.field_name, column.display_name, column.description, pii_fixture)
+        classify_column(
+            column.field_name,
+            column.display_name,
+            column.description,
+            pii_fixture,
+            dataset_id=normalized.id,
+        )
         for column in normalized.columns
     ]
     dataset_pii = classify_dataset(

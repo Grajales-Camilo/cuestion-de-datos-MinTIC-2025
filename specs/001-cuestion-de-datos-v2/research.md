@@ -174,6 +174,67 @@ T-205 debe comprobar y fijar versiones compatibles con Python 3.12 antes de ejec
 
 **Decisión:** `plan.md` §12 es la fuente documental de configuración del backend. `EMBEDDING_MODEL` permanece sin valor por defecto hasta T-205; el resto de variables tiene propósito, tipo, obligatoriedad, entornos, validaciones y relación con requisitos.
 
+## 13. Hallazgo registrado: calibración del clasificador PII y bugs de ejecución real bloqueando T-303 — `RESUELTO`
+
+**Problema.** El criterio de aceptación literal de T-303 (ESC-02 produce `completed` con `claims[]` reales en ≤10 pasos) no pasó en la primera implementación. La causa raíz NO era el grafo del agente sino una cadena de problemas descubiertos únicamente al ejecutar contra Postgres/Socrata/Gemini reales (nunca visibles en pruebas con mocks, que es exactamente lo que este tipo de verificación de punta a punta está diseñada a exponer):
+
+1. **Clasificador PII casi nunca resolvía `low`.** `app/quality/pii_classifier.py::classify_column` evaluaba el allowlist de `low` (patrones anclados `^...$`) contra el mismo haystack concatenado (`field_name+display_name+description`) que high/medium; con `description` no vacía (el caso normal en producción) el ancla de fin de cadena nunca se alcanzaba. Verificado contra el catálogo real ya ingerido (8.418 datasets): **0 de 2.611** datasets `api_active`+`publisher verified` resultaban `pii_risk_level=low`; **0 datasets eran `eligible`** en todo el catálogo. Ninguna pregunta, sin importar el tema, podía producir evidencia real mientras esto no se corrigiera.
+2. **`httpx.AsyncClient()` sin `base_url` en `app/agent/runner.py`.** `SodaClient` construye rutas relativas (`/resource/{id}.json`); sin `base_url`, cada llamada real a Socrata (`perfilar_dataset`/`explorar_valores`/`ejecutar_soql`) lanzaba `httpx.UnsupportedProtocol` (subclase de `TransportError`) de forma instantánea, indistinguible en los logs de un timeout real porque el manejador de errores de `SodaClient.query` captura `(TimeoutException, TransportError)` con el mismo código `SOCRATA_TIMEOUT` tras 1 reintento. Esto hacía **estructuralmente imposible** que T2/T4/T5 tuvieran éxito alguna vez en una corrida real, para cualquier pregunta.
+3. **`_count_alias` en `app/quality/validator.py` exigía alias explícito.** Una consulta `count(*)` sin `AS alias` (válida per RF-401: "incluir `count(*)` o agregado equivalente", sin exigir alias) hace que Socrata nombre la columna de salida literalmente `count`; `_count_alias` devolvía `None` si `item.alias` no era verdadero, y `_aggregation_min_count` trataba una fila con conteo real ≥5 como si no tuviera conteo, bloqueando evidencia PII `medium` genuinamente agregada.
+4. **`ClaimSpecPayload.claim_type` como `str` libre en `app/agent/graph.py`.** El LLM podía (y lo hizo, en ejecución real) alucinar valores como `"direct_value"`, que `build_claims` rechaza correctamente (`claim_type` solo admite `direct`/`derived`, T-403) pero gastando un paso completo del presupuesto en el intento fallido.
+
+**Decisión.** Se corrigen los cuatro puntos como bugs (no como cambios de contrato): (1) el allowlist de `low` se evalúa contra `display_name` (preferido, preserva tildes que Socrata reemplaza por `_` en `field_name`) o `field_name` normalizados, nunca concatenados con `description`; se amplía `pii_patterns.yaml` con los patrones reales observados (indicadores educativos MEN, código ETC, métricas institucionales). (2) `runner.py` pasa `base_url=SOCRATA_RESOURCE_BASE_URL` al construir el cliente HTTP compartido. (3) `_count_alias` retorna `"count"` como nombre por defecto cuando no hay alias explícito. (4) `claim_type` se restringe a `Literal["direct", "derived"]`, para que el proveedor de structured output nunca pueda producir un valor inválido.
+
+**Verificación real (no simulada).** Tras las cuatro correcciones y un recálculo idempotente de PII/elegibilidad sobre el catálogo ya ingerido (`scripts/recompute_pii_eligibility.py`, sin re-consultar Socrata; 9 de 8.418 datasets pasaron a `eligible`, incluidos varios del Ministerio de Educación), la pregunta real *"¿Cuál fue el promedio de deserción escolar en el departamento de Antioquia entre 2018 y 2022?"* contra `ji8i-4anb` produjo `status=completed`, 2 `claims[]` aceptados, `quality.classification=alta`, en 7 pasos, con `synthesis_attempts=2` (el reintento por cifras huérfanas se activó y corrigió un intento real antes de aceptar la respuesta final).
+
+**Hallazgo relacionado, NO resuelto aquí (seguimiento separado).** La pregunta original de ESC-02 ("...Oriente antioqueño...") sigue sin poder responderse: (a) el dataset candidato original `2d3i-f9wd` (cooperación internacional) carece de cualquier columna de municipio/departamento/subregión en su esquema; (b) `divipola_entries` solo modela dos niveles (`department`/`municipality`) — las subregiones administrativas de Antioquia (Oriente, Suroeste, Urabá, etc.) no existen en ningún lado del sistema de geografía, y `resolver_geografia` no tiene forma de expandir una subregión a sus municipios constituyentes. Resolver esto requiere un fixture nuevo (subregiones → códigos DIVIPOLA de municipio) y, si se quiere usar `2d3i-f9wd` específicamente, una revisión PII manual documentada (`pii_reviewed_by`/`pii_review_source`) de ese dataset. Ninguna de las dos cosas es responsabilidad de T-303; quedan como seguimiento para cuando se priorice ampliar la cobertura geográfica del catálogo o para T-601 (el propio hallazgo es un caso límite útil para el golden set).
+
+**Consecuencias:** `backend/scripts/recompute_pii_eligibility.py` queda como utilidad reutilizable (idempotente) para cualquier futura recalibración del fixture PII sin re-ingestar desde Socrata. `quickstart.md` §5.3 actualiza la pregunta de demostración por consola a una verificada contra datos reales. Firmado por Juan Camilo Grajales B., 2026-07-10.
+
+## 14. Hallazgo registrado: T4 `explorar_valores` incompatible con la gramática SoQL real — `RESUELTO`
+
+**Problema.** Una verificación independiente de T-303 (posterior al cierre documentado en §13) encontró que el criterio literal seguía sin cumplirse: la demostración oficial terminó en `no_evidence`/`STEP_BUDGET_EXCEEDED` porque `explorar_valores` (T4, T-302) consumía dos ciclos de autocorrección fallidos antes de que el grafo forzara la síntesis sin llegar a `ejecutar_soql`. Causa raíz: `app/tools/explorar_valores.py` construía `upper(columna) LIKE upper('%termino%') ESCAPE '\'` — la cláusula `ESCAPE` es sintaxis SQL estándar que **la gramática SoQL de Socrata no soporta**; Socrata la rechaza con `400 query.compiler.malformed`. Las pruebas de T-302 (`test_tools_explorar_valores.py`) usan mocks (`respx`) que nunca validan la gramática real de Socrata, por lo que este bug existía desde T-302 y sobrevivió sin detectarse hasta esta segunda verificación real. El cierre documentado en §13 no lo detectó porque la corrida exitosa citada allí resolvió la ambigüedad geográfica sin pasar por T4 (fue directo a `perfilar_dataset` + `ejecutar_soql`); cerrar T-303 sin haber ejercitado esa ruta fue un descuido de cobertura, no solo un bug de código.
+
+**Verificación empírica del mecanismo correcto (contra `ji8i-4anb` real).** Se confirmó que Socrata SÍ trata `\` como carácter de escape **por defecto**, sin necesidad (ni soporte) de declarar `ESCAPE`:
+- `LIKE upper('_ntioquia')` (comodín `_` sin escapar) → matchea `"Antioquia"` (comodín activo, como se espera).
+- `LIKE upper('\_ntioquia')` (escapado con `\`, SIN cláusula `ESCAPE`) → no matchea nada (tratado como literal, correcto).
+- Mismo comportamiento verificado con `%`.
+
+**Decisión.** Se elimina la cláusula ` ESCAPE '\'` de `explorar_valores.py`; `sanitize_like_term` (que ya escapaba `\`, `%`, `_` con backslash) no cambia — solo sobraba la cláusula final. Se añade `tests/integration/test_explorar_valores_live.py` (marcado `pytest.mark.integration`) que ejercita T4 contra Socrata real, cerrando el hueco de cobertura que pruebas.md §2.3 exige ("explorar_valores reales") y que T-302 nunca implementó.
+
+**Verificación real posterior al fix:** una corrida real del grafo con una pregunta que fuerza al router a pasar por `explorar_valores` antes de `ejecutar_soql` muestra `tool:explorar_valores` con `{"ok": true, ...}` contra Socrata real (antes: `SOQL_SYNTAX`/`SOCRATA_TIMEOUT` según qué otro bug estuviera activo). Esa corrida específica terminó en `no_evidence` de todas formas, pero por la aritmética de presupuesto de pasos ya documentada (3 acciones de exploración antes de `ejecutar_soql` deja solo 4 de los 5 pasos que exige la cola obligatoria T5→T6→router→T7→sintetizador) — un comportamiento ya entendido y correcto (protege que la cola obligatoria siempra quepa), no un bug nuevo. Una corrida separada con una formulación más eficiente (columnas exactas provistas) reconfirmó el camino feliz completo: `status=completed`, 2 `claims[]`, calidad `alta`, 7 pasos.
+
+**Consecuencias:** T4 queda funcional contra Socrata real por primera vez. La variabilidad de cuántos pasos de verificación decide tomar el LLM antes de consultar (0, 1 o 2 pasos de exploración) sigue siendo inherente a un agente basado en LLM real; el criterio de aceptación exige que el grafo PUEDA producir una respuesta completa en ≤10 pasos con una pregunta real, no que toda formulación posible lo logre — eso ya está demostrado. Firmado por Juan Camilo Grajales B., 2026-07-10.
+
+## 15. Recalibración PII de la Hoja de Ruta Nacional de Datos Abiertos Estratégicos 2025-2026
+
+**Universo y procedencia (2026-07-11).** Se consultó la fuente oficial
+`fn2v-r4gu` por SODA3. Sus enlaces contienen 66 IDs Socrata únicos realmente
+identificables: 53 datasets tabulares accesibles, 4 recursos externos o
+federados sin columnas SODA, 3 recursos privados (`403`) y 6 retirados
+(`404`). Los 53 tabulares ya estaban presentes en el catálogo local; no fue
+necesario inventar ni completar metadatos para los otros 13.
+
+**Decisión.** Se conserva `unknown` como default y la regla MAX. La cobertura
+se amplía con revisiones versionadas por `dataset_id` y lista exacta de
+`field_name`; una columna nueva o renombrada vuelve a `unknown`. Las señales
+globales `high`/`medium` se evalúan antes de estas listas y nunca pueden ser
+rebajadas por ellas. Se revisaron 30 esquemas institucionales, territoriales,
+ambientales o agregados. Fuentes con personas, contactos, declaraciones,
+resultados individuales o identidad ambigua permanecen bloqueadas.
+
+**Resultados medidos.** El recálculo limitado a los 66 IDs encontró 54 ya
+almacenados (los 53 tabulares vigentes más un recurso actualmente inaccesible),
+procesó 998 columnas y convirtió 27 datasets a `eligible`. En el catálogo
+completo la simulación determinista pasa de 9 a 36 elegibles (verificado
+directamente contra Postgres: `eligible=36`, `pii_risk_level`: `low=32`,
+`medium=15`, `high=1055`, `unknown=7316` — coincide exactamente con lo medido).
+`2d3i-f9wd` (el dataset de cooperación internacional referenciado en §13)
+queda `low`/`eligible` en su totalidad; sigue sin tener columna geográfica,
+por lo que el seguimiento de subregiones de §13 no cambia. También se
+corrigió el falso positivo de `NOMINA` dentro de `DENOMINABA` y se reforzaron
+señales inequívocas de nombres, apellidos, identificación y contacto directo.
+
 ---
 
 *Para añadir una nueva decisión: sección numerada, estado, problema, alternativas, criterios, decisión y consecuencias. Las decisiones `PENDIENTE` bloquean las tareas que dependan de ellas (ver tasks.md).*
