@@ -12,18 +12,21 @@ reintento.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from sqlalchemy import select, text, update
+from sqlalchemy import delete, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.db.models import AgentRun, AgentRunEvent
+from app.db.models import AgentRun, AgentRunEvent, TechnicalMetric
 
 EventType = Literal["step", "evidence", "answer", "error"]
 TerminalStatus = Literal["completed", "no_evidence", "interrupted", "failed"]
+DeletionReason = Literal["user_requested", "retention_expired"]
 
 
 @dataclass
@@ -161,3 +164,53 @@ async def get_run(engine: AsyncEngine, run_id: uuid.UUID) -> AgentRun | None:
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
         return await session.get(AgentRun, run_id)
+
+
+async def delete_run_with_metrics(
+    engine: AsyncEngine,
+    run_id: uuid.UUID,
+    *,
+    deletion_reason: DeletionReason,
+    retention_hash_salt: str,
+) -> None:
+    """Copia métricas no identificables a `technical_metrics` y borra la
+    corrida, en la misma transacción (RF-803/RF-804, data-model.md §7,
+    research.md §4: "Al vencer la retención (o ante borrado por solicitud,
+    que tiene prioridad): borrado completo... tras copiar métricas
+    agregadas no identificables a `technical_metrics`").
+
+    `source_run_hash = sha256(run_id + RETENTION_HASH_SALT)` es UNIQUE:
+    `ON CONFLICT DO NOTHING` hace la copia idempotente ante un reintento
+    (p. ej. si un fallo posterior obliga a repetir el borrado) sin duplicar
+    la métrica ni fallar por violar la restricción.
+    """
+
+    now = datetime.now(UTC)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session, session.begin():
+        run = await session.get(AgentRun, run_id)
+        if run is None:
+            return
+        source_run_hash = hashlib.sha256(f"{run_id}{retention_hash_salt}".encode()).hexdigest()
+        await session.execute(
+            pg_insert(TechnicalMetric)
+            .values(
+                id=uuid.uuid4(),
+                run_month=run.created_at.strftime("%Y-%m"),
+                source_run_hash=source_run_hash,
+                retention_class_origin=run.retention_class,
+                status_final=run.status,
+                llm_provider=run.llm_provider,
+                llm_model=run.llm_model,
+                steps_used=run.steps_used,
+                latency_ms=run.latency_ms,
+                input_tokens=run.input_tokens,
+                output_tokens=run.output_tokens,
+                estimated_cost_usd=run.estimated_cost_usd,
+                deleted_at=now,
+                deletion_reason=deletion_reason,
+                created_at=now,
+            )
+            .on_conflict_do_nothing(index_elements=["source_run_hash"])
+        )
+        await session.execute(delete(AgentRun).where(AgentRun.id == run_id))
