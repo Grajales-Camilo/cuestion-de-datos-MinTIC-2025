@@ -121,6 +121,7 @@ Descubre valores reales de una columna de texto para construir filtros correctos
 ```
 - Interno: `SELECT DISTINCT columna WHERE upper(columna) LIKE upper('%…%') LIMIT 20`.
 - `termino_busqueda` se sanitiza (escape de `'`, `%`, `_` literales) antes de interpolar (RNF-011).
+- **Solo columnas de texto (hallazgo T-402, 2026-07-11):** antes de llamar a Socrata, valida `columna` contra `catalog_columns.data_type` (comparación insensible a mayúsculas). Si la columna es numérica, de fecha/hora o booleana, rechaza con `EXPLORAR_VALORES_NOT_TEXT` sin ejecutar la consulta — Socrata rechaza `upper(...)/LIKE` contra esos tipos con `query.soql.type-mismatch`, un error que el agente no puede autocorregir por sí solo. Para filtrar una columna no textual, el agente debe usar `ejecutar_soql` directamente con `=` o un rango. Si la columna no existe en el dataset, rechaza con `SOQL_UNKNOWN_COLUMN`.
 
 ## T5 — `ejecutar_soql`
 Ejecuta la consulta final contra la SODA API (RF-207). **Única herramienta que trae datos masivos.**

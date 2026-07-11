@@ -306,7 +306,7 @@ async def execute_agent_run_async(
 
             async def call_explorar(raw_input):
                 return await explorar_valores(
-                    raw_input, http_client=http_client, app_token=app_token
+                    raw_input, engine=engine, http_client=http_client, app_token=app_token
                 )
 
             async def call_soql(raw_input):

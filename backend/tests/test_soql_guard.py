@@ -70,6 +70,33 @@ def test_rejects_structural_violations(soql: str) -> None:
     assert excinfo.value.code == "SOQL_FORBIDDEN"
 
 
+@pytest.mark.parametrize(
+    "soql",
+    [
+        "SELECT a_o FROM nudc-7mev WHERE a_o = 2020",
+        'SELECT a_o FROM "nudc-7mev" WHERE a_o = 2020',
+        "SELECT a_o FROM _nudc_7mev WHERE a_o = 2020",
+        "SELECT desercion FROM nudc-7mev",
+    ],
+)
+def test_rejects_hallucinated_from_clause_with_actionable_message(soql: str) -> None:
+    """Hallazgo T-402 (2026-07-11, ejecucion real con LLM real): el LLM
+    escribio SoQL con FROM (habito SQL) contra dos datasets reales distintos
+    y, sin este mensaje especifico, tardo varios intentos fallidos en
+    autocorregirse (probo comillas, guion bajo) porque el error generico de
+    la gramatica no explicaba la causa real."""
+    with pytest.raises(SoqlGuardError) as excinfo:
+        validate_and_canonicalize(soql, _dataset())
+    assert excinfo.value.code == "SOQL_FORBIDDEN"
+    assert "FROM" in excinfo.value.message
+    assert "dataset_id" in excinfo.value.message
+
+
+def test_from_inside_string_literal_is_not_mistaken_for_a_clause() -> None:
+    result = validate_and_canonicalize("SELECT a_o WHERE codigo_municipio = 'from'", _dataset())
+    assert result.canonical_soql == "SELECT a_o WHERE codigo_municipio = 'from' LIMIT 1000 OFFSET 0"
+
+
 def test_rejects_order_by_alias_not_declared_in_select() -> None:
     with pytest.raises(SoqlGuardError) as excinfo:
         validate_and_canonicalize("SELECT count(*) AS total ORDER BY totall", _dataset())

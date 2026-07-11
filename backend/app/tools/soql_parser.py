@@ -476,9 +476,41 @@ class _Parser:
         return self._parse_column()
 
 
+_STRING_LITERAL_RE = re.compile(r"'(?:[^']|'')*'")
+_FROM_KEYWORD_RE = re.compile(r"(?i)\bFROM\b")
+
+
+def _mentions_from_clause(soql: str) -> bool:
+    """Hallazgo T-402 (2026-07-11, ejecucion real con LLM real): el LLM a
+    veces escribe `SELECT ... FROM <dataset_id> WHERE ...` por habito SQL,
+    algo que SoQL nunca admite (el dataset ya lo fija `dataset_id` del tool
+    call, no una clausula). La gramatica no reconoce FROM como palabra clave,
+    asi que el rechazo real siempre llega como un error generico de
+    tokenizacion/parseo (caracter no reconocido en el guion del id del
+    dataset, o "token inesperado tras las clausulas reconocidas") que no le
+    dice al LLM cual fue el error real -- en ejecucion real esto le tomo
+    varios intentos de correccion fallidos (probo comillas, guion bajo)
+    porque nunca se le informo que el problema era la clausula FROM en si.
+    Se busca la palabra FROM fuera de literales string para dar, en ese caso
+    especifico, un mensaje que se corrige en un solo intento.
+    """
+    stripped = _STRING_LITERAL_RE.sub(lambda m: " " * len(m.group(0)), soql)
+    return bool(_FROM_KEYWORD_RE.search(stripped))
+
+
 def parse_soql(soql: str) -> ParsedQuery:
-    tokens = tokenize(soql)
-    return _Parser(tokens).parse()
+    try:
+        tokens = tokenize(soql)
+        return _Parser(tokens).parse()
+    except SoqlGuardError:
+        if _mentions_from_clause(soql):
+            raise SoqlGuardError(
+                "SOQL_FORBIDDEN",
+                "SoQL de Socrata no usa clausula FROM: el dataset ya queda fijado por el "
+                "parametro dataset_id del tool call, no por SQL. Quita 'FROM ...' de la "
+                "consulta y deja solo SELECT/WHERE/GROUP BY/HAVING/ORDER BY/LIMIT/OFFSET.",
+            ) from None
+        raise
 
 
 # --- Validacion de complejidad y catalogo ------------------------------------
