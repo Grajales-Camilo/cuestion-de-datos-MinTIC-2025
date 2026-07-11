@@ -17,6 +17,7 @@ psycopg-async en loops distintos entre pasos.
 from __future__ import annotations
 
 import asyncio
+import calendar
 import hashlib
 import secrets
 import sys
@@ -149,6 +150,47 @@ async def create_public_run(
             )
         )
     return run_id, token, expires_at
+
+
+def _add_months(value: datetime, months: int) -> datetime:
+    """Suma meses de calendario para la retención de corridas OE3."""
+
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+async def create_eval_run(
+    engine: AsyncEngine,
+    *,
+    worker_instance_id: str,
+    question: str,
+    retention_eval_months: int,
+) -> uuid.UUID:
+    """Crea una corrida interna ``eval``; nunca expone su token (RF-801)."""
+
+    run_id = uuid.uuid4()
+    now = datetime.now(UTC)
+    token = secrets.token_urlsafe(32)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session, session.begin():
+        session.add(
+            AgentRun(
+                id=run_id,
+                question=question,
+                status="running",
+                worker_instance_id=worker_instance_id,
+                heartbeat_at=now,
+                last_event_seq=0,
+                run_access_token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+                run_access_token_expires_at=_add_months(now, retention_eval_months),
+                retention_class="eval",
+                created_at=now,
+            )
+        )
+    return run_id
 
 
 def start_toy_run_task(
