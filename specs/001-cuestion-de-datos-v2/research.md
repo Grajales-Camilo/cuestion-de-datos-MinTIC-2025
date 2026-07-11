@@ -235,6 +235,28 @@ por lo que el seguimiento de subregiones de §13 no cambia. También se
 corrigió el falso positivo de `NOMINA` dentro de `DENOMINABA` y se reforzaron
 señales inequívocas de nombres, apellidos, identificación y contacto directo.
 
+## 16. Decisión registrada: creación pública de corridas y token — `DECIDIDA`
+
+**Problema.** `runner.create_run` nació para el PoC T-300: genera un token
+requerido por la tabla, pero lo descarta. Ampliarlo para devolver el token y
+aceptar clase de retención desde el endpoint público arriesgaba mezclar el
+alcance PoC con RF-801 o, peor, permitir que un cliente cree corridas `eval`.
+
+**Decisión (T-304, 2026-07-10).** Se conserva `create_run` sin cambios de
+semántica para el PoC y se añade `create_public_run` como interfaz separada.
+Esta fija por construcción `retention_class="user"`, genera un token
+criptográficamente aleatorio (≥256 bits), persiste exclusivamente su
+SHA-256 y devuelve `(run_id, token_en_claro, expires_at)` solo al handler
+que construye la respuesta `202`. El handler no registra ni reutiliza el
+token, y las lecturas/borrados calculan SHA-256 del Bearer recibido y lo
+comparan con `hmac.compare_digest`.
+
+**Consecuencias.** El JSON público mantiene `extra="forbid"`, por lo que
+`retention_class` se rechaza con `422`; las corridas `eval` siguen siendo una
+interfaz interna del runner OE3 con `EVAL_MODE=true`. La excepción para
+vencimiento conserva la semántica contractual: se borra oportunistamente y
+se observa solo `404 RUN_NOT_FOUND`, nunca un estado de token vencido.
+
 ---
 
 *Para añadir una nueva decisión: sección numerada, estado, problema, alternativas, criterios, decisión y consecuencias. Las decisiones `PENDIENTE` bloquean las tareas que dependan de ellas (ver tasks.md).*

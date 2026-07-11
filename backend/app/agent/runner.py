@@ -109,6 +109,48 @@ async def create_run(
     return run_id
 
 
+async def create_public_run(
+    engine: AsyncEngine,
+    *,
+    worker_instance_id: str,
+    question: str,
+    context_hint: str | None,
+    retention_user_days: int,
+) -> tuple[uuid.UUID, str, datetime]:
+    """Crea una corrida publica ``user`` y entrega el token una sola vez.
+
+    RF-801 prohíbe que el JSON público elija ``retention_class``. En vez de
+    ampliar ``create_run`` (que conserva el comportamiento deliberado del
+    PoC T-300), esta interfaz separada fija ``user``, reutiliza la misma
+    generación/hash SHA-256 y devuelve el secreto únicamente al handler que
+    responde el 202. Nunca persiste ni registra el valor en claro.
+    """
+
+    run_id = uuid.uuid4()
+    now = datetime.now(UTC)
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    expires_at = now + timedelta(days=retention_user_days)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session, session.begin():
+        session.add(
+            AgentRun(
+                id=run_id,
+                question=question,
+                context_hint=context_hint,
+                status="running",
+                worker_instance_id=worker_instance_id,
+                heartbeat_at=now,
+                last_event_seq=0,
+                run_access_token_hash=token_hash,
+                run_access_token_expires_at=expires_at,
+                retention_class="user",
+                created_at=now,
+            )
+        )
+    return run_id, token, expires_at
+
+
 def start_toy_run_task(
     sqlalchemy_database_url: str, psycopg_database_url: str, run_id: uuid.UUID, step_delay_s: float
 ) -> None:

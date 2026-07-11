@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CatalogIndexCheck(BaseModel):
@@ -67,3 +68,61 @@ class CatalogSearchResult(BaseModel):
 class CatalogSearchResponse(BaseModel):
     query: str
     results: list[CatalogSearchResult]
+
+
+# T-304 / RF-201, RF-204, RF-801: estos modelos son el contrato publico de
+# las corridas. El token solo aparece en AgentQueryResponse.
+class AgentQueryOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_steps: int | None = Field(default=None, ge=1, le=25)
+    llm_provider: Literal["google", "anthropic"] | None = None
+    llm_model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class AgentQueryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(min_length=10, max_length=2000)
+    context_hint: str | None = Field(default=None, max_length=1000)
+    options: AgentQueryOptions | None = None
+
+
+class AgentQueryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    run_access_token: str
+    token_expires_at: datetime
+    stream_url: str
+
+
+class RunUsage(BaseModel):
+    steps_used: int | None = None
+    latency_ms: int | None = None
+    estimated_cost_usd: float | None = None
+    termination_reason: str | None = None
+
+
+class RunStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    status: Literal["running"]
+    steps: list[dict[str, Any]]
+    events: list[dict[str, Any]]
+    last_event_seq: int
+    partial_evidence: list[dict[str, Any]]
+    partial_claims: list[dict[str, Any]]
+    usage: RunUsage
+
+
+class RunResultResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    status: Literal["completed", "no_evidence", "interrupted", "failed"]
+    answer: dict[str, Any]
+    steps: list[dict[str, Any]]
+    events: list[dict[str, Any]]
+    last_event_seq: int

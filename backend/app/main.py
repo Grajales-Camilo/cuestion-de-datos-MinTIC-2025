@@ -1,21 +1,23 @@
 import asyncio
 import contextlib
+import hashlib
 import hmac
 import json
 import sys
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, Request, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.agent import durability, heartbeat_sweep, runner, worker_lease
@@ -23,7 +25,7 @@ from app.catalog.search import CatalogSearchSummary, search_catalog
 from app.config import get_settings
 from app.db.checkpointer import setup_checkpointer
 from app.db.engine import create_app_async_engine
-from app.db.models import AgentRun
+from app.db.models import AgentRun, AgentRunEvent, AgentStep
 from app.db.publishers import (
     DEFAULT_FIXTURE_PATH,
     OfficialPublishersFixture,
@@ -32,6 +34,8 @@ from app.db.publishers import (
     reload_official_publishers,
 )
 from app.schemas import (
+    AgentQueryRequest,
+    AgentQueryResponse,
     CatalogIndexCheck,
     CatalogSearchResponse,
     CatalogSearchResult,
@@ -40,6 +44,9 @@ from app.schemas import (
     HealthResponse,
     LLMProviderCheck,
     PublishersReloadSummary,
+    RunResultResponse,
+    RunStatusResponse,
+    RunUsage,
 )
 
 POC_SWEEP_INTERVAL_S = 2.0
@@ -63,6 +70,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.sqlalchemy_database_url, settings.worker_lease_ttl_s
     )
     app.state.worker_instance_id = worker_instance_id
+    app.state.run_creation_lock = asyncio.Lock()
 
     background_tasks = [
         asyncio.create_task(
@@ -581,6 +589,399 @@ def _isoformat(value: datetime | None) -> str | None:
     return value.isoformat()
 
 
+# --- T-304: contrato publico del agente -------------------------------------
+
+
+def _run_not_found() -> ApiError:
+    return ApiError(
+        status.HTTP_404_NOT_FOUND,
+        "RUN_NOT_FOUND",
+        "No se encontro la investigacion solicitada.",
+        message_dev="La corrida no existe o ya fue eliminada.",
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_request_validation_error(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """contracts/api-rest.md §6: la validación HTTP también usa el sobre estándar."""
+
+    envelope = ErrorEnvelope(
+        error=ErrorDetail(
+            code="VALIDATION_ERROR",
+            message_user="La solicitud no cumple los requisitos esperados.",
+            message_dev="Validacion de request rechazada.",
+        )
+    )
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content=envelope.model_dump(exclude_none=True),
+    )
+
+
+async def require_run_access(
+    request: Request,
+    run_id: uuid.UUID,
+    authorization: str | None,
+) -> AgentRun:
+    """RF-801: autoriza una corrida sin revelar si el Bearer es incorrecto.
+
+    Las corridas vencidas se purgan antes de responder 404. El secreto nunca
+    aparece en excepciones, logs ni ``message_dev``; la única comparación es
+    SHA-256 + ``hmac.compare_digest`` en tiempo constante.
+    """
+
+    settings = request.app.state.settings
+    run = await _get_run_with_platform_loop(settings.sqlalchemy_database_url, run_id)
+    if run is None:
+        raise _run_not_found()
+    if run.run_access_token_expires_at <= datetime.now(UTC):
+        await _delete_run_with_platform_loop(
+            settings.sqlalchemy_database_url, settings.psycopg_database_url, run_id
+        )
+        raise _run_not_found()
+
+    scheme, _, token = (authorization or "").partition(" ")
+    received_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    if (
+        scheme.lower() != "bearer"
+        or not token
+        or not hmac.compare_digest(received_hash, run.run_access_token_hash)
+    ):
+        raise ApiError(
+            status.HTTP_401_UNAUTHORIZED,
+            "UNAUTHORIZED",
+            "No autorizado. Verifica el token de acceso de la investigacion.",
+            message_dev="Authorization Bearer ausente o invalido.",
+        )
+    return run
+
+
+async def _create_public_run_with_platform_loop(
+    database_url: str,
+    *,
+    worker_instance_id: str,
+    question: str,
+    context_hint: str | None,
+    retention_user_days: int,
+) -> tuple[uuid.UUID, str, datetime]:
+    if sys.platform == "win32":
+        return await asyncio.to_thread(
+            _run_create_public_run_with_selector,
+            database_url,
+            worker_instance_id,
+            question,
+            context_hint,
+            retention_user_days,
+        )
+    return await _create_public_run_async(
+        database_url, worker_instance_id, question, context_hint, retention_user_days
+    )
+
+
+def _run_create_public_run_with_selector(
+    database_url: str,
+    worker_instance_id: str,
+    question: str,
+    context_hint: str | None,
+    retention_user_days: int,
+) -> tuple[uuid.UUID, str, datetime]:
+    return asyncio.run(
+        _create_public_run_async(
+            database_url, worker_instance_id, question, context_hint, retention_user_days
+        ),
+        loop_factory=asyncio.SelectorEventLoop,
+    )
+
+
+async def _create_public_run_async(
+    database_url: str,
+    worker_instance_id: str,
+    question: str,
+    context_hint: str | None,
+    retention_user_days: int,
+) -> tuple[uuid.UUID, str, datetime]:
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
+    try:
+        return await runner.create_public_run(
+            engine,
+            worker_instance_id=worker_instance_id,
+            question=question,
+            context_hint=context_hint,
+            retention_user_days=retention_user_days,
+        )
+    finally:
+        await engine.dispose()
+
+
+async def _emit_run_started_with_platform_loop(database_url: str, run_id: uuid.UUID) -> None:
+    """Hace observable el inicio antes de la primera llamada remota del grafo (RNF-008)."""
+
+    if sys.platform == "win32":
+        await asyncio.to_thread(_run_emit_run_started_with_selector, database_url, run_id)
+    else:
+        await _emit_run_started_async(database_url, run_id)
+
+
+def _run_emit_run_started_with_selector(database_url: str, run_id: uuid.UUID) -> None:
+    asyncio.run(
+        _emit_run_started_async(database_url, run_id), loop_factory=asyncio.SelectorEventLoop
+    )
+
+
+async def _emit_run_started_async(database_url: str, run_id: uuid.UUID) -> None:
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
+    try:
+        await durability.reserve_and_emit_event(
+            engine,
+            run_id,
+            "step",
+            {
+                "step_number": 0,
+                "node": "start",
+                "display_message": "Preparando la investigación.",
+                "detail": {},
+            },
+        )
+    finally:
+        await engine.dispose()
+
+
+@app.post(
+    "/v2/agent/query",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=AgentQueryResponse,
+)
+async def agent_query(request: Request, body: AgentQueryRequest) -> AgentQueryResponse:
+    """RF-201/RF-801: inicia el grafo real T-303 como corrida pública ``user``."""
+
+    settings = request.app.state.settings
+    lock = getattr(request.app.state, "run_creation_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        request.app.state.run_creation_lock = lock
+
+    async with lock:
+        if len(runner.ACTIVE_RUNS) >= settings.max_concurrent_runs:
+            raise ApiError(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "RATE_LIMITED",
+                "Hay demasiadas investigaciones en curso. Intenta de nuevo en unos minutos.",
+                message_dev="MAX_CONCURRENT_RUNS excedido en el proceso actual.",
+                retryable=True,
+            )
+
+        run_settings = settings
+        if body.options is not None:
+            overrides = {}
+            if body.options.max_steps is not None:
+                overrides["agent_max_steps"] = body.options.max_steps
+            if settings.eval_mode:
+                overrides.update(
+                    {
+                        name: value
+                        for name, value in {
+                            "llm_provider": body.options.llm_provider,
+                            "llm_model": body.options.llm_model,
+                        }.items()
+                        if value is not None
+                    }
+                )
+            if overrides:
+                run_settings = settings.model_copy(update=overrides)
+
+        run_id, token, expires_at = await _create_public_run_with_platform_loop(
+            settings.sqlalchemy_database_url,
+            worker_instance_id=request.app.state.worker_instance_id,
+            question=body.question,
+            context_hint=body.context_hint,
+            retention_user_days=settings.retention_user_days,
+        )
+        await _emit_run_started_with_platform_loop(settings.sqlalchemy_database_url, run_id)
+        runner.start_run_task(run_settings, run_id)
+
+    return AgentQueryResponse(
+        run_id=str(run_id),
+        run_access_token=token,
+        token_expires_at=expires_at,
+        stream_url=f"/v2/agent/stream/{run_id}",
+    )
+
+
+@app.get("/v2/agent/stream/{run_id}")
+async def agent_stream(
+    request: Request,
+    run_id: uuid.UUID,
+    authorization: Annotated[str | None, Header()] = None,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    """RF-204/RF-209: SSE durable del grafo real, protegido por Bearer."""
+
+    await require_run_access(request, run_id, authorization)
+    try:
+        since_seq = max(0, int(last_event_id)) if last_event_id else 0
+    except ValueError:
+        since_seq = 0
+    return StreamingResponse(
+        _agent_sse_generator(request.app.state.settings.sqlalchemy_database_url, run_id, since_seq),
+        media_type="text/event-stream",
+    )
+
+
+async def _agent_sse_generator(database_url: str, run_id: uuid.UUID, since_seq: int):
+    last_seq = since_seq
+    last_ping = asyncio.get_running_loop().time()
+    while True:
+        events, run = await _fetch_stream_batch_with_platform_loop(database_url, run_id, last_seq)
+        if run is None:
+            return
+        for event in events:
+            yield (
+                f"id: {event.seq}\nevent: {event.event_type}\n"
+                f"data: {json.dumps(event.payload, ensure_ascii=False)}\n\n"
+            )
+            last_seq = event.seq
+            if event.event_type in ("answer", "error"):
+                return
+        if run.status != "running":
+            return
+        now = asyncio.get_running_loop().time()
+        if now - last_ping >= POC_SSE_PING_INTERVAL_S:
+            yield ": ping\n\n"
+            last_ping = now
+        await asyncio.sleep(POC_SSE_POLL_INTERVAL_S)
+
+
+async def _get_run_detail_with_platform_loop(database_url: str, run_id: uuid.UUID):
+    if sys.platform == "win32":
+        return await asyncio.to_thread(_run_get_run_detail_with_selector, database_url, run_id)
+    return await _get_run_detail_async(database_url, run_id)
+
+
+def _run_get_run_detail_with_selector(database_url: str, run_id: uuid.UUID):
+    return asyncio.run(
+        _get_run_detail_async(database_url, run_id), loop_factory=asyncio.SelectorEventLoop
+    )
+
+
+async def _get_run_detail_async(database_url: str, run_id: uuid.UUID):
+    engine = create_app_async_engine(database_url, pool_pre_ping=True)
+    try:
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with session_factory() as session:
+            run = await session.get(AgentRun, run_id)
+            if run is None:
+                return None
+            steps = (
+                (
+                    await session.execute(
+                        select(AgentStep)
+                        .where(AgentStep.run_id == run_id)
+                        .order_by(AgentStep.step_number)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            events = (
+                (
+                    await session.execute(
+                        select(AgentRunEvent)
+                        .where(AgentRunEvent.run_id == run_id)
+                        .order_by(AgentRunEvent.seq)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            return run, steps, events
+    finally:
+        await engine.dispose()
+
+
+def _run_usage(run: AgentRun) -> RunUsage:
+    final_answer = run.final_answer if isinstance(run.final_answer, dict) else {}
+    usage = final_answer.get("usage") if isinstance(final_answer.get("usage"), dict) else {}
+    return RunUsage(
+        steps_used=run.steps_used,
+        latency_ms=run.latency_ms,
+        estimated_cost_usd=float(run.estimated_cost_usd)
+        if run.estimated_cost_usd is not None
+        else None,
+        termination_reason=usage.get("termination_reason") or run.terminal_error_code,
+    )
+
+
+def _step_response(step: AgentStep) -> dict[str, object]:
+    return {
+        "step_number": step.step_number,
+        "node": step.node,
+        "display_message": step.display_message,
+        "detail": step.tool_output_summary,
+    }
+
+
+def _event_response(event: AgentRunEvent) -> dict[str, object]:
+    return {"seq": event.seq, "event": event.event_type, "data": event.payload}
+
+
+@app.get("/v2/agent/runs/{run_id}", response_model=RunStatusResponse | RunResultResponse)
+async def agent_run_status(
+    request: Request,
+    run_id: uuid.UUID,
+    authorization: Annotated[str | None, Header()] = None,
+) -> RunStatusResponse | RunResultResponse:
+    """RF-801: devuelve el esquema de estado o la RespuestaFinal persistida."""
+
+    await require_run_access(request, run_id, authorization)
+    detail = await _get_run_detail_with_platform_loop(
+        request.app.state.settings.sqlalchemy_database_url, run_id
+    )
+    if detail is None:
+        raise _run_not_found()
+    run, steps, events = detail
+    serialized_steps = [_step_response(step) for step in steps]
+    serialized_events = [_event_response(event) for event in events]
+    if run.status == "running":
+        return RunStatusResponse(
+            run_id=str(run.id),
+            status="running",
+            steps=serialized_steps,
+            events=serialized_events,
+            last_event_seq=run.last_event_seq,
+            partial_evidence=[],
+            partial_claims=[],
+            usage=_run_usage(run),
+        )
+    answer = run.final_answer if isinstance(run.final_answer, dict) else {}
+    return RunResultResponse(
+        run_id=str(run.id),
+        status=run.status,
+        answer=answer,
+        steps=serialized_steps,
+        events=serialized_events,
+        last_event_seq=run.last_event_seq,
+    )
+
+
+@app.delete("/v2/agent/runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agent_run(
+    request: Request,
+    run_id: uuid.UUID,
+    authorization: Annotated[str | None, Header()] = None,
+) -> Response:
+    """RF-803: cancela cooperativamente y borra checkpoints antes de la fila."""
+
+    await require_run_access(request, run_id, authorization)
+    settings = request.app.state.settings
+    await runner.request_cancel_and_wait(run_id, settings.delete_active_grace_s)
+    await _delete_run_with_platform_loop(
+        settings.sqlalchemy_database_url, settings.psycopg_database_url, run_id
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 # --- T-300: PoC de durabilidad ----------------------------------------------
 # Prefijo `_poc` deliberado: NO es el contrato final de T-304
 # (contracts/api-rest.md `/v2/agent/...`), que incluira RespuestaFinal,
@@ -702,8 +1103,7 @@ async def _poc_sse_generator(database_url: str, run_id: uuid.UUID, since_seq: in
             return
         for event in events:
             yield (
-                f"id: {event.seq}\nevent: {event.event_type}\n"
-                f"data: {json.dumps(event.payload)}\n\n"
+                f"id: {event.seq}\nevent: {event.event_type}\ndata: {json.dumps(event.payload)}\n\n"
             )
             last_seq = event.seq
             if event.event_type in ("answer", "error"):
