@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -172,7 +173,7 @@ async def delete_run_with_metrics(
     *,
     deletion_reason: DeletionReason,
     retention_hash_salt: str,
-) -> None:
+) -> bool:
     """Copia métricas no identificables a `technical_metrics` y borra la
     corrida, en la misma transacción (RF-803/RF-804, data-model.md §7,
     research.md §4: "Al vencer la retención (o ante borrado por solicitud,
@@ -190,7 +191,7 @@ async def delete_run_with_metrics(
     async with session_factory() as session, session.begin():
         run = await session.get(AgentRun, run_id)
         if run is None:
-            return
+            return False
         source_run_hash = hashlib.sha256(f"{run_id}{retention_hash_salt}".encode()).hexdigest()
         await session.execute(
             pg_insert(TechnicalMetric)
@@ -214,3 +215,30 @@ async def delete_run_with_metrics(
             .on_conflict_do_nothing(index_elements=["source_run_hash"])
         )
         await session.execute(delete(AgentRun).where(AgentRun.id == run_id))
+    return True
+
+
+async def delete_run_with_checkpoints(
+    engine: AsyncEngine,
+    psycopg_database_url: str,
+    run_id: uuid.UUID,
+    *,
+    deletion_reason: DeletionReason,
+    retention_hash_salt: str,
+) -> bool:
+    """Borra checkpoints y después la corrida con sus métricas agregadas.
+
+    Es la única operación compartida por RF-803 y RF-804. Si `adelete_thread`
+    falla, la corrida permanece intacta; si falla la transacción posterior, el
+    checkpoint ya no existe pero el siguiente intento repite el procedimiento
+    sin duplicar métricas gracias a `source_run_hash` único.
+    """
+
+    async with AsyncPostgresSaver.from_conn_string(psycopg_database_url) as saver:
+        await saver.adelete_thread(str(run_id))
+    return await delete_run_with_metrics(
+        engine,
+        run_id,
+        deletion_reason=deletion_reason,
+        retention_hash_salt=retention_hash_salt,
+    )

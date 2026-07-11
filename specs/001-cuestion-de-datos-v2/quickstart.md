@@ -187,7 +187,17 @@ Abre `http://localhost:3000`.
    $env:ADMIN_TOKEN = "<tu_admin_token_local>"
    curl.exe -X POST -H "X-Admin-Token: $env:ADMIN_TOKEN" "http://localhost:8000/v2/admin/retention/run"
    ```
-   En despliegue, este mismo endpoint lo invoca un scheduler externo cada 6 horas con el secreto de administración.
+   También puedes invocar la misma lógica sin levantar FastAPI (útil para el
+   scheduler externo):
+   ```powershell
+   cd backend
+   $env:RETENTION_HASH_SALT = "<secreto_estable_de_retencion>"
+   python scripts/run_retention_sweep.py
+   ```
+   En despliegue, el scheduler del proveedor o workflow programado debe ejecutar
+   una de estas dos opciones cada 6 horas, con `ADMIN_TOKEN` (para el endpoint)
+   y `RETENTION_HASH_SALT` configurados como secretos. No se añade scheduler
+   interno; el SLA de borrado físico desde el vencimiento lógico es 24 horas.
 
 ## 6. Ejecutar las pruebas
 
