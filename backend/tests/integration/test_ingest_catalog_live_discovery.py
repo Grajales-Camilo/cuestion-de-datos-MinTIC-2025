@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.catalog.ingest import run_ingest
 from app.config import Settings, normalize_database_url_for_sqlalchemy
+from tests.integration._snapshot import backup_tables, restore_tables
 
 pytestmark = pytest.mark.integration
 
@@ -27,10 +28,17 @@ async def engine():
 
 @pytest.fixture
 async def clean_catalog(engine):
+    # catalog_embeddings cae en cascada al borrar catalog_datasets aunque no
+    # se mencione aqui -- hay que respaldarla igual.
+    tables = ("catalog_datasets", "catalog_columns", "catalog_embeddings", "ingest_runs")
     async with engine.begin() as connection:
+        await backup_tables(connection, *tables)
         await connection.execute(text("DELETE FROM catalog_columns"))
         await connection.execute(text("DELETE FROM catalog_datasets"))
         await connection.execute(text("DELETE FROM ingest_runs"))
+    yield
+    async with engine.begin() as connection:
+        await restore_tables(connection, *tables)
 
 
 @pytest.fixture

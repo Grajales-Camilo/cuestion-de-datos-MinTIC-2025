@@ -12,6 +12,7 @@ from app.catalog.embeddings import (
 )
 from app.config import normalize_database_url_for_sqlalchemy
 from app.db.engine import create_app_async_engine
+from tests.integration._snapshot import backup_tables, restore_tables
 
 pytestmark = pytest.mark.integration
 
@@ -45,10 +46,15 @@ async def engine():
 
 @pytest.fixture
 async def clean_catalog(engine):
+    tables = ("catalog_datasets", "catalog_columns", "catalog_embeddings")
     async with engine.begin() as connection:
+        await backup_tables(connection, *tables)
         await connection.execute(text("DELETE FROM catalog_embeddings"))
         await connection.execute(text("DELETE FROM catalog_columns"))
         await connection.execute(text("DELETE FROM catalog_datasets"))
+    yield
+    async with engine.begin() as connection:
+        await restore_tables(connection, *tables)
 
 
 async def _seed_dataset(connection, dataset_id: str, *, active: bool = True) -> None:
