@@ -54,6 +54,10 @@ async def engine():
 @pytest.fixture
 async def clean_divipola(engine):
     async with engine.begin() as connection:
+        # territorio_tipologia (T-207/T-404) tiene FK a divipola_entries.code; hay que
+        # vaciarla primero o el DELETE de abajo falla si quedaron filas reales cargadas
+        # (p. ej. por scripts/load_tipologias_dnp.py) referenciando estos codigos.
+        await connection.execute(text("DELETE FROM territorio_tipologia"))
         await connection.execute(text("DELETE FROM divipola_entries"))
 
 
