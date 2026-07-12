@@ -47,7 +47,7 @@ def test_pattern_ids_are_unique_within_each_list() -> None:
 def test_reviewed_dataset_columns_have_provenance_and_no_duplicates() -> None:
     fixture = load_pii_patterns()
 
-    assert len(fixture.reviewed_dataset_columns) == 30
+    assert len(fixture.reviewed_dataset_columns) == 37
     for dataset_id, review in fixture.reviewed_dataset_columns.items():
         assert re.fullmatch(r"[a-z0-9]{4}-[a-z0-9]{4}", dataset_id)
         assert review.risk_level in {"low", "medium", "high"}

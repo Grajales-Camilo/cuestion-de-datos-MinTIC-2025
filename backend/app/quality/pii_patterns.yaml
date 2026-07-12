@@ -18,7 +18,7 @@
 # texto adicional (hallazgo T-303, verificado contra el catálogo real).
 # Orden de evaluación: high -> medium -> low -> default.
 
-fixture_version: "1.1.0"
+fixture_version: "1.2.0"
 updated_at: "2026-07-11T00:00:00Z"
 default_column_risk: unknown
 
@@ -275,3 +275,38 @@ reviewed_dataset_columns:
     source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
     reason: "Infraestructura institucional de aprovechamiento de residuos"
     columns: [autorizaci_n_ambiental, capacidad_de_almacenamiento, capacidad_de_almacenamiento_1, capacidad_de_operacion, estado_nueca, fecha_de_certificaci_n, fecha_estado, fecha_inicio_de_operaci_n, id_de_la_empresa, nombre_de_la_eca, nombre_empresa, nueca, suelo_compatible]
+  c4qb-ek68:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/views/c4qb-ek68"
+    reason: "Indicadores educativos agregados por municipio y año; no expone registros de estudiantes."
+    columns: [a_o, subregi_n, municipios, n_mero_de_habitantes, tasa_de_matr_cula, tasa_cobertura_neta, tasa_cobertura_bruta, tasa_de_deserci_n, tasa_de_aprobaci_n, tasa_de_reprobaci_n, tasa_de_repitencia]
+  m8fd-ahd9:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/views/m8fd-ahd9"
+    reason: "Conteos territoriales de homicidios; sexo conserva la clasificación medium y las consultas deben agregarse."
+    columns: [fecha_hecho, cod_depto, departamento, cod_muni, municipio, zona, sexo, arma_medio, _modalidad_presunta, spoa_caracterizacion, cantidad]
+  4hyg-wa9d:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/views/4hyg-wa9d"
+    reason: "Vigilancia epidemiológica publicada como conteos por evento, semana y territorio, sin registros de personas."
+    columns: [cod_eve, nombre_evento, semana, ano, cod_dpto_o, cod_mun_o, departamento_ocurrencia, municipio_ocurrencia, conteo]
+  f4a5-ab9q:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/views/f4a5-ab9q"
+    reason: "Ejecución presupuestal institucional por entidad, cuenta, mes y año; no contiene información de personas naturales."
+    columns: [entidad, descripci_n, apropiaci_n_vigente, compromiso, compromiso_1, obligado, obligado_1, pagos, pago, mes, a_o]
+  h8rs-jxum:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/views/h8rs-jxum"
+    reason: "Caracterización agregada del empleo público por entidad; sexo y rangos de edad conservan medium y requieren agregación mínima."
+    columns: [c_digo_sigep, nombre_de_la_entidad, nit, orden, suborden, regi_n_pnd, c_digo_divipola_departamento, departamento, c_digo_divipola_municipio, municipio, clasificaci_n_org_nica, sector, nivel, tipo_de_vinculaci_n, naturaleza_jur_dica, longitud, latitud, a_o, mes, fuente, genero_hombre, genero_mujer, genero_no_binario, nivel_educativo_primaria, nivel_educativo_secundaria, nivel_educativo_t_cnica_tecnol, nivel_educativo_profesional, nivel_educativo_especializaci, nivel_educativo_maestr_a, nivel_educativo_doctorado, nivel_educativo_sin_datos, edad_menor_o_igual_a_29, edad_30_39, edad_40_49, edad_50_62, edad_63_y_mas, experiencia_laboral_menor, experiencia_laboral_de_1, experiencia_laboral_de_11, experiencia_laboral_de_21, experiencia_laboral_de_31, experiencia_laboral_mayor, experiencia_laboral_sin_datos, salario_mensual_promedio]
+  fvq4-wwtz:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/views/fvq4-wwtz"
+    reason: "Conteos institucionales de cargos y tipos de planta, sin identificación de servidores públicos."
+    columns: [cod_institucion, nombre, orden, clasificacion_organica, nivel_institucion, sector, tipo_institucion, naturaleza_juridica, anio_aplicar, detalle_actualizacion, no_planta_permanente, no_planta_temporal, no_planta_transitoria, no_trab_oficiales, no_planta_privada, no_planta_docente, no_total_planta, no_libre_nombramiento, no_carrera, no_periodo_fijo, no_temporal, no_carrera_diplomatica, no_docentes, no_trab_oficiales_privada, no_total_planta_privada, no_instructores, no_eleccion_popular, lon_municipio, lat_municipio]
+  d7pt-p5fi:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/views/d7pt-p5fi"
+    reason: "Operación y toneladas de residuos por empresa prestadora y área de servicio, sin datos de usuarios o personas naturales."
+    columns: [id_empresa, nombre_empresa, a_o_del_cargue, nuap, departamento_rea_de_prestaci, municipio_rea_de_prestaci, tipo_de_sitio_destino, no_de_sitio_destino, toneladas_de_limpieza_urbana, toneladas_de_barrido_y, toneladas_de_residuos_no, toneladas_del_rechazo_de, toneladas_de_residuos, sistema_de_medici_n, valor_peaje]
