@@ -121,3 +121,79 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
     assert len(finalize_calls) == 1
     _, results = finalize_calls[0]
     assert len(results) == 2
+
+
+async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_going(
+    monkeypatch,
+) -> None:
+    """Si agent_run_id desaparece entre la ejecucion y la persistencia (p. ej. un
+    barrido de retencion concurrente viola la FK), el caso no debe tumbar el resto
+    de la corrida: se reintenta sin la referencia rota."""
+
+    suite = _fake_suite()
+    suite_id = uuid.uuid4()
+    case_ids = {case.case_id: uuid.uuid4() for case in suite.cases}
+
+    monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
+    monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
+    monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+    monkeypatch.setattr(
+        run_module,
+        "create_app_async_engine",
+        lambda *a, **k: SimpleNamespace(dispose=AsyncMock()),
+    )
+    monkeypatch.setattr(
+        run_module,
+        "sync_golden_suite",
+        AsyncMock(return_value=PersistedGoldenSuite(suite_id=suite_id, case_ids=case_ids)),
+    )
+    monkeypatch.setattr(run_module, "register_worker_instance", AsyncMock(return_value="worker-1"))
+    monkeypatch.setattr(run_module, "mark_worker_shutdown", AsyncMock())
+    monkeypatch.setattr(run_module, "create_eval_run", AsyncMock(return_value=uuid.uuid4()))
+    monkeypatch.setattr(run_module, "execute_agent_run_async", AsyncMock())
+    monkeypatch.setattr(
+        run_module,
+        "get_run",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                final_answer={"status": "no_evidence", "evidence": [], "claims": []}
+            )
+        ),
+    )
+    monkeypatch.setattr(run_module, "_planner_search_dataset_ids", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        run_module,
+        "_create_eval_record",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                id=uuid.uuid4(), llm_provider="google", llm_model="gemini-2.5-flash"
+            )
+        ),
+    )
+    monkeypatch.setattr(run_module, "_finalize_eval_record", AsyncMock())
+    monkeypatch.setattr(run_module, "_write_report", lambda *a, **k: None)
+
+    persisted_calls = []
+
+    async def flaky_persist(engine, **kwargs):
+        persisted_calls.append(kwargs)
+        # Solo la primera llamada (caso 1, con agent_run_id valido) falla.
+        if len(persisted_calls) == 1:
+            raise RuntimeError(
+                'insert or update on table "eval_case_results" violates '
+                "foreign key constraint"
+            )
+
+    monkeypatch.setattr(run_module, "_persist_case_result", flaky_persist)
+
+    report_path = await run_module.run_suite(
+        suite_name="golden-v1", provider=None, model=None, seed=1, limit=None
+    )
+
+    assert report_path is not None
+    # caso1 intento fallido + caso1 reintento + caso2 sin problema = 3 llamadas.
+    assert len(persisted_calls) == 3
+    assert persisted_calls[0]["agent_run_id"] is not None
+    assert persisted_calls[1]["agent_run_id"] is None
+    assert persisted_calls[1]["error_code"] == "RuntimeError"
+    assert persisted_calls[2]["agent_run_id"] is not None

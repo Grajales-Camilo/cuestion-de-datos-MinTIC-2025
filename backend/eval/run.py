@@ -226,15 +226,33 @@ async def run_suite(
                     claim_hashes=(),
                     failure_reason=f"Error de infraestructura al ejecutar el caso: {exc}",
                 )
-            await _persist_case_result(
-                engine,
-                eval_run_id=record.id,
-                case_db_id=persisted.case_ids[case.case_id],
-                agent_run_id=agent_run_id,
-                final=final,
-                assessment=assessment,
-                error_code=error_code,
-            )
+            try:
+                await _persist_case_result(
+                    engine,
+                    eval_run_id=record.id,
+                    case_db_id=persisted.case_ids[case.case_id],
+                    agent_run_id=agent_run_id,
+                    final=final,
+                    assessment=assessment,
+                    error_code=error_code,
+                )
+            except Exception as exc:  # noqa: BLE001
+                # agent_run_id pudo dejar de existir entre la ejecucion y este
+                # punto (p. ej. un barrido de retencion concurrente sobre la
+                # misma base compartida viola la FK). Reintenta sin la
+                # referencia rota; si sigue fallando, no tumba los otros 49.
+                try:
+                    await _persist_case_result(
+                        engine,
+                        eval_run_id=record.id,
+                        case_db_id=persisted.case_ids[case.case_id],
+                        agent_run_id=None,
+                        final=final,
+                        assessment=assessment,
+                        error_code=type(exc).__name__,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             results.append((case.case_id, assessment))
         await _finalize_eval_record(engine, record_id=record.id, results=results)
         report_path = Path("eval/reports") / f"{record.id}.md"
