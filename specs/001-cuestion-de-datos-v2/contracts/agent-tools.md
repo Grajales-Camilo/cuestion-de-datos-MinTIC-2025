@@ -175,7 +175,7 @@ Invoca la capa de calidad sobre un resultado de T5 (RF-401). Nodo determinista: 
 - El grafo la ejecuta SIEMPRE después de cada `ejecutar_soql` exitoso, antes del sintetizador. No es opcional ni invocable a discreción del LLM.
 
 ## T7 — `construir_afirmaciones`
-Materializa las **afirmaciones cuantitativas** (claims, RF-208) a partir de evidencia validada. Nodo determinista: el cálculo lo hace código, NO el LLM. El LLM (sintetizador/planificador) solo **propone** qué claims construir (columnas, fórmula, redondeo deseado); este nodo los computa, verifica y registra en `quantitative_claims`. Implementado por `app/quality/claims.py` (tarea T-403).
+Materializa las **afirmaciones cuantitativas** (claims, RF-208) a partir de evidencia validada. Nodo determinista: el cálculo lo hace código, NO el LLM. El nodo LLM especializado `claim_planner`, ejecutado después de la validación de calidad y separado del enrutador de herramientas, solo **propone** qué claims construir (columnas, fórmula y redondeo deseado); T7 los computa, verifica y registra en `quantitative_claims`. La representación de transporte del `claim_planner` puede usar `formula_json` para evitar un JSON Schema recursivo incompatible con el proveedor, pero antes de invocar T7 el backend DEBE parsearla y validarla contra la DSL recursiva completa que se muestra abajo. Implementado por `app/quality/claims.py` (tarea T-403).
 
 **Entrada**
 ```json

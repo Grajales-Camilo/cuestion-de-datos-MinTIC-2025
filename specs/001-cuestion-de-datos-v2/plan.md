@@ -45,15 +45,23 @@ entrada ─▶ planificador ─▶ enrutador ─┬─▶ buscar_catalogo ──
                              │        ├─▶ explorar_valores ─┤  vuelve al
                              │        └─▶ ejecutar_soql ────┘  enrutador)
                              │
-                    (máx. 10 pasos, RF-201)
+                    (máx. 14 pasos por defecto, RF-201, research.md §19)
                              │
                              ▼
-        validador_calidad ─▶ constructor_afirmaciones ─▶ sintetizador ─▶ respuesta + trazas
+        validador_calidad ─▶ planificador_claims ─▶ constructor_afirmaciones
+                                                     │
+                                                     ▼
+                                              sintetizador ─▶ respuesta + trazas
 ```
 
 - **planificador:** descompone la pregunta (RF-202) y decide la primera acción.
 - **enrutador (LLM):** nodo de decisión con *structured output*; elige herramienta o terminar.
 - **validador_calidad:** nodo determinista (sin LLM) que aplica `contracts/validacion-calidad.md` (RF-401).
+- **planificador_claims (LLM):** nodo especializado que propone filas,
+  columnas, unidades y la DSL T7 después de existir evidencia validada. Para
+  conservar operaciones anidadas sin exponer un JSON Schema recursivo que el
+  proveedor no puede convertir, transporta la fórmula como JSON textual y el
+  backend la parsea y valida recursivamente antes de T7.
 - **constructor_afirmaciones:** nodo determinista (sin LLM) que materializa las **afirmaciones cuantitativas** (claims, RF-208): calcula toda cifra derivada (porcentajes, sumas, promedios) con la herramienta T7 de `contracts/agent-tools.md` y las registra en `quantitative_claims`.
 - **sintetizador:** redacta la respuesta final y la narrativa citable usando EXCLUSIVAMENTE los `display_value` de claims validados y evidencia cualitativa trazable; NO PUEDE calcular ni introducir cifras propias (RNF-003, RF-208).
 - Cada transición emite un evento SSE (RF-204) con número de secuencia persistente y se persiste como `agent_step` + `agent_run_events` (RF-703, RF-209).
@@ -182,7 +190,7 @@ cuestion-de-datos/
 | Consulta Socrata | ≤ 5 s (timeout 10 s, 1 reintento) |
 | Validación de calidad | ≤ 500 ms (determinista) |
 | Consulta simple (1 dataset, 1 SoQL, sin perfilado extenso) | ≤ 20 s p95 |
-| Investigación multi-paso completa (≤ 10 pasos, típica 4–6) | ≤ 75 s p95 |
+| Investigación multi-paso completa (≤ 14 pasos por defecto, típica 4–6) | ≤ 75 s p95 |
 
 Mitigaciones: consultas Socrata paralelas cuando el plan lo permita; `LIMIT` obligatorio; `SELECT *` prohibido; máximo 50 filas entran al contexto LLM; máximo 1.000 filas en `evidence_results.rows` solo cuando el usuario necesita descarga; presupuesto duro de evidencia serializada: `rows` ≤ 1 MB por evidencia, `tool_output_summary` ≤ 20 KB por paso y evento SSE `evidence` ≤ 256 KB salvo descarga explícita; streaming SSE para percepción de progreso (RNF-008). `perfilar_dataset` debe usar una o pocas consultas agregadas/concurrentes y no puede ejecutar una cascada secuencial que rompa RNF-001.
 
@@ -266,7 +274,7 @@ v2.0 se declara terminada cuando: (1) todos los RF de spec.md están implementad
 | Duración máxima excedida | `failed` | `error` | `RUN_TIMEOUT` | Sí, para diagnóstico; no se presenta como respuesta completa | Error persistido + pasos/evidencias parciales | Sí | No |
 | Error definitivo del proveedor LLM | `failed` | `error` | `LLM_PROVIDER_ERROR` | Sí | Error persistido + pasos parciales | Sí | No |
 | Error definitivo de Socrata | `failed` | `error` | `SOCRATA_ERROR` o `SOCRATA_TIMEOUT` | Sí | Error persistido + pasos parciales | Sí | No |
-| Agotamiento del presupuesto de pasos | `no_evidence` si no hay evidencia suficiente; `completed` si los parciales bastan para responder con claims válidos | `answer` | `STEP_BUDGET_EXCEEDED` solo en `usage.termination_reason` | Sí | `RespuestaFinal` normal (`no_evidence` o `completed`) | Sí | No |
+| Agotamiento de presupuesto (pasos, consultas SoQL o autocorrecciones) | `no_evidence` si no hay evidencia suficiente; `completed` si los parciales bastan para responder con claims válidos | `answer` | `STEP_BUDGET_EXCEEDED` (agotamiento real de pasos) / `INSUFFICIENT_BUDGET_FOR_ACTION` (parada preventiva) / `SOQL_CALL_BUDGET_EXCEEDED` / `SOQL_CORRECTION_EXHAUSTED`, solo en `usage.termination_reason` (contracts/api-rest.md §4) | Sí | `RespuestaFinal` normal (`no_evidence` o `completed`) | Sí | No |
 | Borrado solicitado por el usuario | La corrida deja de existir | Ninguno adicional; operación HTTP `204` | — | No: se borran corrida, eventos, evidencias, claims y checkpoints (`adelete_thread(run_id)`) | `404` tras el borrado | Sí, como nueva corrida | No |
 | DELETE sobre corrida activa | La corrida se cancela por borrado y deja de existir | Ninguno visible adicional; se detiene la tarea antes del borrado | — | No: se borra completo | `404` tras el borrado | Sí, como nueva corrida | No |
 
@@ -298,7 +306,7 @@ Estas variables son la fuente para construir `backend/.env.example`. No se fijan
 | `LLM_PROVIDER` | Selección de proveedor LLM | enum `google`/`anthropic` | `google` | Sí | dev/prod/eval | Debe estar soportado por factory | RF-206 |
 | `LLM_MODEL` | Modelo del proveedor LLM | string | `gemini-2.5-flash` | Sí | dev/prod/eval | Compatible con `LLM_PROVIDER`; override por request solo con `EVAL_MODE=true` | RF-206, RF-601 |
 | `EMBEDDING_MODEL` | Modelo elegido para embeddings | string | `gemini-embedding-2` | Sí desde T-203 | dev/prod/eval | Debe coincidir con research.md §1 (768 dim) y dimensión migrada en T-104B | RF-301, T-205 |
-| `AGENT_MAX_STEPS` | Presupuesto máximo del agente | int | `10` | Sí | dev/prod/eval | `1 <= valor <= 25` | RF-201 |
+| `AGENT_MAX_STEPS` | Presupuesto máximo del agente | int | `14` | Sí | dev/prod/eval | `1 <= valor <= 25` | RF-201, research.md §19 |
 | `RUN_MAX_DURATION_S` | Duración máxima por corrida | int segundos | `600` | Sí | dev/prod/eval | Mayor que 0; al exceder termina `failed/RUN_TIMEOUT` | RF-209, RNF-001 |
 | `RUN_HEARTBEAT_TIMEOUT_S` | Umbral para worker muerto | int segundos | `120` | Sí | dev/prod/eval | Mayor que heartbeat emitido; al vencer termina `interrupted` | RF-209 |
 | `WORKER_LEASE_TTL_S` | TTL de lease de instancia | int segundos | igual a `RUN_HEARTBEAT_TIMEOUT_S` | Sí | dev/prod/eval | Mayor que intervalo de renovación; default derivado, no menor a 30 | RF-209 |
