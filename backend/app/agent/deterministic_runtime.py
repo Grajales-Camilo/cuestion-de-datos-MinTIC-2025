@@ -277,7 +277,10 @@ async def run_deterministic_agent(
             ),
         )
         transition = decide_next_transition(snapshot)
-        trace_entry = RuntimeTraceEntry(transition.node, transition.reason, current)
+        trace_reason = transition.reason
+        if transition.node is SupervisorNode.BUILD_PLAN and validation_error is not None:
+            trace_reason = f"{trace_reason}: {validation_error.code.value}: {validation_error}"
+        trace_entry = RuntimeTraceEntry(transition.node, trace_reason, current)
         trace.append(trace_entry)
         if observe_transition is not None:
             await observe_transition(trace_entry, snapshot.usage)

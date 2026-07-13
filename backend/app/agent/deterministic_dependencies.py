@@ -167,7 +167,12 @@ def build_real_runtime_dependencies(
                         "la agregación necesaria, no la palabra superlativa: preguntas por el "
                         "mayor volumen, la mayor concentración o el total acumulado por grupo "
                         "normalmente requieren SUM; MAX/MIN se reservan para el máximo/mínimo "
-                        "de un valor individual; LOOKUP recupera campos de un registro. Conserva "
+                        "de un valor individual; LOOKUP recupera campos de un registro. Los "
+                        "estados "
+                        "presupuestales acumulados por mes son snapshots: una pregunta por la "
+                        "ejecución o el pago anual requiere LOOKUP del corte de cierre, no SUM "
+                        "entre "
+                        "meses. Conserva "
                         "calificadores sustantivos (por ejemplo tipo, categoría o corte) en "
                         "administrative_terms."
                     )
@@ -248,11 +253,15 @@ def build_real_runtime_dependencies(
                         "tipados y solicita exploración si un valor categórico no está confirmado. "
                         "Si se pregunta qué grupo tiene el mayor o menor agregado, incluye la "
                         "dimensión, la métrica agregada, ordena por esa métrica (DESC o ASC) y usa "
-                        "limit=1. No sustituyas SUM por MAX para resolver un ranking. En LOOKUP "
+                        "limit=1. La dimensión es obligatoria: una pregunta por qué eventos, "
+                        "departamento o entidad no se responde con un agregado global sin agrupar. "
+                        "No sustituyas SUM por MAX para resolver un ranking. En LOOKUP "
                         "devuelve sólo columnas necesarias para responder. Si una ejecución anual "
                         "tiene registros periódicos, selecciona determinísticamente el registro de "
-                        "cierre mediante la columna temporal ordenada DESC y limit=1; aplica los "
-                        "calificadores categóricos presentes en la intención."
+                        "cierre mediante la columna temporal ordenada DESC y limit=1; no sumes "
+                        "snapshots acumulados. Aplica los calificadores categóricos presentes en "
+                        "la intención y, para totales sectoriales, la categoría total o de "
+                        "funcionamiento que describa el registro agregado."
                     )
                 ),
                 HumanMessage(
