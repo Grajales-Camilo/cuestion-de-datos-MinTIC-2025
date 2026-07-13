@@ -330,6 +330,7 @@ async def run_deterministic_agent(
                 if candidate.status is CandidateStatus.UNSEEN
             )
             _replace_status(candidates, current, CandidateStatus.SELECTED)
+            repairs = 0
             continue
         if transition.node is SupervisorNode.PROFILE_DATASET:
             assert current is not None

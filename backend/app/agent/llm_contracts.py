@@ -329,7 +329,6 @@ def normalize_budget_snapshot(
     dimensions = tuple(
         dict.fromkeys(
             (
-                *selection.dimension_column_indexes,
                 *(item.column_index for item in filters if item.operator is FilterOperator.EQ),
                 *required_outputs,
                 *((month,) if month is not None else ()),
