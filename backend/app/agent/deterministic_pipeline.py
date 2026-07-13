@@ -153,7 +153,7 @@ async def execute_validated_plan(
         ),
         _claim_specs(plan, rendered, rows),
     )
-    if claims.rejected or not claims.claims:
+    if not claims.claims:
         reasons = "; ".join(item.reason for item in claims.rejected) or "sin claims"
         raise DeterministicExecutionError(f"CLAIMS_REJECTED: {reasons}")
     return DeterministicExecutionResult(

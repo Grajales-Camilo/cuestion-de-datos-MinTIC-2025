@@ -62,6 +62,16 @@ def _candidate_score(item: CatalogSearchItem, *, rank: int, matches: int) -> flo
     return round(score + official + eligible + freshness + coverage, 8)
 
 
+def _explicit_intent_boost(item: CatalogSearchItem, intent: IntentExtraction) -> float:
+    name = " ".join(item.name.casefold().split())
+    topic = " ".join(intent.topic.casefold().split())
+    entity = " ".join((intent.entity or "").casefold().split())
+    boost = 0.35 if topic and topic in name else 0.0
+    if entity and entity in name:
+        boost += 0.15
+    return boost
+
+
 async def retrieve_candidates_multiquery(
     intent: IntentExtraction,
     *,
@@ -93,7 +103,11 @@ async def retrieve_candidates_multiquery(
     candidates = [
         RetrievedCandidate(
             item=item,
-            score=_candidate_score(item, rank=best_rank, matches=len(matched)),
+            score=round(
+                _candidate_score(item, rank=best_rank, matches=len(matched))
+                + _explicit_intent_boost(item, intent),
+                8,
+            ),
             matched_queries=tuple(matched),
             best_rank=best_rank,
         )

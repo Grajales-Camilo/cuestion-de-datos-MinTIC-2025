@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.agent.query_plan import (
+    ColumnDataType,
     ColumnReference,
     DimensionSelection,
     EnumeratedPlanningContext,
@@ -136,12 +137,93 @@ def validate_grounded_synthesis(
         raise ValueError(f"síntesis contiene cifras huérfanas: {orphan_figures}")
 
 
+def normalize_temporal_year_filters(
+    selection: EnumeratedPlanSelection,
+    context: EnumeratedPlanningContext,
+) -> EnumeratedPlanSelection:
+    """Expande igualdad temporal `YYYY` a un rango anual ISO verificable."""
+
+    if selection.dataset_index >= len(context.candidates):
+        return selection
+    columns = context.candidates[selection.dataset_index].columns
+    normalized: list[FilterChoice] = []
+    for item in selection.filters:
+        if item.column_index >= len(columns):
+            normalized.append(item)
+            continue
+        column_type = columns[item.column_index].data_type
+        is_year_eq = (
+            item.operator is FilterOperator.EQ
+            and len(item.values) == 1
+            and len(item.values[0]) == 4
+            and item.values[0].isdigit()
+        )
+        if not is_year_eq or column_type not in {
+            ColumnDataType.DATE,
+            ColumnDataType.DATETIME,
+        }:
+            normalized.append(item)
+            continue
+        year = item.values[0]
+        if column_type is ColumnDataType.DATE:
+            values = (f"{year}-01-01", f"{year}-12-31")
+            value_type = ScalarType.DATE
+        else:
+            values = (f"{year}-01-01T00:00:00", f"{year}-12-31T23:59:59")
+            value_type = ScalarType.DATETIME
+        normalized.append(
+            item.model_copy(
+                update={
+                    "operator": FilterOperator.BETWEEN,
+                    "value_type": value_type,
+                    "values": values,
+                }
+            )
+        )
+    return selection.model_copy(update={"filters": tuple(normalized)})
+
+
+def normalize_system_owned_operation(
+    selection: EnumeratedPlanSelection,
+    intent: IntentExtraction,
+) -> EnumeratedPlanSelection:
+    """Materializa operaciones sin columna cuya semántica ya fijó la intención."""
+
+    if intent.operation is QueryOperation.COUNT:
+        return selection.model_copy(
+            update={
+                "operation": QueryOperation.COUNT,
+                "metrics": (MetricChoice(operation=QueryOperation.COUNT),),
+            }
+        )
+    if intent.operation is QueryOperation.LOOKUP:
+        metric_columns = tuple(
+            item.column_index for item in selection.metrics if item.column_index is not None
+        )
+        dimensions = tuple(
+            dict.fromkeys((*selection.dimension_column_indexes, *metric_columns))
+        )
+        return selection.model_copy(
+            update={
+                "operation": QueryOperation.LOOKUP,
+                "dimension_column_indexes": dimensions,
+                "metrics": (),
+            }
+        )
+    return selection
+
+
 def materialize_query_plan(
     selection: EnumeratedPlanSelection,
     *,
     intent: IntentExtraction,
     context: EnumeratedPlanningContext,
 ) -> QueryPlan:
+    if selection.operation is not intent.operation:
+        raise ValueError(
+            "operation del plan debe coincidir con la intención: "
+            f"{selection.operation.value} != {intent.operation.value}"
+        )
     provenance = SelectionProvenance(
         origin=SelectionOrigin.INTENT,
         source_text=intent.topic,

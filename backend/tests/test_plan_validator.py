@@ -13,6 +13,8 @@ from app.agent.query_plan import (
     EligibilityStatus,
     PiiRiskLevel,
     QueryOperation,
+    ScalarType,
+    ScalarValue,
 )
 from tests.test_query_plan import context, sum_plan
 
@@ -128,3 +130,49 @@ def test_validated_plan_is_a_distinct_frozen_type() -> None:
     validated = validate_query_plan(sum_plan(), context=context(), schema=schema())
     with pytest.raises(ValidationError):
         validated.limit = 2  # type: ignore[misc]
+
+
+def test_rejects_invalid_typed_literal_before_renderer() -> None:
+    date_context = context().model_copy(
+        update={
+            "candidates": (
+                context().candidates[0].model_copy(
+                    update={
+                        "columns": (
+                            context().candidates[0].columns[0].model_copy(
+                                update={"data_type": ColumnDataType.DATE}
+                            ),
+                            context().candidates[0].columns[1],
+                        )
+                    }
+                ),
+            )
+        }
+    )
+    date_schema = schema().model_copy(
+        update={
+            "columns": (
+                schema().columns[0].model_copy(update={"data_type": ColumnDataType.DATE}),
+                schema().columns[1],
+            )
+        }
+    )
+    invalid_plan = sum_plan().model_copy(
+        update={
+            "filters": (
+                sum_plan().filters[0].model_copy(
+                    update={
+                        "values": (ScalarValue(type=ScalarType.DATE, value="2025"),)
+                    }
+                ),
+            )
+        }
+    )
+    assert_code(
+        PlanValidationCode.INVALID_LITERAL,
+        lambda: validate_query_plan(
+            invalid_plan,
+            context=date_context,
+            schema=date_schema,
+        ),
+    )

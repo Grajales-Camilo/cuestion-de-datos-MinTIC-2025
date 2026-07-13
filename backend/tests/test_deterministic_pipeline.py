@@ -101,6 +101,32 @@ async def test_direct_lookup_parses_text_number_with_separators() -> None:
 
 
 @pytest.mark.asyncio
+async def test_lookup_keeps_valid_numeric_claim_when_context_column_is_text() -> None:
+    plan = QueryPlan(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimensions=(
+            DimensionSelection(column=ColumnReference(column_index=0), provenance=provenance()),
+            DimensionSelection(column=ColumnReference(column_index=1), provenance=provenance()),
+        ),
+        limit=1,
+        purpose="Consultar valor con contexto",
+    )
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [{"dim_1": "Pasto", "dim_2": "1250"}],
+            "source_url": "https://example.test/resource/abcd-1234.json",
+        }
+
+    result = await execute_validated_plan(validated(plan), executor=executor, metadata=metadata())
+    assert [claim.raw_value for claim in result.claims.claims] == [1250]
+    assert len(result.claims.rejected) == 1
+
+
+@pytest.mark.asyncio
 async def test_persistence_uses_evidence_id_created_by_persistence(monkeypatch) -> None:
     generated_evidence_id = uuid.uuid4()
     run_id = uuid.uuid4()

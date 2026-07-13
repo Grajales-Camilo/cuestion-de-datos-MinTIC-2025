@@ -12,6 +12,8 @@ from app.agent.llm_contracts import (
     IntentExtraction,
     MetricChoice,
     materialize_query_plan,
+    normalize_system_owned_operation,
+    normalize_temporal_year_filters,
     validate_candidate_ranking,
     validate_grounded_synthesis,
 )
@@ -122,6 +124,20 @@ def test_materialization_rejects_invented_column_index() -> None:
         materialize_query_plan(selection, intent=intent(), context=context())
 
 
+def test_materialization_rejects_operation_different_from_intent() -> None:
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.COUNT,
+        metrics=(MetricChoice(operation=QueryOperation.COUNT),),
+    )
+    with pytest.raises(ValueError, match="debe coincidir"):
+        materialize_query_plan(
+            selection,
+            intent=intent(QueryOperation.SUM),
+            context=context(),
+        )
+
+
 def test_structured_outputs_forbid_extra_free_text_fields() -> None:
     with pytest.raises(ValidationError, match="Extra inputs"):
         EnumeratedPlanSelection.model_validate(
@@ -168,6 +184,71 @@ def test_grounded_synthesis_accepts_only_existing_claims_and_supported_figures()
             GroundedSynthesis(answer="Resultado disponible.", cited_claim_indexes=(1,)),
             (_claim(),),
         )
+
+
+def test_normalizes_explicit_year_only_for_observed_temporal_column() -> None:
+    temporal_context = context().model_copy(
+        update={
+            "candidates": (
+                context().candidates[0].model_copy(
+                    update={
+                        "columns": (
+                            context().candidates[0].columns[0].model_copy(
+                                update={"data_type": ColumnDataType.DATE}
+                            ),
+                            context().candidates[0].columns[1],
+                        )
+                    }
+                ),
+            )
+        }
+    )
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.COUNT,
+        metrics=(MetricChoice(operation=QueryOperation.COUNT),),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.DATE,
+                values=("2025",),
+            ),
+        ),
+    )
+    normalized = normalize_temporal_year_filters(selection, temporal_context)
+    assert normalized.filters[0].operator is FilterOperator.BETWEEN
+    assert normalized.filters[0].values == ("2025-01-01", "2025-12-31")
+
+
+def test_count_operation_is_owned_by_system_and_always_becomes_count_star() -> None:
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.SUM,
+        metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=1),),
+    )
+    normalized = normalize_system_owned_operation(
+        proposed,
+        intent(QueryOperation.COUNT),
+    )
+    assert normalized.operation is QueryOperation.COUNT
+    assert normalized.metrics == (MetricChoice(operation=QueryOperation.COUNT),)
+
+
+def test_lookup_preserves_metric_columns_as_enumerated_output_dimensions() -> None:
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.SUM,
+        dimension_column_indexes=(0,),
+        metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=1),),
+    )
+    normalized = normalize_system_owned_operation(
+        proposed,
+        intent(QueryOperation.LOOKUP),
+    )
+    assert normalized.operation is QueryOperation.LOOKUP
+    assert normalized.metrics == ()
+    assert normalized.dimension_column_indexes == (0, 1)
     with pytest.raises(ValueError, match="huérfanas"):
         validate_grounded_synthesis(
             GroundedSynthesis(answer="El total fue 99.999.", cited_claim_indexes=(0,)),

@@ -17,10 +17,11 @@ def _item(
     *,
     verified: bool = True,
     eligible: bool = True,
+    name: str | None = None,
 ) -> CatalogSearchItem:
     return CatalogSearchItem(
         dataset_id=dataset_id,
-        name=f"Dataset {dataset_id}",
+        name=name or f"Dataset {dataset_id}",
         publisher="Entidad",
         official_publisher_id="entidad" if verified else None,
         publisher_verification_status="verified" if verified else "unverified",
@@ -100,3 +101,33 @@ async def test_multiquery_validates_limits_before_search() -> None:
 
     with pytest.raises(ValueError, match="per_query"):
         await retrieve_candidates_multiquery(_intent(), searcher=searcher, per_query=0)
+
+
+@pytest.mark.asyncio
+async def test_explicit_topic_phrase_in_title_outranks_small_similarity_difference() -> None:
+    intent = IntentExtraction(
+        topic="Seguimiento a la Ejecución Presupuestal",
+        operation=QueryOperation.LOOKUP,
+        entity="Sector Justicia",
+    )
+
+    async def searcher(query: str, k: int) -> CatalogSearchSummary:
+        del k
+        return CatalogSearchSummary(
+            query=query,
+            results=[
+                _item(
+                    "generic-1",
+                    0.80,
+                    name="Ejecución Presupuestal del Presupuesto General",
+                ),
+                _item(
+                    "exact-01",
+                    0.74,
+                    name="Seguimiento a la Ejecución Presupuestal del Sector Justicia",
+                ),
+            ],
+        )
+
+    result = await retrieve_candidates_multiquery(intent, searcher=searcher)
+    assert result.candidates[0].item.dataset_id == "exact-01"

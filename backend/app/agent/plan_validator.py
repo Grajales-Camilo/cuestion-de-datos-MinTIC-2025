@@ -6,6 +6,8 @@ de resolver sus referencias y aplicar tipos, elegibilidad y privacidad.
 
 from __future__ import annotations
 
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Literal
 
@@ -34,6 +36,7 @@ class PlanValidationCode(StrEnum):
     DATASET_MISMATCH = "DATASET_MISMATCH"
     DATASET_NOT_ELIGIBLE = "DATASET_NOT_ELIGIBLE"
     TYPE_MISMATCH = "TYPE_MISMATCH"
+    INVALID_LITERAL = "INVALID_LITERAL"
     PII_BLOCKED = "PII_BLOCKED"
     PII_REQUIRES_AGGREGATION = "PII_REQUIRES_AGGREGATION"
 
@@ -140,6 +143,38 @@ def _validate_metric_type(operation: QueryOperation, column: ObservedColumn | No
         )
 
 
+def _validate_scalar_literal(value_type: ScalarType, value: str) -> None:
+    try:
+        if value_type is ScalarType.NUMBER:
+            parsed = Decimal(value)
+            if not parsed.is_finite():
+                raise ValueError
+        elif value_type is ScalarType.INTEGER:
+            parsed = Decimal(value)
+            if not parsed.is_finite() or parsed != parsed.to_integral_value():
+                raise ValueError
+        elif value_type is ScalarType.BOOLEAN:
+            if value.casefold() not in {"true", "false"}:
+                raise ValueError
+        elif value_type is ScalarType.DATE:
+            date.fromisoformat(value)
+        elif value_type is ScalarType.DATETIME:
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (InvalidOperation, ValueError) as exc:
+        labels = {
+            ScalarType.NUMBER: "numérico",
+            ScalarType.INTEGER: "entero",
+            ScalarType.BOOLEAN: "booleano",
+            ScalarType.DATE: "de fecha",
+            ScalarType.DATETIME: "datetime",
+        }
+        _raise(
+            PlanValidationCode.INVALID_LITERAL,
+            f"literal {labels[value_type]} inválido: {value!r}",
+        )
+        raise AssertionError("_raise siempre lanza") from exc
+
+
 def validate_query_plan(
     plan: QueryPlan,
     *,
@@ -211,6 +246,7 @@ def validate_query_plan(
                     PlanValidationCode.TYPE_MISMATCH,
                     f"literal {value.type.value} incompatible con {column.field_name!r}",
                 )
+            _validate_scalar_literal(value.type, value.value)
         filters.append(
             ValidatedFilter(
                 field_name=column.field_name,

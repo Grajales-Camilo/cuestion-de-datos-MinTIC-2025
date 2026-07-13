@@ -29,6 +29,8 @@ from app.agent.llm_contracts import (
     GroundedSynthesis,
     IntentExtraction,
     materialize_query_plan,
+    normalize_system_owned_operation,
+    normalize_temporal_year_filters,
     validate_grounded_synthesis,
 )
 from app.agent.multiquery_retrieval import MultiQueryRetrievalResult
@@ -168,14 +170,48 @@ def _validate_explored_filters(
             )
 
 
+def _normalize_explored_filter_values(
+    selection: EnumeratedPlanSelection,
+    explored: tuple[ExploredColumnValues, ...],
+) -> EnumeratedPlanSelection:
+    allowed = {item.column_index: item.values for item in explored}
+    normalized = []
+    for item in selection.filters:
+        values = allowed.get(item.column_index)
+        if item.value_type is not ScalarType.TEXT or not values:
+            normalized.append(item)
+            continue
+        canonical = {
+            value.casefold(): next(
+                observed for observed in values if observed.casefold() == value.casefold()
+            )
+            for value in item.values
+            if any(observed.casefold() == value.casefold() for observed in values)
+        }
+        normalized.append(
+            item.model_copy(
+                update={
+                    "values": tuple(canonical.get(value.casefold(), value) for value in item.values)
+                }
+            )
+        )
+    return selection.model_copy(update={"filters": tuple(normalized)})
+
+
 def _deterministic_synthesis(claims: ClaimsBuildResult) -> GroundedSynthesis:
+    selected = claims.claims[:8]
     values = "; ".join(
         f"{claim.display_value}{f' {claim.unit}' if claim.unit else ''}"
-        for claim in claims.claims
+        for claim in selected
+    )
+    suffix = (
+        " Hay resultados adicionales en la evidencia adjunta."
+        if len(claims.claims) > 8
+        else ""
     )
     return GroundedSynthesis(
-        answer=f"Resultado calculado con la evidencia consultada: {values}.",
-        cited_claim_indexes=tuple(range(len(claims.claims))),
+        answer=f"Resultados calculados con la evidencia consultada: {values}.{suffix}",
+        cited_claim_indexes=tuple(range(len(selected))),
     )
 
 
@@ -297,6 +333,9 @@ async def run_deterministic_agent(
                 validation_error,
             )
             llm_calls += 1
+            selection = normalize_system_owned_operation(selection, intent)
+            selection = normalize_temporal_year_filters(selection, profile.context)
+            selection = _normalize_explored_filter_values(selection, explored)
             if _requires_exploration(selection, explored):
                 validated = None
                 validation_error = None

@@ -275,7 +275,7 @@ async def test_runtime_retries_synthesis_with_orphan_figures() -> None:
     assert result.status == "completed"
     assert result.usage.llm_calls == 3
     assert result.synthesis is not None
-    assert result.synthesis.answer == "Resultado calculado con la evidencia consultada: 42."
+    assert result.synthesis.answer == "Resultados calculados con la evidencia consultada: 42."
 
 
 @pytest.mark.asyncio
