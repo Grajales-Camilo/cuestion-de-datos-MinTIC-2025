@@ -551,6 +551,41 @@ def normalize_lookup_output_columns(
     return selection.model_copy(update={"dimension_column_indexes": dimensions, "metrics": ()})
 
 
+def normalize_lookup_filters(
+    selection: EnumeratedPlanSelection,
+    *,
+    question: str,
+    context: EnumeratedPlanningContext,
+) -> EnumeratedPlanSelection:
+    """Descarta filtros lookup no justificados por territorio, entidad o periodo."""
+
+    if selection.operation is not QueryOperation.LOOKUP or not context.candidates:
+        return selection
+    if _semantic_tokens(question).intersection({"presupuestal", "presupuesto"}):
+        return selection
+    allowed = {
+        "municipio",
+        "departamento",
+        "entidad",
+        "empresa",
+        "nombre",
+        "ano",
+        "anio",
+        "mes",
+    }
+    columns = context.candidates[selection.dataset_index].columns
+    filters = tuple(
+        item
+        for item in selection.filters
+        if item.column_index < len(columns)
+        and (
+            _semantic_tokens(columns[item.column_index].field_name).intersection(allowed)
+            or columns[item.column_index].field_name.startswith(("a_o", "ano", "anio"))
+        )
+    )
+    return selection.model_copy(update={"filters": filters})
+
+
 def materialize_query_plan(
     selection: EnumeratedPlanSelection,
     *,
