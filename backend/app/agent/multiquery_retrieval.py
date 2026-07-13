@@ -73,7 +73,7 @@ def _explicit_intent_boost(item: CatalogSearchItem, intent: IntentExtraction) ->
             for token in observed
         }
 
-    searchable = tokens(" ".join((item.name, *item.columns_preview)))
+    searchable = tokens(" ".join((item.name, *(item.columns_all or item.columns_preview))))
     explicit = tokens(
         " ".join(
             (
@@ -88,7 +88,14 @@ def _explicit_intent_boost(item: CatalogSearchItem, intent: IntentExtraction) ->
     if "volumen" in explicit:
         explicit.update({"tonelada"})
     overlap = len(searchable.intersection(explicit))
-    return min(1.0, overlap * 0.26)
+    structural = 0.0
+    if "sexo" in explicit:
+        gender_columns = searchable.intersection({"genero", "hombre", "mujer", "sexo"})
+        structural += 0.75 if len(gender_columns) >= 2 else 0.0
+    if "volumen" in explicit:
+        volume_columns = searchable.intersection({"tonelada", "limpieza", "residuo"})
+        structural += 0.50 if len(volume_columns) >= 2 else 0.0
+    return min(1.5, overlap * 0.26 + structural)
 
 
 async def retrieve_candidates_multiquery(

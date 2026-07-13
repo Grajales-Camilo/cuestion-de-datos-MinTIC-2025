@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
@@ -48,6 +48,7 @@ class CatalogSearchItem:
     metadata_synced_at: datetime
     index_stale: bool
     columns_preview: list[str]
+    columns_all: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -174,6 +175,7 @@ async def search_catalog(
             d.metadata_synced_at,
             d.metadata_synced_at < :stale_threshold AS index_stale,
             COALESCE(c.columns_preview, ARRAY[]::text[]) AS columns_preview,
+            COALESCE(c.columns_all, ARRAY[]::text[]) AS columns_all,
             CASE
                 WHEN :text_query = '' THEN 0
                 ELSE ts_rank_cd(
@@ -205,6 +207,11 @@ async def search_catalog(
                         LIMIT 5
                     ) column_subset
                 ) AS columns_preview,
+                (
+                    SELECT array_agg(field_name ORDER BY field_name)
+                    FROM catalog_columns
+                    WHERE dataset_id = d.id
+                ) AS columns_all,
                 (
                     SELECT string_agg(
                         concat_ws(' ', field_name, display_name, description),
@@ -255,6 +262,7 @@ async def search_catalog(
             metadata_synced_at=row.metadata_synced_at,
             index_stale=bool(row.index_stale),
             columns_preview=list(row.columns_preview or []),
+            columns_all=list(row.columns_all or []),
         )
         for row in rows
     ]

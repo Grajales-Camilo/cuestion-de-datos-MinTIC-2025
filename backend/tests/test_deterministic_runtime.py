@@ -275,7 +275,7 @@ async def test_runtime_retries_synthesis_with_orphan_figures() -> None:
         dependencies=_dependencies(invalid_synthesis_first=True),
     )
     assert result.status == "completed"
-    assert result.usage.llm_calls == 4
+    assert result.usage.llm_calls == 3
     assert result.synthesis is not None
     assert result.synthesis.answer == "Resultados calculados con la evidencia consultada: 42."
 

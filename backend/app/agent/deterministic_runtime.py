@@ -240,8 +240,7 @@ async def run_deterministic_agent(
     intent = await dependencies.extract_intent(question)
     intent = ground_intent_topic_in_question(intent, question)
     intent = normalize_aggregate_intent(intent, question)
-    # Extracción de intención + reranking enumerado de candidatos.
-    llm_calls = 2
+    llm_calls = 1
     retrieval = await dependencies.retrieve(intent)
     candidates = [
         CandidateProgress(dataset_index=index)

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -148,3 +149,29 @@ async def test_topic_token_boost_normalizes_plural_against_short_title() -> None
     result = await retrieve_candidates_multiquery(_intent(), searcher=searcher)
 
     assert result.candidates[0].item.dataset_id == "homicide"
+
+
+@pytest.mark.asyncio
+async def test_structural_gender_columns_outrank_generic_plant_dataset() -> None:
+    intent = IntentExtraction(
+        topic="¿Cómo está compuesta por sexo la planta de una entidad?",
+        operation=QueryOperation.LOOKUP,
+        administrative_terms=("sexo", "planta"),
+    )
+
+    generic = replace(
+        _item("plant-001", 0.90, name="Cantidad de empleos y tipos de planta"),
+        columns_preview=["no_total_planta"],
+    )
+    gender = replace(
+        _item("gender-1", 0.72, name="Caracterización del empleo público"),
+        columns_preview=["genero_hombre", "genero_mujer"],
+    )
+
+    async def structural_searcher(query: str, k: int) -> CatalogSearchSummary:
+        del query, k
+        return CatalogSearchSummary(query=intent.topic, results=[generic, gender])
+
+    result = await retrieve_candidates_multiquery(intent, searcher=structural_searcher)
+
+    assert result.candidates[0].item.dataset_id == "gender-1"
