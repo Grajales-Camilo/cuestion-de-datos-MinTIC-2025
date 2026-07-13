@@ -35,6 +35,7 @@ from app.agent.llm_contracts import (
     materialize_query_plan,
     normalize_aggregate_intent,
     normalize_budget_snapshot,
+    normalize_explicit_date_filter,
     normalize_intent_for_observed_schema,
     normalize_lookup_filters,
     normalize_lookup_output_columns,
@@ -441,6 +442,11 @@ async def run_deterministic_agent(
                 context=profile.context,
             )
             selection = normalize_lookup_filters(
+                selection,
+                question=question,
+                context=profile.context,
+            )
+            selection = normalize_explicit_date_filter(
                 selection,
                 question=question,
                 context=profile.context,

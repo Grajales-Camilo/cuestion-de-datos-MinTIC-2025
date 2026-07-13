@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import date, timedelta
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.agent.query_plan import (
     ColumnDataType,
+    ColumnOption,
     ColumnReference,
     DimensionSelection,
     EnumeratedPlanningContext,
@@ -184,6 +186,88 @@ def normalize_temporal_year_filters(
             )
         )
     return selection.model_copy(update={"filters": tuple(normalized)})
+
+
+_SPANISH_MONTHS = {
+    "enero": 1,
+    "febrero": 2,
+    "marzo": 3,
+    "abril": 4,
+    "mayo": 5,
+    "junio": 6,
+    "julio": 7,
+    "agosto": 8,
+    "septiembre": 9,
+    "octubre": 10,
+    "noviembre": 11,
+    "diciembre": 12,
+}
+
+
+def normalize_explicit_date_filter(
+    selection: EnumeratedPlanSelection,
+    *,
+    question: str,
+    context: EnumeratedPlanningContext,
+) -> EnumeratedPlanSelection:
+    """Materializa una fecha diaria explícita sobre la mejor columna temporal."""
+
+    if selection.dataset_index >= len(context.candidates):
+        return selection
+    normalized_question = _normalized_phrase(question)
+    month_pattern = "|".join(_SPANISH_MONTHS)
+    match = re.search(
+        rf"\b(\d{{1,2}})\s+de\s+({month_pattern})\s+de\s+(\d{{4}})\b",
+        normalized_question,
+    )
+    if match is None:
+        return selection
+    day, month_name, year = match.groups()
+    day_iso = f"{year}-{_SPANISH_MONTHS[month_name]:02d}-{int(day):02d}"
+    columns = context.candidates[selection.dataset_index].columns
+    temporal = [
+        column
+        for column in columns
+        if column.data_type in {ColumnDataType.DATE, ColumnDataType.DATETIME}
+    ]
+    temporal_indexes = {column.index for column in temporal}
+    if not temporal or any(
+        item.column_index in temporal_indexes for item in selection.filters
+    ):
+        return selection
+    question_words = _semantic_tokens(question)
+
+    def score(column: ColumnOption) -> tuple[int, int]:
+        tokens = _semantic_tokens(f"{column.field_name} {column.display_name}")
+        overlap = sum(
+            any(word == token or (len(word) >= 4 and word in token) for token in tokens)
+            for word in question_words
+        )
+        return overlap, -column.index
+
+    column = max(temporal, key=score)
+    next_day = (date.fromisoformat(day_iso) + timedelta(days=1)).isoformat()
+    value_type = (
+        ScalarType.DATE
+        if column.data_type is ColumnDataType.DATE
+        else ScalarType.DATETIME
+    )
+    suffix = "" if value_type is ScalarType.DATE else "T00:00:00"
+    date_filters = (
+        FilterChoice(
+            column_index=column.index,
+            operator=FilterOperator.GTE,
+            value_type=value_type,
+            values=(f"{day_iso}{suffix}",),
+        ),
+        FilterChoice(
+            column_index=column.index,
+            operator=FilterOperator.LT,
+            value_type=value_type,
+            values=(f"{next_day}{suffix}",),
+        ),
+    )
+    return selection.model_copy(update={"filters": (*selection.filters, *date_filters)})
 
 
 def normalize_system_owned_operation(
@@ -556,14 +640,24 @@ def normalize_lookup_output_columns(
         for column in columns
     }
     relevance = {
-        column.index: len(column_tokens[column.index].intersection(words))
+        column.index: sum(
+            any(
+                word == token or (len(word) >= 4 and word in token)
+                for token in column_tokens[column.index]
+            )
+            for word in words
+        )
         for column in columns
     }
     relevant_indexes: set[int] = set()
     for word in sorted(words):
         if len(word) < 4:
             continue
-        matching = [column.index for column in columns if word in column_tokens[column.index]]
+        matching = [
+            column.index
+            for column in columns
+            if any(word == token or word in token for token in column_tokens[column.index])
+        ]
         if not matching:
             continue
         best = max(relevance[index] for index in matching)

@@ -16,6 +16,7 @@ from app.agent.llm_contracts import (
     materialize_query_plan,
     normalize_aggregate_intent,
     normalize_budget_snapshot,
+    normalize_explicit_date_filter,
     normalize_lookup_filters,
     normalize_lookup_output_columns,
     normalize_ranked_aggregate,
@@ -167,6 +168,49 @@ def test_lookup_discards_ungrounded_filter_on_arbitrary_column() -> None:
     )
 
     assert normalized.filters == ()
+
+
+def test_explicit_spanish_date_becomes_datetime_day_range() -> None:
+    date_context = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="date-1234",
+                title="Observaciones",
+                publisher="IDEAM",
+                columns=(
+                    ColumnOption(
+                        index=0,
+                        field_name="codigoestacion",
+                        display_name="Código estación",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=1,
+                        field_name="fechaobservacion",
+                        display_name="Fecha observación",
+                        data_type=ColumnDataType.DATETIME,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                ),
+            ),
+        )
+    )
+    selection = EnumeratedPlanSelection(dataset_index=0, operation=QueryOperation.LOOKUP)
+
+    normalized = normalize_explicit_date_filter(
+        selection,
+        question="¿Qué estación registró una observación el 11 de febrero de 2019?",
+        context=date_context,
+    )
+
+    assert normalized.filters[0].column_index == 1
+    assert normalized.filters[0].operator is FilterOperator.GTE
+    assert normalized.filters[1].operator is FilterOperator.LT
+    assert normalized.filters[0].value_type is ScalarType.DATETIME
+    assert normalized.filters[0].values == ("2019-02-11T00:00:00",)
+    assert normalized.filters[1].values == ("2019-02-12T00:00:00",)
 
 
 def test_materialization_rejects_invented_column_index() -> None:
