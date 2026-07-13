@@ -252,6 +252,28 @@ async def test_runtime_abstains_when_retrieval_has_no_candidates() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "question",
+    (
+        "¿Cuántos estudiantes abandonarán exactamente la escuela en 2027?",
+        "¿Cuánta lluvia caerá exactamente mañana?",
+        "¿Qué bus llegará primero en los próximos cinco minutos?",
+        "¿Cuál es el nombre, edad y salario de cada servidor público?",
+        "¿Qué tratamiento médico debe recibir una persona según su síntoma?",
+    ),
+)
+async def test_runtime_abstains_early_for_unverifiable_or_sensitive_requests(
+    question: str,
+) -> None:
+    result = await run_deterministic_agent(question, dependencies=_dependencies())
+
+    assert result.status == "abstained"
+    assert result.usage.llm_calls == 0
+    assert result.retrieval.candidates == ()
+    assert [entry.node for entry in result.trace] == [SupervisorNode.ABSTAIN]
+
+
+@pytest.mark.asyncio
 async def test_runtime_enforces_llm_budget_before_planning() -> None:
     result = await run_deterministic_agent(
         "¿Cuál es el total?",

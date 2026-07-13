@@ -208,7 +208,7 @@ def build_real_runtime_dependencies(
             ColumnOption(
                 index=index,
                 field_name=row.field_name,
-                display_name=row.field_name.replace("_", " "),
+                display_name=row.display_name or row.field_name.replace("_", " "),
                 data_type=_column_type(row.data_type),
                 pii_risk_level=PiiRiskLevel(row.pii_risk_level),
             )

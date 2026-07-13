@@ -157,6 +157,7 @@ reviewed_dataset_columns:
     columns: [concesion, fecha_operacion, latitud_destino, latitud_origen, longitud_destino, longitud_origen, municipio_destino, municipio_origen, operador, peso, producto, red, tipo_carga, vagones_carga, vagones_pasajeros]
   84tn-nnhf:
     risk_level: low
+    override_medium: true
     source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
     reason: "Infraestructura institucional de disposición final"
     columns: [capacidad_diseno_m3, estado_del_sitio_de_disposici, fecha_aplicaci_n_metodologia, fecha_de_certificaci_n, fecha_estado, fecha_inicio_operaci_n, fecha_vida_util, id_empresa, nombre_del_sitio_disposici, nombre_empresa, nusd, tipo_sitio_de_disposici_n]
@@ -172,6 +173,7 @@ reviewed_dataset_columns:
     columns: [aptitud, area_ha, consecutiv, gridcode, the_geom]
   bz43-8ahq:
     risk_level: low
+    override_medium: true
     source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
     reason: "Conteos territoriales agregados de delitos; sexo conserva riesgo medium"
     columns: [cod_depto, cod_muni, fecha_hecho, zona]
@@ -272,6 +274,7 @@ reviewed_dataset_columns:
     columns: [apropiaci_n_vigente, codigo_del_sector, codigo_entidad, compromisos, fuente_de_financiaci_n, nombre_del_sector, nombre_entidad, obligaciones, pagos, recurso_presupuestal, situacion_de_fondos]
   y97c-tfd9:
     risk_level: low
+    override_medium: true
     source: "https://www.datos.gov.co/api/v3/views/fn2v-r4gu/query.json"
     reason: "Infraestructura institucional de aprovechamiento de residuos"
     columns: [autorizaci_n_ambiental, capacidad_de_almacenamiento, capacidad_de_almacenamiento_1, capacidad_de_operacion, estado_nueca, fecha_de_certificaci_n, fecha_estado, fecha_inicio_de_operaci_n, id_de_la_empresa, nombre_de_la_eca, nombre_empresa, nueca, suelo_compatible]
@@ -303,6 +306,7 @@ reviewed_dataset_columns:
     columns: [c_digo_sigep, nombre_de_la_entidad, nit, orden, suborden, regi_n_pnd, c_digo_divipola_departamento, departamento, c_digo_divipola_municipio, municipio, clasificaci_n_org_nica, sector, nivel, tipo_de_vinculaci_n, naturaleza_jur_dica, longitud, latitud, a_o, mes, fuente, genero_hombre, genero_mujer, genero_no_binario, nivel_educativo_primaria, nivel_educativo_secundaria, nivel_educativo_t_cnica_tecnol, nivel_educativo_profesional, nivel_educativo_especializaci, nivel_educativo_maestr_a, nivel_educativo_doctorado, nivel_educativo_sin_datos, edad_menor_o_igual_a_29, edad_30_39, edad_40_49, edad_50_62, edad_63_y_mas, experiencia_laboral_menor, experiencia_laboral_de_1, experiencia_laboral_de_11, experiencia_laboral_de_21, experiencia_laboral_de_31, experiencia_laboral_mayor, experiencia_laboral_sin_datos, salario_mensual_promedio]
   ji8i-4anb:
     risk_level: low
+    override_medium: true
     source: "https://www.datos.gov.co/api/views/ji8i-4anb"
     reason: "Indicadores educativos agregados por departamento y año; no contiene registros de estudiantes."
     columns: [ano, aprobacion, aprobacion_media, aprobacion_primaria, aprobacion_secundaria, aprobacion_transicion, c_digo_departamento, cobertura_bruta, cobertura_bruta_media, cobertura_bruta_primaria, cobertura_bruta_secundaria, cobertura_bruta_transicion, cobertura_neta, cobertura_neta_media, cobertura_neta_primaria, cobertura_neta_secundaria, cobertura_neta_transicion, departamento, desercion, desercion_media, desercion_primaria, desercion_secundaria, desercion_transicion, poblacion_5_16, repitencia, repitencia_media, repitencia_primaria, repitencia_secundaria, repitencia_transicion, reprobacion, reprobacion_media, reprobacion_primaria, reprobacion_secundaria, reprobacion_transicion, sedes_conectadas_a_internet, tamano_promedio_grupo, tasa_matriculacion_5_16]

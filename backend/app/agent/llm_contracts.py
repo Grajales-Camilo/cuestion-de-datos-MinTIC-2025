@@ -529,6 +529,11 @@ def normalize_lookup_output_columns(
         "departamento",
         "entidad",
         "empresa",
+        "nombre",
+        "codigo",
+        "fecha",
+        "estacion",
+        "terminal",
         "ano",
         "anio",
         "mes",
@@ -537,23 +542,45 @@ def normalize_lookup_output_columns(
     filter_indexes = tuple(
         item.column_index for item in selection.filters if item.column_index < len(columns)
     )
-    relevance = {
-        column.index: len(_semantic_tokens(column.field_name).intersection(words))
+    column_tokens = {
+        column.index: _semantic_tokens(f"{column.field_name} {column.display_name}")
         for column in columns
     }
-    max_relevance = max(relevance.values(), default=0)
-    relevant = tuple(
-        column.index
+    relevance = {
+        column.index: len(column_tokens[column.index].intersection(words))
         for column in columns
-        if max_relevance > 0 and relevance[column.index] == max_relevance
-    )
+    }
+    relevant_indexes: list[int] = []
+    for word in words:
+        if len(word) < 4:
+            continue
+        matching = [column.index for column in columns if word in column_tokens[column.index]]
+        if not matching:
+            continue
+        best = max(relevance[index] for index in matching)
+        relevant_indexes.extend(index for index in matching if relevance[index] == best)
+    relevant = tuple(dict.fromkeys(relevant_indexes))
     identifiers = tuple(
         column.index
         for column in columns
-        if _semantic_tokens(column.field_name).intersection(context_tokens)
+        if column_tokens[column.index].intersection(context_tokens)
         or column.field_name.startswith(("a_o", "ano", "anio"))
     )
-    dimensions = tuple(dict.fromkeys((*filter_indexes, *relevant, *identifiers)))[:8]
+    proposed = tuple(
+        index
+        for index in selection.dimension_column_indexes
+        if index < len(columns) and (relevance[index] == 0 or index in relevant)
+    )
+    dimensions = tuple(
+        dict.fromkeys(
+            (
+                *filter_indexes,
+                *relevant,
+                *identifiers,
+                *proposed,
+            )
+        )
+    )[:8]
     if not dimensions:
         return selection
     update: dict[str, object] = {"dimension_column_indexes": dimensions, "metrics": ()}

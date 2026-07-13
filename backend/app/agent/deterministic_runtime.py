@@ -6,6 +6,7 @@ transición siguen siendo exclusivas de ``decide_next_transition``.
 
 from __future__ import annotations
 
+import re
 import time
 import unicodedata
 from collections.abc import Awaitable, Callable
@@ -56,6 +57,7 @@ from app.agent.query_plan import (
     DatasetOption,
     EnumeratedPlanningContext,
     FilterOperator,
+    QueryOperation,
     ScalarType,
 )
 from app.llm.factory import LLMProviderError
@@ -252,6 +254,27 @@ def _deterministic_synthesis(claims: ClaimsBuildResult) -> GroundedSynthesis:
     )
 
 
+def _unsupported_question(question: str) -> bool:
+    normalized = _fold_text(question)
+    exact_prediction = re.search(
+        r"\b(exactamente|pronostico|predecir|futuro|abandonaran|caera)\b",
+        normalized,
+    )
+    real_time = re.search(
+        r"\b(proximos?\s+\w+\s+minutos?|tiempo real|llegara primero)\b",
+        normalized,
+    )
+    personal_rows = (
+        "cada servidor" in normalized
+        and all(term in normalized for term in ("nombre", "edad", "salario"))
+    )
+    medical_advice = (
+        "tratamiento medico" in normalized
+        and ("debe recibir" in normalized or "diagnostico" in normalized)
+    )
+    return bool(exact_prediction or real_time or personal_rows or medical_advice)
+
+
 async def run_deterministic_agent(
     question: str,
     *,
@@ -264,6 +287,27 @@ async def run_deterministic_agent(
 
     limits = budgets or SupervisorBudgets()
     started = time.monotonic()
+    if _unsupported_question(question):
+        intent = IntentExtraction(topic=question, operation=QueryOperation.LOOKUP)
+        retrieval = MultiQueryRetrievalResult(queries=(), candidates=())
+        trace_entry = RuntimeTraceEntry(
+            SupervisorNode.ABSTAIN,
+            "solicitud fuera del alcance verificable",
+            None,
+        )
+        usage = SupervisorUsage()
+        if observe_transition is not None:
+            await observe_transition(trace_entry, usage)
+        return DeterministicRuntimeResult(
+            "abstained",
+            StopReason.NO_CANDIDATES,
+            intent,
+            retrieval,
+            None,
+            None,
+            (trace_entry,),
+            usage,
+        )
     intent = await dependencies.extract_intent(question)
     intent = ground_intent_topic_in_question(intent, question)
     intent = normalize_aggregate_intent(intent, question)

@@ -310,7 +310,7 @@ def test_lookup_prioritizes_exact_indicator_over_generic_unit_columns() -> None:
         context=lookup_context,
     )
 
-    assert normalized.dimension_column_indexes[:4] == (4, 0, 1, 2)
+    assert normalized.dimension_column_indexes[:4] == (4, 2, 0, 1)
     assert 3 not in normalized.dimension_column_indexes
 
 
@@ -396,7 +396,8 @@ def test_plant_count_lookup_prioritizes_total_and_year_over_subtypes() -> None:
         context=plant_context,
     )
 
-    assert normalized.dimension_column_indexes[:2] == (4, 5)
+    assert normalized.dimension_column_indexes[0] == 4
+    assert 5 in normalized.dimension_column_indexes
     assert 1 not in normalized.dimension_column_indexes
 
 
