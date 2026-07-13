@@ -21,6 +21,7 @@ from app.agent.query_plan import (
     SortSelection,
     SortTargetKind,
 )
+from app.quality.claims import BuiltClaim, find_orphan_figures
 
 
 class _LLMOutput(BaseModel):
@@ -100,6 +101,19 @@ class EnumeratedPlanSelection(_LLMOutput):
     needs_value_exploration: bool = False
 
 
+class GroundedSynthesis(_LLMOutput):
+    answer: str = Field(min_length=1, max_length=8_000)
+    cited_claim_indexes: tuple[int, ...] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _unique_claims(self) -> GroundedSynthesis:
+        if len(set(self.cited_claim_indexes)) != len(self.cited_claim_indexes):
+            raise ValueError("cited_claim_indexes no admite duplicados")
+        if any(index < 0 for index in self.cited_claim_indexes):
+            raise ValueError("los índices de claims deben ser no negativos")
+        return self
+
+
 def validate_candidate_ranking(
     ranking: CandidateRanking, context: EnumeratedPlanningContext
 ) -> None:
@@ -107,6 +121,19 @@ def validate_candidate_ranking(
     invalid = [index for index in ranking.ranked_candidate_indexes if index >= available]
     if invalid:
         raise ValueError(f"ranking contiene índices inexistentes: {invalid}")
+
+
+def validate_grounded_synthesis(
+    synthesis: GroundedSynthesis,
+    claims: tuple[BuiltClaim, ...],
+) -> None:
+    invalid = [index for index in synthesis.cited_claim_indexes if index >= len(claims)]
+    if invalid:
+        raise ValueError(f"síntesis cita claims inexistentes: {invalid}")
+    accepted = tuple(claims[index].display_value for index in synthesis.cited_claim_indexes)
+    orphan_figures = find_orphan_figures(synthesis.answer, accepted)
+    if orphan_figures:
+        raise ValueError(f"síntesis contiene cifras huérfanas: {orphan_figures}")
 
 
 def materialize_query_plan(

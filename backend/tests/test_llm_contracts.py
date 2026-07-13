@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
@@ -7,10 +8,12 @@ from app.agent.llm_contracts import (
     CandidateRanking,
     EnumeratedPlanSelection,
     FilterChoice,
+    GroundedSynthesis,
     IntentExtraction,
     MetricChoice,
     materialize_query_plan,
     validate_candidate_ranking,
+    validate_grounded_synthesis,
 )
 from app.agent.query_plan import (
     ColumnDataType,
@@ -23,6 +26,7 @@ from app.agent.query_plan import (
     ScalarType,
     SelectionOrigin,
 )
+from app.quality.claims import BuiltClaim
 
 
 def context() -> EnumeratedPlanningContext:
@@ -135,3 +139,37 @@ def test_count_cannot_choose_a_column_and_lookup_is_not_a_metric() -> None:
         MetricChoice(operation=QueryOperation.COUNT, column_index=1)
     with pytest.raises(ValidationError, match="lookup"):
         MetricChoice(operation=QueryOperation.LOOKUP, column_index=1)
+
+
+def _claim(display_value: str = "66.723") -> BuiltClaim:
+    return BuiltClaim(
+        claim_type="direct",
+        description="Total",
+        raw_value=Decimal("66723"),
+        display_value=display_value,
+        unit=None,
+        rounding=0,
+        formula=None,
+        source_row_indexes=(0,),
+        columns_used=("metric_0",),
+        source_hash="sha256:test",
+    )
+
+
+def test_grounded_synthesis_accepts_only_existing_claims_and_supported_figures() -> None:
+    synthesis = GroundedSynthesis(
+        answer="El total observado fue 66.723.",
+        cited_claim_indexes=(0,),
+    )
+    validate_grounded_synthesis(synthesis, (_claim(),))
+
+    with pytest.raises(ValueError, match="inexistentes"):
+        validate_grounded_synthesis(
+            GroundedSynthesis(answer="Resultado disponible.", cited_claim_indexes=(1,)),
+            (_claim(),),
+        )
+    with pytest.raises(ValueError, match="huérfanas"):
+        validate_grounded_synthesis(
+            GroundedSynthesis(answer="El total fue 99.999.", cited_claim_indexes=(0,)),
+            (_claim(),),
+        )
