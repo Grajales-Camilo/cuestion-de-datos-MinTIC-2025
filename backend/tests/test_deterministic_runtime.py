@@ -138,7 +138,8 @@ def _dependencies(
         return _intent()
 
     async def retrieve(intent: IntentExtraction) -> MultiQueryRetrievalResult:
-        assert intent == _intent()
+        assert intent.operation is QueryOperation.SUM
+        assert intent.topic.startswith("¿Cuál es el total")
         return MultiQueryRetrievalResult(
             queries=("casos",),
             candidates=tuple(_candidate(f"abcd-123{index}") for index in range(candidates)),

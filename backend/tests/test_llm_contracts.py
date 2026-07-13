@@ -12,6 +12,7 @@ from app.agent.llm_contracts import (
     IntentExtraction,
     MetricChoice,
     SortChoice,
+    ground_intent_topic_in_question,
     materialize_query_plan,
     normalize_aggregate_intent,
     normalize_budget_snapshot,
@@ -317,6 +318,17 @@ def test_cumulative_ranking_normalizes_intent_to_sum() -> None:
     )
 
     assert normalized.operation is QueryOperation.SUM
+
+
+def test_intent_topic_preserves_literal_user_question_for_retrieval() -> None:
+    proposed = intent().model_copy(update={"topic": "seguridad ciudadana"})
+
+    normalized = ground_intent_topic_in_question(
+        proposed,
+        "¿Qué departamento concentra más homicidios reportados?",
+    )
+
+    assert "homicidios" in normalized.topic
 
 
 def test_budget_snapshot_is_not_summed_across_periods() -> None:

@@ -289,6 +289,18 @@ def normalize_aggregate_intent(intent: IntentExtraction, question: str) -> Inten
     return intent
 
 
+def ground_intent_topic_in_question(
+    intent: IntentExtraction,
+    question: str,
+) -> IntentExtraction:
+    """Impide que un resumen del LLM borre términos literales de recuperación."""
+
+    topic = " ".join(question.split()).strip()
+    if not topic:
+        return intent
+    return intent.model_copy(update={"topic": topic[:300]})
+
+
 def normalize_budget_snapshot(
     selection: EnumeratedPlanSelection,
     *,
