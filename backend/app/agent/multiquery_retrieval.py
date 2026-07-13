@@ -73,7 +73,7 @@ def _explicit_intent_boost(item: CatalogSearchItem, intent: IntentExtraction) ->
             for token in observed
         }
 
-    name = tokens(item.name)
+    searchable = tokens(" ".join((item.name, *item.columns_preview)))
     explicit = tokens(
         " ".join(
             (
@@ -83,7 +83,11 @@ def _explicit_intent_boost(item: CatalogSearchItem, intent: IntentExtraction) ->
             )
         )
     )
-    overlap = len(name.intersection(explicit))
+    if "sexo" in explicit:
+        explicit.update({"genero", "hombre", "mujer"})
+    if "volumen" in explicit:
+        explicit.update({"tonelada"})
+    overlap = len(searchable.intersection(explicit))
     return min(1.0, overlap * 0.26)
 
 

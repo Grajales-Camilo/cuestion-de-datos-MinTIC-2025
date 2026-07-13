@@ -82,7 +82,7 @@ def _model[T: BaseModel](settings: Settings, schema: type[T]) -> Runnable:
         include_raw=True,
         temperature=0,
         timeout=30,
-        max_retries=1,
+        max_retries=2,
     )
 
 
