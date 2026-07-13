@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PostgresScheme = Literal["postgresql", "postgres"]
 LLMProvider = Literal["google", "anthropic"]
+AgentRuntime = Literal["deterministic", "legacy"]
 
 
 class Settings(BaseSettings):
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
     socrata_app_token: SecretStr | None = Field(default=None, alias="SOCRATA_APP_TOKEN")
     llm_provider: LLMProvider = Field(default="google", alias="LLM_PROVIDER")
     llm_model: str = Field(default="gemini-2.5-flash", alias="LLM_MODEL")
+    agent_runtime: AgentRuntime = Field(default="deterministic", alias="AGENT_RUNTIME")
     embedding_model: str | None = Field(default=None, alias="EMBEDDING_MODEL")
     # research.md §19 (2026-07-12): el camino feliz sin errores consume
     # exactamente 10 pasos, dejando 0 margen para el retry de claim_builder

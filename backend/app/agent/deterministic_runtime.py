@@ -72,6 +72,10 @@ class DeterministicRuntimeResult:
     usage: SupervisorUsage
 
 
+class DeterministicRunCancelled(RuntimeError):
+    pass
+
+
 IntentExtractor = Callable[[str], Awaitable[IntentExtraction]]
 Retriever = Callable[[IntentExtraction], Awaitable[MultiQueryRetrievalResult]]
 Profiler = Callable[[str], Awaitable[ProfiledCandidate]]
@@ -104,6 +108,7 @@ async def run_deterministic_agent(
     *,
     dependencies: DeterministicRuntimeDependencies,
     budgets: SupervisorBudgets | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> DeterministicRuntimeResult:
     """Ejecuta el ciclo completo sin permitir que el LLM elija transiciones."""
 
@@ -127,6 +132,8 @@ async def run_deterministic_agent(
     trace: list[RuntimeTraceEntry] = []
 
     while True:
+        if is_cancelled is not None and is_cancelled():
+            raise DeterministicRunCancelled("corrida cancelada")
         elapsed_ms = round((time.monotonic() - started) * 1000)
         snapshot = SupervisorSnapshot(
             candidates=tuple(candidates),
@@ -223,6 +230,13 @@ async def run_deterministic_agent(
                 validation_error = exc
                 validated = None
                 repairs += 1
+            except ValueError as exc:
+                validation_error = PlanValidationError(
+                    PlanValidationCode.UNKNOWN_REFERENCE,
+                    str(exc),
+                )
+                validated = None
+                repairs += 1
             continue
         if transition.node is SupervisorNode.EXPLORE_VALUE:
             # La selección restringida debe pedir una nueva planificación tras
@@ -254,7 +268,11 @@ async def run_deterministic_agent(
             assert execution is not None
             synthesis = await dependencies.synthesize(intent, execution.claims)
             llm_calls += 1
-            validate_grounded_synthesis(synthesis, execution.claims.claims)
+            try:
+                validate_grounded_synthesis(synthesis, execution.claims.claims)
+            except ValueError:
+                synthesis = None
+                continue
             assert current is not None
             _replace_status(candidates, current, CandidateStatus.ACCEPTED)
             continue

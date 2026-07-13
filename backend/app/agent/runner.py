@@ -32,6 +32,16 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from app.agent.deterministic_dependencies import (
+    RuntimeLLMUsage,
+    build_real_runtime_dependencies,
+)
+from app.agent.deterministic_graph import SupervisorBudgets
+from app.agent.deterministic_pipeline import persist_deterministic_execution
+from app.agent.deterministic_runtime import (
+    DeterministicRunCancelled,
+    run_deterministic_agent,
+)
 from app.agent.durability import get_run, touch_run_heartbeat, write_terminal_event_once
 from app.agent.graph import (
     ClaimPlannerOutput,
@@ -42,7 +52,10 @@ from app.agent.graph import (
     build_graph,
     initial_state,
 )
-from app.agent.persistence import persist_final_answer
+from app.agent.persistence import (
+    load_dataset_evidence_metadata,
+    persist_final_answer,
+)
 from app.agent.toy_graph import NODES, build_toy_graph
 from app.config import Settings
 from app.db.engine import create_app_async_engine
@@ -308,7 +321,177 @@ def _usage_totals(state: dict) -> tuple[int, int, float]:
     )
 
 
+async def execute_deterministic_agent_run_async(
+    settings: Settings,
+    run_id: uuid.UUID,
+    cancel_event: threading.Event | None = None,
+) -> dict:
+    """Ejecuta el runtime v2; nunca cae automáticamente al grafo legado."""
+
+    cancel_event = cancel_event or threading.Event()
+    engine = create_app_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
+    started = time.monotonic()
+    try:
+        run = await get_run(engine, run_id)
+        if run is None:
+            raise LookupError(f"run_id={run_id} no existe")
+        if settings.embedding_model is None:
+            raise LLMConfigurationError("EMBEDDING_MODEL es obligatorio para buscar catálogo")
+        embedding_client = GoogleGenerativeAIEmbeddings(
+            model=settings.embedding_model,
+            google_api_key=_secret_value(settings.google_api_key),
+        )
+        async with httpx.AsyncClient(base_url=SOCRATA_RESOURCE_BASE_URL) as http_client:
+            llm_usage = RuntimeLLMUsage()
+            dependencies = build_real_runtime_dependencies(
+                settings=settings,
+                engine=engine,
+                http_client=http_client,
+                embedding_client=embedding_client,
+                usage=llm_usage,
+            )
+            result = await run_deterministic_agent(
+                run.question,
+                dependencies=dependencies,
+                budgets=SupervisorBudgets(
+                    max_candidates=5,
+                    max_explorations=4,
+                    max_queries=4,
+                    max_plan_repairs=2,
+                    max_llm_calls=6,
+                    max_duration_ms=settings.run_max_duration_s * 1000,
+                ),
+                is_cancelled=cancel_event.is_set,
+            )
+        await touch_run_heartbeat(engine, run_id)
+        latency_ms = round((time.monotonic() - started) * 1000)
+        evidence: list[dict] = []
+        claims: list[dict] = []
+        if result.status == "completed":
+            assert result.execution is not None
+            assert result.synthesis is not None
+            metadata = await load_dataset_evidence_metadata(
+                engine,
+                result.execution.rendered_query.dataset_id,
+            )
+            if metadata is None:
+                raise LookupError("el dataset ejecutado desapareció antes de persistir")
+            persisted = await persist_deterministic_execution(
+                result.execution,
+                engine=engine,
+                run_id=run_id,
+                official_publisher_id=metadata.official_publisher_id,
+            )
+            evidence = [persisted.evidence]
+            claims = list(persisted.claims)
+
+        final_answer = {
+            "run_id": str(run_id),
+            "status": "completed" if result.status == "completed" else "no_evidence",
+            "intention": result.intent.model_dump(mode="json"),
+            "summary": (
+                result.synthesis.answer
+                if result.synthesis is not None
+                else "No encontré evidencia elegible suficiente para responder."
+            ),
+            "narrative": result.synthesis.answer if result.synthesis is not None else None,
+            "evidence": evidence,
+            "claims": claims,
+            "no_evidence_report": (
+                None
+                if result.status == "completed"
+                else {
+                    "reason": result.stop_reason.value if result.stop_reason else "NO_EVIDENCE",
+                    "suggestions": [
+                        "Reformular la pregunta con tema, territorio o periodo explícitos."
+                    ],
+                    "datasets_reviewed": [],
+                    "external_sources": [],
+                }
+            ),
+            "usage": {
+                "steps_used": len(result.trace),
+                "input_tokens": llm_usage.input_tokens,
+                "output_tokens": llm_usage.output_tokens,
+                "estimated_cost_usd": llm_usage.estimated_cost_usd,
+                "latency_ms": latency_ms,
+                "termination_reason": (
+                    result.stop_reason.value if result.stop_reason is not None else None
+                ),
+            },
+        }
+        await persist_final_answer(
+            engine,
+            run_id,
+            final_answer,
+            latency_ms=latency_ms,
+            llm_provider=settings.llm_provider,
+            llm_model=settings.llm_model,
+            input_tokens=llm_usage.input_tokens,
+            output_tokens=llm_usage.output_tokens,
+            estimated_cost_usd=llm_usage.estimated_cost_usd,
+        )
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status=final_answer["status"],
+            error_code=None,
+            payload=final_answer,
+        )
+        return {"final_answer": final_answer, "runtime": "deterministic"}
+    except DeterministicRunCancelled:
+        return {}
+    except (LLMProviderError, LLMConfigurationError) as exc:
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code="LLM_PROVIDER_ERROR",
+                status="failed",
+                message_user="El servicio de inteligencia artificial no está disponible.",
+                message_dev=str(exc),
+                retryable=False,
+            )
+        ).model_dump()
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status="failed",
+            error_code="LLM_PROVIDER_ERROR",
+            payload=payload,
+        )
+        return {"terminal_error": payload, "runtime": "deterministic"}
+    except Exception as exc:
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code="INTERNAL",
+                status="failed",
+                message_user="Ocurrió un error inesperado durante la investigación.",
+                message_dev=str(exc),
+                retryable=False,
+            )
+        ).model_dump()
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status="failed",
+            error_code="INTERNAL",
+            payload=payload,
+        )
+        return {"terminal_error": payload, "runtime": "deterministic"}
+    finally:
+        await engine.dispose()
+
+
 async def execute_agent_run_async(
+    settings: Settings,
+    run_id: uuid.UUID,
+    cancel_event: threading.Event | None = None,
+) -> dict:
+    if settings.agent_runtime == "legacy":
+        return await execute_legacy_agent_run_async(settings, run_id, cancel_event)
+    return await execute_deterministic_agent_run_async(settings, run_id, cancel_event)
+
+
+async def execute_legacy_agent_run_async(
     settings: Settings,
     run_id: uuid.UUID,
     cancel_event: threading.Event | None = None,

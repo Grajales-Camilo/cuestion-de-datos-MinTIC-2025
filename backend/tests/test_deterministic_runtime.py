@@ -104,8 +104,16 @@ def _execution() -> DeterministicExecutionResult:
     )
 
 
-def _dependencies(*, candidates: int = 1, fail_first: bool = False):
+def _dependencies(
+    *,
+    candidates: int = 1,
+    fail_first: bool = False,
+    invalid_plan_first: bool = False,
+    invalid_synthesis_first: bool = False,
+):
     executions = 0
+    plans = 0
+    syntheses = 0
 
     async def extract(question: str) -> IntentExtraction:
         assert question
@@ -122,11 +130,18 @@ def _dependencies(*, candidates: int = 1, fail_first: bool = False):
         return _profile(dataset_id)
 
     async def plan(intent, context, error):
+        nonlocal plans
         del intent, context, error
+        plans += 1
         return EnumeratedPlanSelection(
             dataset_index=0,
             operation=QueryOperation.SUM,
-            metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=0),),
+            metrics=(
+                MetricChoice(
+                    operation=QueryOperation.SUM,
+                    column_index=99 if invalid_plan_first and plans == 1 else 0,
+                ),
+            ),
         )
 
     async def execute(validated) -> DeterministicExecutionResult:
@@ -138,8 +153,15 @@ def _dependencies(*, candidates: int = 1, fail_first: bool = False):
         return _execution()
 
     async def synthesize(intent, claims) -> GroundedSynthesis:
+        nonlocal syntheses
         del intent, claims
-        return GroundedSynthesis(answer="El total observado fue 42.", cited_claim_indexes=(0,))
+        syntheses += 1
+        answer = (
+            "El total observado fue 999."
+            if invalid_synthesis_first and syntheses == 1
+            else "El total observado fue 42."
+        )
+        return GroundedSynthesis(answer=answer, cited_claim_indexes=(0,))
 
     return DeterministicRuntimeDependencies(extract, retrieve, profile, plan, execute, synthesize)
 
@@ -190,3 +212,23 @@ async def test_runtime_enforces_llm_budget_before_planning() -> None:
     )
     assert result.status == "abstained"
     assert result.stop_reason is StopReason.LLM_BUDGET_EXCEEDED
+
+
+@pytest.mark.asyncio
+async def test_runtime_repairs_invented_indexes_within_bounded_budget() -> None:
+    result = await run_deterministic_agent(
+        "¿Cuál es el total?",
+        dependencies=_dependencies(invalid_plan_first=True),
+    )
+    assert result.status == "completed"
+    assert result.usage.plan_repairs == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_retries_synthesis_with_orphan_figures() -> None:
+    result = await run_deterministic_agent(
+        "¿Cuál es el total?",
+        dependencies=_dependencies(invalid_synthesis_first=True),
+    )
+    assert result.status == "completed"
+    assert result.usage.llm_calls == 4

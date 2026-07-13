@@ -45,6 +45,11 @@ def test_embedding_model_can_be_pending_before_t205() -> None:
     assert loaded.embedding_model is None
 
 
+def test_deterministic_runtime_is_default_and_legacy_requires_explicit_opt_in() -> None:
+    assert settings().agent_runtime == "deterministic"
+    assert settings(AGENT_RUNTIME="legacy").agent_runtime == "legacy"
+
+
 def test_cors_rejects_wildcards() -> None:
     with pytest.raises(ValidationError):
         settings(CORS_ALLOWED_ORIGINS="http://localhost:3000,*")
