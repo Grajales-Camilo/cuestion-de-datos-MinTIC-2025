@@ -26,6 +26,16 @@ from eval.loader import default_suite_path, load_golden_suite
 from eval.metrics import CaseAssessment, assess_case, recall_hit_at_10
 from eval.persistence import PersistedGoldenSuite, sync_golden_suite
 
+# Hallazgo (2026-07-12, diagnostico real): main() siempre devolvia 0 tras
+# una corrida sin excepciones, sin comparar success_rate contra el umbral de
+# RNF-002 (>= 80%) -- un 0/8 real (backend/eval/reports/994e0730-...) salia
+# como "exito" para cualquier automatizacion que solo mirara el exit code.
+# El propio runner ahora traduce el umbral a exit code no-cero; la decision
+# de si eso bloquea un release o solo abre una alerta semanal (Art. IV.2)
+# es responsabilidad del workflow de CI que invoca este script, no de este
+# modulo.
+SUCCESS_RATE_THRESHOLD = 0.80
+
 
 def _git_commit() -> str:
     result = subprocess.run(
@@ -171,6 +181,12 @@ def _write_report(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+@dataclasses.dataclass(frozen=True)
+class RunSuiteResult:
+    report_path: Path
+    success_rate: float | None
+
+
 async def run_suite(
     *,
     suite_name: str,
@@ -178,7 +194,7 @@ async def run_suite(
     model: str | None,
     seed: int,
     limit: int | None,
-) -> Path:
+) -> RunSuiteResult:
     settings = get_settings()
     if not settings.eval_mode:
         raise RuntimeError("EVAL_MODE=true es obligatorio para ejecutar una evaluación.")
@@ -257,7 +273,9 @@ async def run_suite(
         await _finalize_eval_record(engine, record_id=record.id, results=results)
         report_path = Path("eval/reports") / f"{record.id}.md"
         _write_report(report_path, record=record, results=results)
-        return report_path
+        passed = sum(assessment.passed for _, assessment in results)
+        success_rate = passed / len(results) if results else None
+        return RunSuiteResult(report_path=report_path, success_rate=success_rate)
     finally:
         if worker_id is not None:
             await mark_worker_shutdown(engine, worker_id)
@@ -277,13 +295,29 @@ def main() -> int:
     kwargs = vars(args)
     try:
         if sys.platform == "win32":
-            report = asyncio.run(run_suite(**kwargs), loop_factory=asyncio.SelectorEventLoop)
+            result = asyncio.run(run_suite(**kwargs), loop_factory=asyncio.SelectorEventLoop)
         else:
-            report = asyncio.run(run_suite(**kwargs))
+            result = asyncio.run(run_suite(**kwargs))
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    print(json.dumps({"report": str(report)}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {"report": str(result.report_path), "success_rate": result.success_rate},
+            ensure_ascii=False,
+        )
+    )
+    # RNF-002: success_rate < 80% es una corrida fallida a efectos de puerta
+    # de CI, aunque el proceso haya corrido sin excepciones (exit 0 antes de
+    # este hallazgo hacia indistinguible un 0/8 real de una corrida exitosa
+    # para cualquier automatizacion que solo mirara el exit code).
+    if result.success_rate is not None and result.success_rate < SUCCESS_RATE_THRESHOLD:
+        print(
+            f"success_rate {result.success_rate:.1%} por debajo del umbral "
+            f"{SUCCESS_RATE_THRESHOLD:.0%} (RNF-002).",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 

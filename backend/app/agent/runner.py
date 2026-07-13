@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.agent.durability import get_run, touch_run_heartbeat, write_terminal_event_once
 from app.agent.graph import (
+    ClaimPlannerOutput,
     GraphDependencies,
     PlannerOutput,
     RouterOutput,
@@ -364,6 +365,7 @@ async def execute_agent_run_async(
                 planner_model=_structured_model(settings, PlannerOutput),
                 router_model=_structured_model(settings, RouterOutput),
                 synthesizer_model=_structured_model(settings, SynthesisOutput),
+                claim_model=_structured_model(settings, ClaimPlannerOutput),
                 tools={
                     "buscar_catalogo": call_buscar,
                     "perfilar_dataset": call_perfilar,

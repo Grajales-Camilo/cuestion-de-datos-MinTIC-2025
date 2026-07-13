@@ -5,13 +5,17 @@ from app.config import Settings
 
 
 def settings(**overrides: object) -> Settings:
+    """`_env_file=None` aísla la prueba del `.env` local real (mismo hallazgo
+    del agente evaluador que en `test_llm_factory.py::settings`; ver ese
+    docstring para el detalle) -- aquí ningún test actual depende todavía de
+    una clave de proveedor, pero es la misma clase de bug latente."""
     values = {
         "DATABASE_URL": "postgresql://usuario:clave@localhost:5432/cuestion_de_datos",
         "SOCRATA_APP_TOKEN": "token-local",
         "RETENTION_HASH_SALT": "replace-with-local-development-salt-32-bytes",
     }
     values.update(overrides)
-    return Settings(**values)
+    return Settings(_env_file=None, **values)
 
 
 def test_database_url_normalization_for_sqlalchemy_and_psycopg() -> None:

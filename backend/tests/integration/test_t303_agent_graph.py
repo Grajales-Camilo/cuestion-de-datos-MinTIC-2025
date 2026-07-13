@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agent.durability import write_terminal_event_once
 from app.agent.graph import (
+    ClaimPlannerOutput,
     GraphDependencies,
     PlannerOutput,
     RouterOutput,
@@ -99,6 +100,32 @@ class IntegrationSynthesizer:
         )
 
 
+class IntegrationClaimPlanner:
+    async def ainvoke(self, messages, **_kwargs):
+        payload = json.loads(messages[-1].content)
+        evidence_id = payload["evidences"][0]["evidence_id"]
+        return ClaimPlannerOutput.model_validate(
+            {
+                "reasoning_summary": "La evidencia contiene una cifra directa",
+                "claim_specs_by_evidence": [
+                    {
+                        "evidence_id": evidence_id,
+                        "claim_specs": [
+                            {
+                                "claim_type": "direct",
+                                "description": "Recursos en educación",
+                                "source_row_indexes": [0],
+                                "columns": ["total"],
+                                "unit": "COP",
+                                "rounding": 0,
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+
 async def _catalog_tool(_raw_input):
     return {"ok": True, "results": [{"dataset_id": DATASET_ID}]}
 
@@ -119,6 +146,7 @@ def graph_dependencies(engine):
         ),
         router_model=IntegrationRouter(),
         synthesizer_model=IntegrationSynthesizer(),
+        claim_model=IntegrationClaimPlanner(),
         tools={
             "buscar_catalogo": _catalog_tool,
             "perfilar_dataset": _unused_tool,

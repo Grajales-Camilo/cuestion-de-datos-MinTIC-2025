@@ -290,6 +290,34 @@ def test_case_12_medium_pii_count_without_explicit_alias_still_counts() -> None:
     assert result.row_policy.aggregation_min_count == 5
 
 
+def test_case_12_medium_pii_sum_without_count_is_blocked_even_with_many_rows() -> None:
+    """Hallazgo real (2026-07-12, smoke contra Gemini, pilot-002-seguridad-
+    homicidios): `_count_alias` solo reconoce `count(...)`; una agregación
+    `sum()`/`avg()`/`min()`/`max()` SIN `count(*)` acompañante no puede
+    verificar cuántas filas reales aporta cada grupo (sum(cantidad)=66723
+    es indistinguible de una sola fila con cantidad=66723 o de 66723 filas
+    con cantidad=1), así que se bloquea aunque el agregado real sume miles
+    de casos. Esto es una decisión de diseño correcta (Art. VI) -- lo que
+    faltaba era que `router_v1.md` le exigiera al LLM incluir siempre
+    count(*) al agrupar."""
+    result = validate_evidence(
+        draft(
+            dataset_pii_risk_level="medium",
+            selected_columns=(SelectedColumn("departamento", "medium"),),
+            canonical_soql=(
+                "SELECT departamento, sum(cantidad) AS total_homicidios "
+                "GROUP BY departamento ORDER BY total_homicidios DESC LIMIT 1000 OFFSET 0"
+            ),
+            rows=({"departamento": "VALLE DEL CAUCA", "total_homicidios": "66723"},),
+            row_count=1,
+        )
+    )
+
+    assert result.eligibility_status == "blocked"
+    assert "pii_aggregation_insufficient" in result.eligibility_reasons
+    assert result.row_policy.aggregation_min_count is None
+
+
 # --- Caso 13: elegibilidad vs calidad (independientes) -----------------------
 
 

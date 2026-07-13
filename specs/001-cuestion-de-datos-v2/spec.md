@@ -85,7 +85,7 @@ Formato: *Given / When / Then*. Cada escenario referencia los requisitos que lo 
 
 ### Grupo 200 — Agente multi-paso
 
-- **RF-201** — El agente DEBE ejecutar un ciclo iterativo de razonamiento y acción (planificar → usar herramienta → observar → decidir) con un presupuesto máximo de pasos configurable (por defecto 10) y terminación explícita.
+- **RF-201** — El agente DEBE ejecutar un ciclo iterativo de razonamiento y acción (planificar → usar herramienta → observar → decidir) con un presupuesto máximo de pasos configurable (por defecto 14; research.md §19) y terminación explícita.
 - **RF-202** — El agente DEBE poder descomponer preguntas complejas en sub-consultas encadenadas cuyos resultados intermedios alimentan pasos posteriores (p. ej. resolver el código DIVIPOLA de un municipio antes de filtrar un dataset por ese código).
 - **RF-203** — El agente DEBE seleccionar datasets mediante búsqueda semántica sobre el índice del catálogo completo (RF-301), sin depender de una lista fija embebida en el prompt.
 - **RF-204** — Cada paso del agente DEBE emitirse al cliente en tiempo real como evento estructurado (tipo de paso, descripción en lenguaje claro, detalle técnico).

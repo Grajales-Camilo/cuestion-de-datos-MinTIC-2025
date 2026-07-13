@@ -35,6 +35,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agent.graph import (
+    ClaimPlannerOutput,
     GraphDependencies,
     PlannerOutput,
     RouterOutput,
@@ -147,7 +148,9 @@ class ScriptedSynthesizer:
             # huérfana aunque provenga de un cálculo determinista real de T6.
             warning_note = (
                 " Advertencia: esta evidencia tiene limitaciones de calidad; "
-                "revisa el detalle técnico antes de citarla." if warnings else ""
+                "revisa el detalle técnico antes de citarla."
+                if warnings
+                else ""
             )
             return SynthesisOutput.model_validate(
                 {
@@ -181,6 +184,35 @@ class ScriptedSynthesizer:
         )
 
 
+class ScriptedClaimPlanner:
+    async def ainvoke(self, messages, **_kwargs):
+        payload = json.loads(messages[-1].content)
+        evidences = payload.get("evidences", [])
+        plans = []
+        if evidences:
+            plans.append(
+                {
+                    "evidence_id": evidences[0]["evidence_id"],
+                    "claim_specs": [
+                        {
+                            "claim_type": "direct",
+                            "description": "Cifra bajo verificación T-402",
+                            "source_row_indexes": [0],
+                            "columns": ["total"],
+                            "unit": "COP",
+                            "rounding": 0,
+                        }
+                    ],
+                }
+            )
+        return ClaimPlannerOutput.model_validate(
+            {
+                "reasoning_summary": "Planificar únicamente evidencia utilizable",
+                "claim_specs_by_evidence": plans,
+            }
+        )
+
+
 async def _unused_tool(_raw_input):
     return {"ok": False, "error": {"code": "UNUSED", "message": "unused"}}
 
@@ -200,9 +232,7 @@ def _t5_tool(*, canonical_soql: str, rows: list[dict], source_url: str | None, d
     return _tool
 
 
-def graph_dependencies(
-    engine, *, dataset_id: str, soql: str, ejecutar_soql_tool, synthesizer=None
-):
+def graph_dependencies(engine, *, dataset_id: str, soql: str, ejecutar_soql_tool, synthesizer=None):
     return GraphDependencies(
         engine=engine,
         planner_model=StaticModel(
@@ -214,6 +244,7 @@ def graph_dependencies(
         ),
         router_model=ScriptedRouter(dataset_id=dataset_id, soql=soql),
         synthesizer_model=synthesizer or ScriptedSynthesizer(),
+        claim_model=ScriptedClaimPlanner(),
         tools={
             "buscar_catalogo": _catalog_tool_stub,
             "perfilar_dataset": _unused_tool,
@@ -394,9 +425,7 @@ async def test_evidencia_alta_produce_claims_sin_cifras_huerfanas(engine):
         interrupt=False,
     )
 
-    state = await graph.ainvoke(
-        initial_state(run_id, "integracion T-402 alta", max_steps=10)
-    )
+    state = await graph.ainvoke(initial_state(run_id, "integracion T-402 alta", max_steps=10))
 
     assert state.get("terminal_error") is None
     assert state["evidences"][0]["quality"]["classification"] == "alta"
@@ -450,9 +479,7 @@ async def test_evidencia_baja_conserva_advertencia_y_llega_al_sintetizador(engin
         interrupt=False,
     )
 
-    state = await graph.ainvoke(
-        initial_state(run_id, "integracion T-402 baja", max_steps=10)
-    )
+    state = await graph.ainvoke(initial_state(run_id, "integracion T-402 baja", max_steps=10))
 
     assert state.get("terminal_error") is None
     quality = state["evidences"][0]["quality"]
