@@ -13,6 +13,8 @@ from eval.persistence import PersistedGoldenSuite
 
 
 def _settings(**overrides: object) -> Settings:
+    """`_env_file=None` aísla la prueba del `.env` local real (mismo hallazgo
+    del agente evaluador que en `test_llm_factory.py::settings`)."""
     values = {
         "DATABASE_URL": "postgresql://usuario:clave@localhost:5432/cuestion_de_datos",
         "SOCRATA_APP_TOKEN": "token-local",
@@ -20,7 +22,7 @@ def _settings(**overrides: object) -> Settings:
         "EVAL_MODE": True,
     }
     values.update(overrides)
-    return Settings(**values)
+    return Settings(_env_file=None, **values)
 
 
 def _fake_suite() -> GoldenSuite:
@@ -100,11 +102,11 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
         ),
     )
 
-    report_path = await run_module.run_suite(
+    result = await run_module.run_suite(
         suite_name="golden-v1", provider=None, model=None, seed=1, limit=None
     )
 
-    assert report_path is not None
+    assert result.report_path is not None
     # Los dos casos se persistieron: el que reventó y el que corrió limpio.
     assert len(persisted_calls) == 2
     failed_call = persisted_calls[0]
@@ -186,11 +188,11 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
 
     monkeypatch.setattr(run_module, "_persist_case_result", flaky_persist)
 
-    report_path = await run_module.run_suite(
+    result = await run_module.run_suite(
         suite_name="golden-v1", provider=None, model=None, seed=1, limit=None
     )
 
-    assert report_path is not None
+    assert result.report_path is not None
     # caso1 intento fallido + caso1 reintento + caso2 sin problema = 3 llamadas.
     assert len(persisted_calls) == 3
     assert persisted_calls[0]["agent_run_id"] is not None
