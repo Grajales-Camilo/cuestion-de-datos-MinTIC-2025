@@ -52,7 +52,8 @@ benchmark-embeddings = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*"]
+include = ["app*", "eval*"]
+exclude = ["tests*"]
 
 [tool.pytest.ini_options]
 markers = [
