@@ -22,13 +22,14 @@ necesita ramas por proveedor para contar tokens.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import json
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel
 
@@ -44,6 +45,25 @@ class LLMProviderError(Exception):
 
     El grafo del agente (T-303/T-304) traduce esta excepcion a
     `LLM_PROVIDER_ERROR` (contracts/api-rest.md §6).
+    """
+
+
+class LLMStructuredOutputError(LLMProviderError):
+    """La salida estructurada sigue invalida tras agotar el repair loop
+    (`MAX_STRUCTURED_REPAIR_ATTEMPTS`).
+
+    Hallazgo del agente evaluador (2026-07-11,
+    `docs/instrucciones-evaluacion-agente-post-ajustes.md` puerta 3,
+    `test_unrepairable_output_ends_with_specific_error_not_generic_provider_error`):
+    antes de esto, este caso y una caida real del proveedor (cuota, 5xx,
+    timeout) llegaban al grafo como el mismo `LLMProviderError` y se
+    mapeaban ambos a `LLM_PROVIDER_ERROR` -- indistinguibles para
+    diagnostico (RF-703, Art. VII.3), pese a ser causas muy distintas: una
+    es un problema de diseno de esquema/prompt (el modelo nunca logro
+    producir una forma valida ni con feedback), la otra es una falla externa
+    transitoria. El grafo (`app/agent/graph.py`) atrapa esta subclase
+    primero y la mapea a `STRUCTURED_OUTPUT_INVALID`
+    (`contracts/api-rest.md` §4).
     """
 
 
@@ -289,6 +309,75 @@ def _truncate_overflowing_strings(args: dict, parsing_error: Exception) -> dict 
     return coerced if changed else None
 
 
+MAX_STRUCTURED_REPAIR_ATTEMPTS = 2
+
+
+def _condensed_validation_errors(parsing_error: Exception) -> str:
+    errors = getattr(parsing_error, "errors", None)
+    if not callable(errors):
+        return str(parsing_error)
+    lines = [
+        f"- {'.'.join(str(part) for part in (error.get('loc') or ())) or '(raiz)'}: "
+        f"{error.get('msg', '')}"
+        for error in errors()
+    ]
+    return "\n".join(lines) if lines else str(parsing_error)
+
+
+def _repair_request_message(raw_args: dict, parsing_error: Exception) -> HumanMessage:
+    """Pide al mismo modelo que corrija su propia salida estructurada invalida.
+
+    Hallazgo T-403 (2026-07-11, ejecucion real): cualquier salida invalida que
+    no fuera `string_too_long` (campo obligatorio ausente, forma de nodo DSL
+    inventada, etc.) tumbaba la corrida entera con `LLM_PROVIDER_ERROR` sin
+    darle al modelo oportunidad de corregirse -- a diferencia de la
+    correccion de SoQL (T5) o de sintesis, que si reintentan. Se acota a
+    `MAX_STRUCTURED_REPAIR_ATTEMPTS` para que un error de formato no se
+    convierta en presupuesto de investigacion gastado (el grafo no cuenta
+    estos reintentos como pasos).
+    """
+    return HumanMessage(
+        content=(
+            "Tu respuesta estructurada anterior no cumple el esquema requerido.\n\n"
+            f"JSON que enviaste:\n{json.dumps(raw_args, ensure_ascii=False)}\n\n"
+            f"Errores de validación:\n{_condensed_validation_errors(parsing_error)}\n\n"
+            "Corrige únicamente los campos señalados y responde de nuevo con la salida "
+            "estructurada completa y válida (no solo los campos corregidos)."
+        )
+    )
+
+
+def _merge_usage_metadata(messages: Sequence[AIMessage]) -> dict[str, Any] | None:
+    totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    found = False
+    for message in messages:
+        metadata = message.usage_metadata
+        if not metadata:
+            continue
+        found = True
+        for key in totals:
+            totals[key] += int(metadata.get(key, 0) or 0)
+    return totals if found else None
+
+
+def _raw_message_with_merged_usage(
+    raw: Any, failed_attempts: list[AIMessage]
+) -> AIMessage | None:
+    """Suma `usage_metadata` de los intentos fallidos al mensaje final.
+
+    Sin esto, los tokens/costo de los reintentos de reparacion (que si
+    consumen cuota real del proveedor) desaparecian del conteo de la corrida
+    (RNF-009, Art. VII.3: las metricas se miden de verdad, no se estiman).
+    """
+    raw_message = raw if isinstance(raw, AIMessage) else None
+    if raw_message is None or not failed_attempts:
+        return raw_message
+    merged = _merge_usage_metadata([*failed_attempts, raw_message])
+    if merged is None:
+        return raw_message
+    return raw_message.model_copy(update={"usage_metadata": merged})
+
+
 async def ainvoke_structured_chat_model(
     model: Runnable, input: Any, *, schema: type[BaseModel] | None = None, **kwargs: Any
 ) -> StructuredLLMResult:
@@ -299,39 +388,69 @@ async def ainvoke_structured_chat_model(
     devolver directamente el objeto Pydantic; ambos caminos mantienen una
     única interfaz para el grafo T-303.
 
-    `schema`, si se pasa, habilita la recuperación de
-    `_truncate_overflowing_strings`: se usa el `AIMessage.tool_calls[0]["args"]`
-    crudo (previo a la validación fallida de LangChain) para reintentar la
-    validación localmente con los campos desbordados truncados, sin gastar
-    una llamada adicional al proveedor.
+    `schema`, si se pasa, habilita dos niveles de recuperación ante una salida
+    estructurada inválida, en orden:
+    1. `_truncate_overflowing_strings`: usa el `AIMessage.tool_calls[0]["args"]`
+       crudo (previo a la validación fallida de LangChain) para reintentar la
+       validación localmente con los campos desbordados truncados, sin gastar
+       una llamada adicional al proveedor.
+    2. Si (1) no aplica y `input` es una lista de mensajes, hasta
+       `MAX_STRUCTURED_REPAIR_ATTEMPTS` reintentos reales contra el mismo
+       modelo (`_repair_request_message`), devolviéndole el JSON inválido y
+       los errores de Pydantic condensados para que se autocorrija.
+    Si ninguna recuperación aplica o se agotan los reintentos, se lanza
+    `LLMProviderError` como antes.
     """
 
-    try:
-        result = await model.ainvoke(input, **kwargs)
-    except _provider_error_types() as exc:
-        raise LLMProviderError(f"Error definitivo del proveedor LLM: {exc}") from exc
-    except (TimeoutError, httpx.TimeoutException) as exc:
-        raise LLMProviderError(f"Timeout del proveedor LLM: {exc}") from exc
+    messages = list(input) if isinstance(input, list) else input
+    failed_attempts: list[AIMessage] = []
 
-    if isinstance(result, dict) and "parsed" in result:
+    while True:
+        try:
+            result = await model.ainvoke(messages, **kwargs)
+        except _provider_error_types() as exc:
+            raise LLMProviderError(f"Error definitivo del proveedor LLM: {exc}") from exc
+        except (TimeoutError, httpx.TimeoutException) as exc:
+            raise LLMProviderError(f"Timeout del proveedor LLM: {exc}") from exc
+
+        if not (isinstance(result, dict) and "parsed" in result):
+            return StructuredLLMResult(parsed=result, raw_message=None)
+
+        raw = result.get("raw")
         parsing_error = result.get("parsing_error")
-        if parsing_error is not None:
-            raw = result.get("raw")
-            if schema is not None and isinstance(raw, AIMessage) and raw.tool_calls:
-                coerced = _truncate_overflowing_strings(
-                    raw.tool_calls[0].get("args", {}), parsing_error
-                )
+
+        if parsing_error is None:
+            return StructuredLLMResult(
+                parsed=result["parsed"],
+                raw_message=_raw_message_with_merged_usage(raw, failed_attempts),
+            )
+
+        raw_args: dict = {}
+        if isinstance(raw, AIMessage) and raw.tool_calls:
+            raw_args = raw.tool_calls[0].get("args", {})
+            if schema is not None:
+                coerced = _truncate_overflowing_strings(raw_args, parsing_error)
                 if coerced is not None:
                     try:
                         recovered = schema.model_validate(coerced)
-                    except Exception:  # noqa: BLE001 - si tampoco valida, se sigue al fallo normal
+                    except Exception:  # noqa: BLE001 - si tampoco valida, se sigue al flujo normal
                         pass
                     else:
-                        return StructuredLLMResult(parsed=recovered, raw_message=raw)
-            raise LLMProviderError(f"Salida estructurada inválida del proveedor: {parsing_error}")
-        raw = result.get("raw")
-        return StructuredLLMResult(
-            parsed=result["parsed"],
-            raw_message=raw if isinstance(raw, AIMessage) else None,
+                        return StructuredLLMResult(
+                            parsed=recovered,
+                            raw_message=_raw_message_with_merged_usage(raw, failed_attempts),
+                        )
+
+        if (
+            schema is not None
+            and isinstance(messages, list)
+            and isinstance(raw, AIMessage)
+            and len(failed_attempts) < MAX_STRUCTURED_REPAIR_ATTEMPTS
+        ):
+            failed_attempts.append(raw)
+            messages = [*messages, _repair_request_message(raw_args, parsing_error)]
+            continue
+
+        raise LLMStructuredOutputError(
+            f"Salida estructurada inválida del proveedor: {parsing_error}"
         )
-    return StructuredLLMResult(parsed=result, raw_message=None)

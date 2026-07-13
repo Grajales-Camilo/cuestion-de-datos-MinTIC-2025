@@ -143,10 +143,25 @@ def _row_scope(evidence: EvidenceContext, spec: ClaimSpec) -> list[dict]:
 
 
 def _to_decimal(value: object, *, column: str) -> Decimal:
+    """Hallazgo real (2026-07-12, pilot-004-justicia-presupuesto, dataset
+    `f4a5-ab9q`, confirmado contra Socrata real): columnas monetarias de
+    datasets del Estado suelen llegar como texto con separador de miles
+    ("3,893,283,514,468.00"), porque el propio dataset las publica como
+    `Text`, no `Number`. `Decimal(...)` no admite comas, así que un claim
+    `direct` sobre ese valor se rechazaba como "no numérico" incluso con la
+    fila y columna exactas -- lo que empujaba al router a intentar
+    `CAST`/`TO_NUMBER`/`REPLACE` en el SoQL, ninguno permitido por
+    `soql_parser.ALLOWED_FUNCTIONS` (`SOQL_FORBIDDEN`). La comparación
+    correcta no está en el SoQL (Socrata expone el dato como texto tal cual
+    lo público la entidad): es aquí, al convertir la celda ya traída a
+    `Decimal`. Se retira solo la coma como separador de miles -- nunca
+    ambiguo en los datasets reales inspeccionados (siempre coma=miles,
+    punto=decimal), y una cadena sin comas queda intacta.
+    """
     if value is None:
         raise ClaimRejected(f"operando nulo: la columna '{column}' no tiene valor en la fila usada")
     try:
-        result = Decimal(str(value).strip())
+        result = Decimal(str(value).strip().replace(",", ""))
     except (DecimalException, ValueError):
         raise ClaimRejected(f"operando no numérico: la columna '{column}' no es numérica") from None
     if not result.is_finite():

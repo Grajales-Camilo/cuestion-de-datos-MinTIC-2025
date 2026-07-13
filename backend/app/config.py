@@ -21,7 +21,12 @@ class Settings(BaseSettings):
     llm_provider: LLMProvider = Field(default="google", alias="LLM_PROVIDER")
     llm_model: str = Field(default="gemini-2.5-flash", alias="LLM_MODEL")
     embedding_model: str | None = Field(default=None, alias="EMBEDDING_MODEL")
-    agent_max_steps: Annotated[int, Field(ge=1, le=25)] = Field(default=10, alias="AGENT_MAX_STEPS")
+    # research.md §19 (2026-07-12): el camino feliz sin errores consume
+    # exactamente 10 pasos, dejando 0 margen para el retry de claim_builder
+    # (o cualquier otra reparacion) ya implementado en el grafo. 14 deja
+    # espacio real para una ronda completa de reparacion (+3) mas 1 paso
+    # de margen adicional, sin tocar el limite configurable de 1..25.
+    agent_max_steps: Annotated[int, Field(ge=1, le=25)] = Field(default=14, alias="AGENT_MAX_STEPS")
     run_max_duration_s: Annotated[int, Field(gt=0)] = Field(default=600, alias="RUN_MAX_DURATION_S")
     run_heartbeat_timeout_s: Annotated[int, Field(gt=0)] = Field(
         default=120, alias="RUN_HEARTBEAT_TIMEOUT_S"

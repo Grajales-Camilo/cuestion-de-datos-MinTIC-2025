@@ -10,6 +10,12 @@ from pydantic import ValidationError
 from app.agent.graph import (
     EVIDENCE_EVENT_MAX_BYTES,
     EVIDENCE_ROWS_MAX_BYTES,
+    MAX_SOQL_CALLS,
+    TERMINATION_INSUFFICIENT_BUDGET_FOR_ACTION,
+    TERMINATION_SOQL_CALL_BUDGET_EXCEEDED,
+    TERMINATION_SOQL_CORRECTION_EXHAUSTED,
+    TERMINATION_STEP_BUDGET_EXCEEDED,
+    ClaimPlannerOutput,
     ClaimSpecPayload,
     GraphDependencies,
     NoEvidenceReport,
@@ -20,6 +26,8 @@ from app.agent.graph import (
     _bounded_rows,
     _claim_builder_node,
     _evidence_event_payload,
+    _orphan_figures,
+    _router_node,
     build_graph,
     initial_state,
     load_prompt,
@@ -73,6 +81,32 @@ class ScriptedRouter:
                 "action": "finish",
                 "reasoning_summary": "La evidencia ya permite responder",
                 "tool_input": {},
+                "claim_specs_by_evidence": [
+                    {
+                        "evidence_id": evidence_id,
+                        "claim_specs": [
+                            {
+                                "claim_type": "direct",
+                                "description": "Recursos del sector educación",
+                                "source_row_indexes": [0],
+                                "columns": ["total"],
+                                "unit": "COP",
+                                "rounding": 0,
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+
+class StaticClaimPlanner:
+    async def ainvoke(self, messages, **_kwargs):
+        payload = json.loads(messages[-1].content)
+        evidence_id = payload["evidences"][0]["evidence_id"]
+        return ClaimPlannerOutput.model_validate(
+            {
+                "reasoning_summary": "La evidencia contiene una cifra directa",
                 "claim_specs_by_evidence": [
                     {
                         "evidence_id": evidence_id,
@@ -226,6 +260,7 @@ def deps(router, synthesizer, *, max_steps=10):
         ),
         router_model=router,
         synthesizer_model=synthesizer,
+        claim_model=StaticClaimPlanner(),
         tools=tools(),
         llm_provider="google",
         llm_model="gemini-2.5-flash",
@@ -306,6 +341,23 @@ def test_synthesizer_prompt_ties_narrative_limitation_to_classification():
     assert "CUALITATIVOS" in text or "cualitativos" in text
 
 
+def test_router_prompt_requires_reasoning_action_self_consistency():
+    """Regresión real (2026-07-12, investigación offline sobre 19 corridas
+    persistidas): 7 de 17 decisiones `finish` de pilot-002/005/007
+    mostraban un `reasoning_summary` describiendo una intención explícita
+    de seguir investigando mientras `action` decía `finish`. Se probó y
+    descartó (documentado junto a `RouterOutput` en graph.py) que el orden
+    de campos del esquema influya en esto -- `Schema.properties` de Gemini
+    es un mapa protobuf sin garantía de orden. La única palanca real es la
+    regla explícita del prompt; esta prueba fija que no desaparezca en un
+    futuro edit."""
+    text = load_prompt("router")
+
+    assert "reasoning_summary" in text
+    assert "Autoconsistencia" in text or "autoconsistencia" in text
+    assert "finish" in text.lower()
+
+
 def _claim_spec_payload(formula: dict) -> dict:
     return {
         "claim_type": "derived",
@@ -326,19 +378,16 @@ def _claim_spec_payload(formula: dict) -> dict:
         {"agg": "sum", "col": "producci_n_t"},
         {"op": "div", "args": [{"col": "a"}, {"col": "b"}]},
         {"op": "pct_change", "args": [{"agg": "sum", "col": "x"}, {"const": 10}]},
-        # "op" anidado dentro de "op" SÍ es valido a nivel de modelo (y
-        # _eval_node lo evalúa igual, sin tope de profundidad); el límite de
-        # profundidad 1 solo aplica al esquema que ve el LLM vía
-        # convert_to_openai_tool (ver comentario junto a FormulaNode), no a
-        # esta validación directa con model_validate.
-        {"op": "add", "args": [{"op": "mul", "args": [{"col": "a"}, {"col": "b"}]}]},
     ],
 )
 def test_claim_spec_payload_accepts_every_real_dsl_shape(formula: dict) -> None:
-    """La union discriminada debe aceptar exactamente las formas que
-    `app.quality.claims._eval_node` reconoce -- ni una menos."""
+    """`FormulaNode` (modelo aplanado, ver graph.py) debe aceptar exactamente
+    las formas que `app.quality.claims._eval_node` reconoce -- ni una menos.
+    `exclude_none=True` en la comparación porque el modelo aplanado siempre
+    tiene los 5 campos posibles (la mayoría en None); lo que importa es que,
+    tras excluir los None, el dict resultante sea idéntico al original."""
     spec = ClaimSpecPayload.model_validate(_claim_spec_payload(formula))
-    assert spec.formula.model_dump() == formula
+    assert spec.formula.model_dump(exclude_none=True) == formula
 
 
 @pytest.mark.parametrize(
@@ -348,6 +397,14 @@ def test_claim_spec_payload_accepts_every_real_dsl_shape(formula: dict) -> None:
         {"col": "a", "const": 1},  # mezcla dos nodos distintos (extra=forbid la rechaza)
         {"op": "unsupported_op", "args": [{"col": "a"}, {"col": "b"}]},
         {},
+        # Hallazgo T-403 (2026-07-12, smoke real con Gemini): "op" anidado
+        # dentro de "op" producía un schema verdaderamente recursivo que la
+        # API real de Gemini rechazaba con 400 ("args.items: missing
+        # field"). `FormulaNode.args` ahora usa `FormulaLeaf` (sin op/args
+        # propios), cerrando -- no solo documentando -- la regla que
+        # router_v1.md ya pedía en texto ("los nodos 'op' no pueden
+        # anidarse dentro de otro 'op'").
+        {"op": "add", "args": [{"op": "mul", "args": [{"col": "a"}, {"col": "b"}]}]},
     ],
 )
 def test_claim_spec_payload_rejects_invented_dsl_shapes(formula: dict) -> None:
@@ -423,16 +480,97 @@ async def test_orphan_figures_trigger_two_resynthesis_retries_then_failure():
     assert result["terminal_error"]["error"]["code"] == "INTERNAL"
 
 
+def test_orphan_figures_accepts_a_year_present_in_the_evidence_soql_query():
+    """Regresión real (pilot-001-educacion-magdalena, 2026-07-12, run_ids
+    eb702c23-.../919c44f6-...): dos corridas terminaron `failed` (no solo
+    con el valor equivocado) porque el sintetizador escribió "2024" en la
+    narrativa -- el año que la propia pregunta pide y que el `canonical_soql`
+    real filtra (`WHERE a_o = 2024`) -- y `find_orphan_figures` lo rechazaba
+    tras 3 intentos por no aparecer en ningún `claim.display_value` (los
+    claims solo llevan la tasa, nunca el año-filtro). Un valor literal en la
+    consulta SoQL ya ejecutada es tan verificado como un claim."""
+
+    output = SynthesisOutput(
+        summary="Cerro de San Antonio tuvo una tasa de deserción escolar del 6,28 % en 2024.",
+        narrative="En 2024, Cerro de San Antonio registró una tasa del 6,28 %.",
+    )
+    claims = [{"display_value": "6,28 %", "evidence_id": "e1"}]
+    evidences = [
+        {
+            "evidence_id": "e1",
+            "soql_query": (
+                "SELECT municipios, tasa_de_deserci_n WHERE a_o = 2024 "
+                "ORDER BY tasa_de_deserci_n DESC"
+            ),
+        }
+    ]
+
+    assert _orphan_figures(output, claims, evidences) == ()
+    # Sin el contexto de la evidencia (comportamiento previo al fix), "2024"
+    # sigue sin respaldo -- confirma que el fix depende de `evidences`, no
+    # de un cambio más laxo en `find_orphan_figures`.
+    assert _orphan_figures(output, claims, []) == ("2024",)
+
+
 @pytest.mark.asyncio
 async def test_step_budget_forces_no_evidence_without_exceeding_limit():
+    """BudgetRouter nunca pide "finish" por su cuenta; el grafo se ve
+    obligado a parar preventivamente porque no queda presupuesto para otra
+    accion completa (tool + router + sintetizador) -- eso es
+    INSUFFICIENT_BUDGET_FOR_ACTION, no un agotamiento real de `steps_used`
+    (que en esta corrida nunca llega a superar `max_steps`; ver hallazgo T-403,
+    2026-07-11: antes ambas causas compartian la misma etiqueta
+    STEP_BUDGET_EXCEEDED)."""
     graph = build_graph(deps(BudgetRouter(), NoEvidenceSynthesizer(), max_steps=5), interrupt=False)
     result = await graph.ainvoke(
         initial_state(uuid.uuid4(), "Pregunta válida extensa", max_steps=5)
     )
 
     assert result["final_answer"]["status"] == "no_evidence"
-    assert result["final_answer"]["usage"]["termination_reason"] == "STEP_BUDGET_EXCEEDED"
+    assert (
+        result["final_answer"]["usage"]["termination_reason"]
+        == TERMINATION_INSUFFICIENT_BUDGET_FOR_ACTION
+    )
     assert result["steps_used"] <= 5
+
+
+class ExplodingRouter:
+    """Prueba que el router NO se invoca cuando `steps_used` ya alcanzo
+    `max_steps` al entrar al nodo -- si se invocara, esto lanzaria."""
+
+    async def ainvoke(self, *_args, **_kwargs):
+        raise AssertionError("no debería invocarse: el presupuesto ya está agotado")
+
+
+@pytest.mark.asyncio
+async def test_router_stops_without_llm_call_when_steps_already_exhausted():
+    """Hallazgo T-403 (2026-07-11): a diferencia de la parada preventiva de
+    arriba, este es el unico caso que debe conservar la etiqueta
+    STEP_BUDGET_EXCEEDED -- `steps_used` ya alcanzo `max_steps`, asi que ni
+    siquiera tiene sentido gastar una llamada real al LLM."""
+    graph_deps = deps(ExplodingRouter(), NoEvidenceSynthesizer(), max_steps=5)
+    state = initial_state(uuid.uuid4(), "Pregunta válida extensa", max_steps=5)
+    state["steps_used"] = 5
+
+    result = await _router_node(graph_deps, state)
+
+    assert result["termination_reason"] == TERMINATION_STEP_BUDGET_EXCEEDED
+    assert result["pending_action"] == {"action": "finish", "tool_input": {}}
+
+
+@pytest.mark.asyncio
+async def test_router_forces_finish_when_soql_call_budget_exhausted():
+    """`t5_calls >= MAX_SOQL_CALLS` es un presupuesto distinto de
+    `steps_used`; debe etiquetarse SOQL_CALL_BUDGET_EXCEEDED, no
+    STEP_BUDGET_EXCEEDED (hallazgo T-403, 2026-07-11)."""
+    graph_deps = deps(RepeatingT5Router(), NoEvidenceSynthesizer(), max_steps=20)
+    state = initial_state(uuid.uuid4(), "Pregunta válida extensa", max_steps=20)
+    state["t5_calls"] = MAX_SOQL_CALLS
+
+    result = await _router_node(graph_deps, state)
+
+    assert result["pending_action"]["action"] == "finish"
+    assert result["termination_reason"] == TERMINATION_SOQL_CALL_BUDGET_EXCEEDED
 
 
 @pytest.mark.asyncio
@@ -453,6 +591,10 @@ async def test_soql_syntax_allows_only_two_corrections_after_initial_attempt():
 
     assert calls == 3  # intento inicial + dos autocorrecciones
     assert result["final_answer"]["status"] == "no_evidence"
+    assert (
+        result["final_answer"]["usage"]["termination_reason"]
+        == TERMINATION_SOQL_CORRECTION_EXHAUSTED
+    )
 
 
 @pytest.mark.asyncio
@@ -480,6 +622,10 @@ async def test_soql_forbidden_also_allows_only_two_corrections():
 
     assert calls == 3  # intento inicial + dos autocorrecciones
     assert result["final_answer"]["status"] == "no_evidence"
+    assert (
+        result["final_answer"]["usage"]["termination_reason"]
+        == TERMINATION_SOQL_CORRECTION_EXHAUSTED
+    )
 
 
 @pytest.mark.asyncio
@@ -497,9 +643,15 @@ async def test_at_most_four_soql_calls_per_run():
     graph_deps = deps(RepeatingT5Router(), NoEvidenceSynthesizer(), max_steps=25)
     graph_deps.tools["ejecutar_soql"] = inactive
     graph = build_graph(graph_deps, interrupt=False)
-    await graph.ainvoke(initial_state(uuid.uuid4(), "Pregunta válida extensa", max_steps=25))
+    result = await graph.ainvoke(
+        initial_state(uuid.uuid4(), "Pregunta válida extensa", max_steps=25)
+    )
 
     assert calls == 4
+    assert (
+        result["final_answer"]["usage"]["termination_reason"]
+        == TERMINATION_SOQL_CALL_BUDGET_EXCEEDED
+    )
 
 
 def test_evidence_and_event_byte_budgets_are_enforced():

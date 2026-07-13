@@ -3,7 +3,7 @@ from typing import Any
 import httpx
 import pytest
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
 
@@ -24,13 +24,28 @@ from app.llm.factory import (
 
 
 def settings(**overrides: object) -> Settings:
+    """Construye `Settings` aislado del `.env` local del desarrollador.
+
+    Hallazgo del agente evaluador (2026-07-11,
+    `docs/instrucciones-evaluacion-agente-post-ajustes.md` puerta 1):
+    `Settings` carga `.env` (`model_config.env_file=".env"`, `app/config.py`)
+    y este helper no lo desactivaba, así que una máquina con
+    `ANTHROPIC_API_KEY`/`GOOGLE_API_KEY` reales en `.env` (documentado en
+    `quickstart.md` como entorno local esperado) hacía que
+    `test_get_chat_model_from_settings_sin_key_falla_claro` heredara una
+    clave real y NO lanzara `LLMConfigurationError` -- una prueba que debía
+    ser determinista dependía de qué máquina la corriera. `_env_file=None`
+    desactiva esa fuente para esta instancia; el único campo sin default
+    (`DATABASE_URL`) ya se provee explícitamente abajo, así que no hay
+    pérdida de cobertura.
+    """
     values: dict[str, object] = {
         "DATABASE_URL": "postgresql://usuario:clave@localhost:5432/cuestion_de_datos",
         "SOCRATA_APP_TOKEN": "token-local",
         "RETENTION_HASH_SALT": "replace-with-local-development-salt-32-bytes",
     }
     values.update(overrides)
-    return Settings(**values)
+    return Settings(_env_file=None, **values)
 
 
 class DecisionEsquema(BaseModel):
@@ -124,7 +139,8 @@ async def test_structured_model_timeout_maps_to_llm_provider_error() -> None:
 
 # --- Recuperacion de campos que exceden max_length (hallazgo T-402) ---------
 #
-# Ejecucion real (2026-07-11): RouterOutput.reasoning_summary (max 500) y
+# Ejecucion real (2026-07-11): RouterOutput.reasoning_summary (max 900 desde
+# 2026-07-12, antes 500 -- ver research.md #23) y
 # PlannerOutput.recommended_next_action (max 200) tumbaban la corrida entera
 # con LLMProviderError cuando el LLM real razonaba de forma verbosa -- sin
 # ningun mecanismo de reintento, a diferencia de la correccion de SoQL o de
@@ -201,9 +217,12 @@ async def test_does_not_recover_without_schema_kwarg() -> None:
 
 
 @pytest.mark.asyncio
-async def test_does_not_recover_missing_required_field() -> None:
-    """Solo se autocorrige `string_too_long`; un campo faltante (un error de
-    contenido real, no de formato) debe seguir fallando duro."""
+async def test_does_not_locally_truncate_missing_required_field() -> None:
+    """`_truncate_overflowing_strings` (recuperacion local, sin llamar al LLM)
+    no aplica a un campo faltante -- eso solo lo puede corregir el propio
+    modelo via el repair loop (ver siguientes pruebas), no una heuristica
+    local. Con un doble que nunca corrige nada, el repair loop se agota y
+    sigue fallando duro."""
 
     class _RequiredFieldSchema(BaseModel):
         reasoning_summary: str
@@ -218,9 +237,10 @@ async def test_does_not_recover_missing_required_field() -> None:
 
 
 @pytest.mark.asyncio
-async def test_does_not_recover_mixed_errors_including_non_length_ones() -> None:
-    """Si el error tiene AL MENOS un problema que no es `string_too_long`, no
-    se intenta ninguna correccion parcial (todo o nada)."""
+async def test_does_not_locally_truncate_mixed_errors_including_non_length_ones() -> None:
+    """Si el error tiene AL MENOS un problema que no es `string_too_long`, la
+    recuperacion LOCAL no intenta ninguna correccion parcial (todo o nada);
+    con un doble que nunca corrige nada, el repair loop tambien se agota."""
 
     class _MixedSchema(BaseModel):
         reasoning_summary: str = Field(max_length=10)
@@ -233,6 +253,121 @@ async def test_does_not_recover_mixed_errors_including_non_length_ones() -> None
 
     with pytest.raises(LLMProviderError, match="Salida estructurada inválida"):
         await ainvoke_structured_chat_model(runnable, [], schema=_MixedSchema)
+
+
+# --- Repair loop LLM-asistido para salidas invalidas (hallazgo T-403) -------
+#
+# Ejecucion real (2026-07-11): salidas estructuradas invalidas que no eran
+# `string_too_long` (campo obligatorio ausente, forma de nodo DSL inventada)
+# tumbaban la corrida completa sin darle al modelo oportunidad de
+# corregirse. Este bloque prueba el reintento real contra el mismo modelo.
+
+
+class StructuredRunnableRepairsAfterAttempts:
+    """Devuelve una salida invalida las primeras `fails_before_success`
+    veces y luego una valida; registra cuantas veces se le invoco."""
+
+    def __init__(self, *, schema: type[BaseModel], fails_before_success: int):
+        self._schema = schema
+        self._fails_before_success = fails_before_success
+        self.calls = 0
+
+    async def ainvoke(self, _input, **_kwargs):
+        self.calls += 1
+        if self.calls <= self._fails_before_success:
+            args: dict = {}
+            raw = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "schema",
+                        "args": args,
+                        "id": f"call_{self.calls}",
+                        "type": "tool_call",
+                    }
+                ],
+                usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+            )
+            return {
+                "raw": raw,
+                "parsed": None,
+                "parsing_error": _validation_error(self._schema, args),
+            }
+        args = {"reasoning_summary": "ok"}
+        raw = AIMessage(
+            content="",
+            tool_calls=[{"name": "schema", "args": args, "id": "call_ok", "type": "tool_call"}],
+            usage_metadata={"input_tokens": 20, "output_tokens": 7, "total_tokens": 27},
+        )
+        return {"raw": raw, "parsed": self._schema(**args), "parsing_error": None}
+
+
+class _RequiredFieldSchema(BaseModel):
+    reasoning_summary: str
+
+
+@pytest.mark.asyncio
+async def test_repairs_missing_required_field_via_second_attempt() -> None:
+    runnable = StructuredRunnableRepairsAfterAttempts(
+        schema=_RequiredFieldSchema, fails_before_success=1
+    )
+
+    result = await ainvoke_structured_chat_model(
+        runnable, [HumanMessage(content="pregunta")], schema=_RequiredFieldSchema
+    )
+
+    assert runnable.calls == 2
+    assert result.parsed.reasoning_summary == "ok"
+
+
+@pytest.mark.asyncio
+async def test_repair_loop_sums_usage_metadata_across_failed_attempts() -> None:
+    runnable = StructuredRunnableRepairsAfterAttempts(
+        schema=_RequiredFieldSchema, fails_before_success=2
+    )
+
+    result = await ainvoke_structured_chat_model(
+        runnable, [HumanMessage(content="pregunta")], schema=_RequiredFieldSchema
+    )
+
+    assert runnable.calls == 3
+    assert result.raw_message.usage_metadata == {
+        "input_tokens": 10 + 10 + 20,
+        "output_tokens": 5 + 5 + 7,
+        "total_tokens": 15 + 15 + 27,
+    }
+
+
+@pytest.mark.asyncio
+async def test_repair_loop_gives_up_after_max_attempts() -> None:
+    runnable = StructuredRunnableRepairsAfterAttempts(
+        schema=_RequiredFieldSchema, fails_before_success=99
+    )
+
+    with pytest.raises(LLMProviderError, match="Salida estructurada inválida"):
+        await ainvoke_structured_chat_model(
+            runnable, [HumanMessage(content="pregunta")], schema=_RequiredFieldSchema
+        )
+
+    assert runnable.calls == 3  # intento inicial + MAX_STRUCTURED_REPAIR_ATTEMPTS (2)
+
+
+@pytest.mark.asyncio
+async def test_repair_loop_does_not_engage_without_message_list_input() -> None:
+    """Si `input` no es una lista de mensajes (p. ej. un doble de prueba que
+    ignora el argumento), no hay forma segura de anexar un mensaje de
+    reparacion -- se mantiene el comportamiento anterior (falla duro en el
+    primer intento)."""
+
+    args: dict = {}
+    runnable = StructuredRunnableWithParsingError(
+        args=args, parsing_error=_validation_error(_RequiredFieldSchema, args)
+    )
+
+    with pytest.raises(LLMProviderError, match="Salida estructurada inválida"):
+        await ainvoke_structured_chat_model(
+            runnable, "no-es-una-lista", schema=_RequiredFieldSchema
+        )
 
 
 # --- Conteo de tokens y costo unificado (RNF-009) ---------------------------

@@ -50,6 +50,40 @@ def test_direct_claim_takes_exact_cell_value_with_es_co_format() -> None:
     assert claim.columns_used == ("matriculados",)
 
 
+def test_direct_claim_parses_thousands_separator_from_text_column() -> None:
+    """Regresión real (pilot-004-justicia-presupuesto, dataset `f4a5-ab9q`,
+    confirmado contra Socrata real): la fuente publica columnas monetarias
+    como texto con coma de miles ("3,893,283,514,468.00"). Antes de este fix
+    `Decimal(...)` rechazaba el valor como "no numérico" pese a que la fila
+    y la columna eran exactamente las correctas -- empujando al router a
+    intentar CAST/TO_NUMBER en el SoQL, ninguno permitido (SOQL_FORBIDDEN)."""
+    evidence = EvidenceContext(
+        dataset_id="f4a5-ab9q",
+        canonical_soql=(
+            "SELECT entidad, descripci_n, apropiaci_n_vigente WHERE a_o='2023' "
+            "AND entidad='sector justicia' AND descripci_n='Funcionamiento' "
+            "LIMIT 1000 OFFSET 0"
+        ),
+        rows=({"entidad": "sector justicia", "apropiaci_n_vigente": "3,893,283,514,468.00"},),
+    )
+
+    result = build_claims(
+        evidence,
+        [
+            spec(
+                description="Apropiación vigente sector Justicia 2023",
+                columns=("apropiaci_n_vigente",),
+                unit="COP",
+                rounding=0,
+            )
+        ],
+    )
+
+    assert result.rejected == ()
+    assert len(result.claims) == 1
+    assert result.claims[0].raw_value == Decimal("3893283514468.00")
+
+
 def test_direct_claim_rejects_more_than_one_row_or_column() -> None:
     result = build_claims(
         EVIDENCE,
