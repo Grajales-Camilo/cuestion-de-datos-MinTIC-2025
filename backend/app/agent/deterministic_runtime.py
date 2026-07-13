@@ -39,7 +39,12 @@ from app.agent.plan_validator import (
     ValidatedQueryPlan,
     validate_query_plan,
 )
-from app.agent.query_plan import DatasetOption, EnumeratedPlanningContext
+from app.agent.query_plan import (
+    DatasetOption,
+    EnumeratedPlanningContext,
+    FilterOperator,
+    ScalarType,
+)
 from app.quality.claims import ClaimsBuildResult
 
 
@@ -51,6 +56,14 @@ class ProfiledCandidate:
     @property
     def context(self) -> EnumeratedPlanningContext:
         return EnumeratedPlanningContext(candidates=(self.option,))
+
+
+@dataclass(frozen=True)
+class ExploredColumnValues:
+    column_index: int
+    search_term: str
+    values: tuple[str, ...]
+    tool_calls: int = 1
 
 
 @dataclass(frozen=True)
@@ -80,8 +93,17 @@ IntentExtractor = Callable[[str], Awaitable[IntentExtraction]]
 Retriever = Callable[[IntentExtraction], Awaitable[MultiQueryRetrievalResult]]
 Profiler = Callable[[str], Awaitable[ProfiledCandidate]]
 Planner = Callable[
-    [IntentExtraction, EnumeratedPlanningContext, PlanValidationError | None],
+    [
+        IntentExtraction,
+        EnumeratedPlanningContext,
+        tuple[ExploredColumnValues, ...],
+        PlanValidationError | None,
+    ],
     Awaitable[EnumeratedPlanSelection],
+]
+Explorer = Callable[
+    [ProfiledCandidate, EnumeratedPlanSelection, tuple[ExploredColumnValues, ...]],
+    Awaitable[ExploredColumnValues],
 ]
 Executor = Callable[[ValidatedQueryPlan], Awaitable[DeterministicExecutionResult]]
 Synthesizer = Callable[[IntentExtraction, ClaimsBuildResult], Awaitable[GroundedSynthesis]]
@@ -93,6 +115,7 @@ class DeterministicRuntimeDependencies:
     retrieve: Retriever
     profile: Profiler
     plan: Planner
+    explore: Explorer
     execute: Executor
     synthesize: Synthesizer
 
@@ -101,6 +124,59 @@ def _replace_status(
     candidates: list[CandidateProgress], index: int, status: CandidateStatus
 ) -> None:
     candidates[index] = CandidateProgress(dataset_index=index, status=status)
+
+
+def _text_filter_indexes(selection: EnumeratedPlanSelection) -> tuple[int, ...]:
+    return tuple(
+        dict.fromkeys(
+            item.column_index
+            for item in selection.filters
+            if item.value_type is ScalarType.TEXT
+            and item.operator in {FilterOperator.EQ, FilterOperator.IN}
+            and item.values
+        )
+    )
+
+
+def _requires_exploration(
+    selection: EnumeratedPlanSelection | None,
+    explored: tuple[ExploredColumnValues, ...],
+) -> bool:
+    if selection is None:
+        return False
+    explored_indexes = {item.column_index for item in explored}
+    return any(
+        index not in explored_indexes for index in _text_filter_indexes(selection)
+    )
+
+
+def _validate_explored_filters(
+    selection: EnumeratedPlanSelection,
+    explored: tuple[ExploredColumnValues, ...],
+) -> None:
+    allowed = {item.column_index: set(item.values) for item in explored}
+    for item in selection.filters:
+        if item.value_type is not ScalarType.TEXT or not item.values:
+            continue
+        values = allowed.get(item.column_index)
+        if values is None:
+            raise ValueError(f"column_index {item.column_index} requiere exploración")
+        invalid = [value for value in item.values if value not in values]
+        if invalid:
+            raise ValueError(
+                f"valores no observados para column_index {item.column_index}: {invalid}"
+            )
+
+
+def _deterministic_synthesis(claims: ClaimsBuildResult) -> GroundedSynthesis:
+    values = "; ".join(
+        f"{claim.display_value}{f' {claim.unit}' if claim.unit else ''}"
+        for claim in claims.claims
+    )
+    return GroundedSynthesis(
+        answer=f"Resultado calculado con la evidencia consultada: {values}.",
+        cited_claim_indexes=tuple(range(len(claims.claims))),
+    )
 
 
 async def run_deterministic_agent(
@@ -128,7 +204,8 @@ async def run_deterministic_agent(
     execution: DeterministicExecutionResult | None = None
     synthesis: GroundedSynthesis | None = None
     validation_error: PlanValidationError | None = None
-    queries = repairs = 0
+    explored: tuple[ExploredColumnValues, ...] = ()
+    explorations = queries = repairs = 0
     trace: list[RuntimeTraceEntry] = []
 
     while True:
@@ -142,9 +219,7 @@ async def run_deterministic_agent(
             plan_available=selection is not None,
             plan_valid=validated is not None,
             plan_error_correctable=validation_error is not None,
-            exploration_required=(
-                selection.needs_value_exploration if selection is not None else False
-            ),
+            exploration_required=_requires_exploration(selection, explored),
             query_executed=execution is not None,
             evidence_eligible=(
                 execution is not None and execution.quality.eligibility_status == "eligible"
@@ -156,6 +231,7 @@ async def run_deterministic_agent(
                 candidates=sum(
                     item.status is not CandidateStatus.UNSEEN for item in candidates
                 ),
+                explorations=explorations,
                 queries=queries,
                 plan_repairs=repairs,
                 llm_calls=llm_calls,
@@ -214,9 +290,19 @@ async def run_deterministic_agent(
             continue
         if transition.node is SupervisorNode.BUILD_PLAN:
             assert profile is not None
-            selection = await dependencies.plan(intent, profile.context, validation_error)
+            selection = await dependencies.plan(
+                intent,
+                profile.context,
+                explored,
+                validation_error,
+            )
             llm_calls += 1
+            if _requires_exploration(selection, explored):
+                validated = None
+                validation_error = None
+                continue
             try:
+                _validate_explored_filters(selection, explored)
                 plan = materialize_query_plan(selection, intent=intent, context=profile.context)
                 validated = validate_query_plan(
                     plan,
@@ -239,14 +325,25 @@ async def run_deterministic_agent(
                 repairs += 1
             continue
         if transition.node is SupervisorNode.EXPLORE_VALUE:
-            # La selección restringida debe pedir una nueva planificación tras
-            # explorar; la integración concreta incorporará el valor al contexto.
-            validation_error = PlanValidationError(
-                PlanValidationCode.UNKNOWN_REFERENCE,
-                "se requiere exploración categórica",
-            )
+            assert profile is not None
+            assert selection is not None
+            item = await dependencies.explore(profile, selection, explored)
+            explored = tuple(
+                previous
+                for previous in explored
+                if previous.column_index != item.column_index
+            ) + (item,)
+            explorations += item.tool_calls
+            if not item.values:
+                assert current is not None
+                _replace_status(candidates, current, CandidateStatus.REJECTED)
+                current = None
+                profile = selection = validated = execution = None
+                explored = ()
+                validation_error = None
+                continue
             selection = None
-            repairs += 1
+            validation_error = None
             continue
         if transition.node is SupervisorNode.EXECUTE_QUERY:
             assert validated is not None
@@ -261,6 +358,7 @@ async def run_deterministic_agent(
                 _replace_status(candidates, current, CandidateStatus.REJECTED)
                 current = None
                 profile = selection = validated = execution = None
+                explored = ()
             continue
         if transition.node is SupervisorNode.DERIVE_CLAIMS:
             raise AssertionError("execute ya deriva claims de forma determinista")
@@ -271,8 +369,8 @@ async def run_deterministic_agent(
             try:
                 validate_grounded_synthesis(synthesis, execution.claims.claims)
             except ValueError:
-                synthesis = None
-                continue
+                synthesis = _deterministic_synthesis(execution.claims)
+                validate_grounded_synthesis(synthesis, execution.claims.claims)
             assert current is not None
             _replace_status(candidates, current, CandidateStatus.ACCEPTED)
             continue
@@ -281,6 +379,7 @@ async def run_deterministic_agent(
             _replace_status(candidates, current, CandidateStatus.REJECTED)
             current = None
             profile = selection = validated = execution = None
+            explored = ()
             validation_error = None
             continue
         raise AssertionError(f"transición sin implementación: {transition.node}")

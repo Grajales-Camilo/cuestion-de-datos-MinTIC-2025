@@ -11,11 +11,13 @@ from app.agent.deterministic_pipeline import (
 )
 from app.agent.deterministic_runtime import (
     DeterministicRuntimeDependencies,
+    ExploredColumnValues,
     ProfiledCandidate,
     run_deterministic_agent,
 )
 from app.agent.llm_contracts import (
     EnumeratedPlanSelection,
+    FilterChoice,
     GroundedSynthesis,
     IntentExtraction,
     MetricChoice,
@@ -27,8 +29,10 @@ from app.agent.query_plan import (
     ColumnOption,
     DatasetOption,
     EligibilityStatus,
+    FilterOperator,
     PiiRiskLevel,
     QueryOperation,
+    ScalarType,
 )
 from app.catalog.search import CatalogSearchItem
 from app.quality.claims import BuiltClaim, ClaimsBuildResult
@@ -55,6 +59,13 @@ def _profile(dataset_id: str = "abcd-1234") -> ProfiledCandidate:
             data_type=ColumnDataType.NUMBER,
             pii_risk_level=PiiRiskLevel.LOW,
         ),
+        ColumnOption(
+            index=1,
+            field_name="municipio",
+            display_name="Municipio",
+            data_type=ColumnDataType.TEXT,
+            pii_risk_level=PiiRiskLevel.LOW,
+        ),
     )
     return ProfiledCandidate(
         option=DatasetOption(
@@ -72,6 +83,11 @@ def _profile(dataset_id: str = "abcd-1234") -> ProfiledCandidate:
                 ObservedColumn(
                     field_name="valor",
                     data_type=ColumnDataType.NUMBER,
+                    pii_risk_level=PiiRiskLevel.LOW,
+                ),
+                ObservedColumn(
+                    field_name="municipio",
+                    data_type=ColumnDataType.TEXT,
                     pii_risk_level=PiiRiskLevel.LOW,
                 ),
             ),
@@ -110,6 +126,7 @@ def _dependencies(
     fail_first: bool = False,
     invalid_plan_first: bool = False,
     invalid_synthesis_first: bool = False,
+    text_filter: bool = False,
 ):
     executions = 0
     plans = 0
@@ -129,10 +146,21 @@ def _dependencies(
     async def profile(dataset_id: str) -> ProfiledCandidate:
         return _profile(dataset_id)
 
-    async def plan(intent, context, error):
+    async def plan(intent, context, explored, error):
         nonlocal plans
         del intent, context, error
         plans += 1
+        filters = ()
+        if text_filter:
+            selected_value = "PASTO" if explored else "Pasto"
+            filters = (
+                FilterChoice(
+                    column_index=1,
+                    operator=FilterOperator.EQ,
+                    value_type=ScalarType.TEXT,
+                    values=(selected_value,),
+                ),
+            )
         return EnumeratedPlanSelection(
             dataset_index=0,
             operation=QueryOperation.SUM,
@@ -142,6 +170,8 @@ def _dependencies(
                     column_index=99 if invalid_plan_first and plans == 1 else 0,
                 ),
             ),
+            filters=filters,
+            needs_value_exploration=text_filter,
         )
 
     async def execute(validated) -> DeterministicExecutionResult:
@@ -151,6 +181,10 @@ def _dependencies(
         if fail_first and executions == 1:
             raise DeterministicExecutionError("dataset no consultable")
         return _execution()
+
+    async def explore(profile, selection, explored) -> ExploredColumnValues:
+        del profile, selection, explored
+        return ExploredColumnValues(column_index=1, search_term="Pasto", values=("PASTO",))
 
     async def synthesize(intent, claims) -> GroundedSynthesis:
         nonlocal syntheses
@@ -163,7 +197,15 @@ def _dependencies(
         )
         return GroundedSynthesis(answer=answer, cited_claim_indexes=(0,))
 
-    return DeterministicRuntimeDependencies(extract, retrieve, profile, plan, execute, synthesize)
+    return DeterministicRuntimeDependencies(
+        extract,
+        retrieve,
+        profile,
+        plan,
+        explore,
+        execute,
+        synthesize,
+    )
 
 
 @pytest.mark.asyncio
@@ -231,4 +273,17 @@ async def test_runtime_retries_synthesis_with_orphan_figures() -> None:
         dependencies=_dependencies(invalid_synthesis_first=True),
     )
     assert result.status == "completed"
-    assert result.usage.llm_calls == 4
+    assert result.usage.llm_calls == 3
+    assert result.synthesis is not None
+    assert result.synthesis.answer == "Resultado calculado con la evidencia consultada: 42."
+
+
+@pytest.mark.asyncio
+async def test_runtime_forces_text_value_exploration_and_replanning() -> None:
+    result = await run_deterministic_agent(
+        "¿Cuál es el total en Pasto?",
+        dependencies=_dependencies(text_filter=True),
+    )
+    assert result.status == "completed"
+    assert result.usage.explorations == 1
+    assert SupervisorNode.EXPLORE_VALUE in [entry.node for entry in result.trace]

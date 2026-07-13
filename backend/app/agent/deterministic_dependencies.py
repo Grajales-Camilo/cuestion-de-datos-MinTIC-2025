@@ -19,6 +19,7 @@ from app.agent.deterministic_pipeline import (
 )
 from app.agent.deterministic_runtime import (
     DeterministicRuntimeDependencies,
+    ExploredColumnValues,
     ProfiledCandidate,
 )
 from app.agent.llm_contracts import (
@@ -45,6 +46,7 @@ from app.llm.factory import (
     usage_from_message,
 )
 from app.tools.catalog_lookup import fetch_columns_catalog
+from app.tools.explorar_valores import explorar_valores
 
 
 def _secret(value: Any) -> str | None:
@@ -99,7 +101,7 @@ async def _invoke[T: BaseModel](
 
 
 def _column_type(value: str) -> ColumnDataType:
-    normalized = value.casefold()
+    normalized = value.strip().casefold().replace("-", "_").replace(" ", "_")
     mapping = {
         "text": ColumnDataType.TEXT,
         "number": ColumnDataType.NUMBER,
@@ -189,6 +191,7 @@ def build_real_runtime_dependencies(
         rows = await fetch_columns_catalog(engine, dataset_id)
         if not rows:
             raise LookupError(f"dataset {dataset_id} no tiene columnas observadas")
+        ordered_rows = sorted(rows, key=lambda row: row.field_name)
         columns = tuple(
             ColumnOption(
                 index=index,
@@ -197,7 +200,7 @@ def build_real_runtime_dependencies(
                 data_type=_column_type(row.data_type),
                 pii_risk_level=PiiRiskLevel(row.pii_risk_level),
             )
-            for index, row in enumerate(rows)
+            for index, row in enumerate(ordered_rows)
         )
         return ProfiledCandidate(
             option=DatasetOption(
@@ -222,7 +225,7 @@ def build_real_runtime_dependencies(
             ),
         )
 
-    async def plan(intent, context, validation_error):
+    async def plan(intent, context, explored, validation_error):
         error = (
             {"code": validation_error.code.value, "message": str(validation_error)}
             if validation_error is not None
@@ -244,6 +247,14 @@ def build_real_runtime_dependencies(
                         {
                             "intent": intent.model_dump(mode="json"),
                             "context": _planning_view(context),
+                            "explored_values": [
+                                {
+                                    "column_index": item.column_index,
+                                    "search_term": item.search_term,
+                                    "allowed_values": list(item.values),
+                                }
+                                for item in explored
+                            ],
                             "previous_validation_error": error,
                         },
                         ensure_ascii=False,
@@ -252,6 +263,55 @@ def build_real_runtime_dependencies(
             ],
             settings=settings,
             usage=usage,
+        )
+
+    async def explore(profile, selection, explored):
+        explored_indexes = {item.column_index for item in explored}
+        target = next(
+            (
+                item
+                for item in selection.filters
+                if item.value_type is not None
+                and item.value_type.value == "text"
+                and item.values
+                and item.column_index not in explored_indexes
+            ),
+            None,
+        )
+        if target is None:
+            raise ValueError("el plan solicitó exploración sin filtro textual pendiente")
+        column = profile.option.columns[target.column_index]
+        proposed = target.values[0]
+        terms = tuple(
+            dict.fromkeys(
+                (proposed, *(part for part in proposed.split() if len(part) >= 4))
+            )
+        )[:3]
+        output: dict[str, Any] = {"ok": True, "values": ()}
+        search_term = proposed
+        calls = 0
+        for search_term in terms:
+            calls += 1
+            output = await explorar_valores(
+                {
+                    "dataset_id": profile.option.dataset_id,
+                    "columna": column.field_name,
+                    "termino_busqueda": search_term,
+                },
+                engine=engine,
+                http_client=http_client,
+                app_token=app_token,
+            )
+            if output.get("ok") is not True:
+                error = output.get("error", {})
+                raise ValueError(error.get("message", "falló explorar_valores"))
+            if output.get("values"):
+                break
+        return ExploredColumnValues(
+            column_index=target.column_index,
+            search_term=search_term,
+            values=tuple(str(value) for value in output.get("values", ())),
+            tool_calls=calls,
         )
 
     async def execute(validated):
@@ -313,6 +373,7 @@ def build_real_runtime_dependencies(
         retrieve=retrieve,
         profile=profile,
         plan=plan,
+        explore=explore,
         execute=execute,
         synthesize=synthesize,
     )
