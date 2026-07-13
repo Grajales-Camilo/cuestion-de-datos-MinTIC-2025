@@ -32,6 +32,7 @@ def schema(*, medium: bool = False) -> ObservedDatasetSchema:
     return ObservedDatasetSchema(
         dataset_id="abcd-1234",
         eligibility_status=EligibilityStatus.ELIGIBLE,
+        pii_risk_level=PiiRiskLevel.MEDIUM if medium else PiiRiskLevel.LOW,
         columns=(
             ObservedColumn(
                 field_name="municipio",

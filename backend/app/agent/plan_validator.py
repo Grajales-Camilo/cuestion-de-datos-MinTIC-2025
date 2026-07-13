@@ -53,6 +53,7 @@ class ObservedColumn(_ValidatedModel):
 class ObservedDatasetSchema(_ValidatedModel):
     dataset_id: str
     eligibility_status: EligibilityStatus
+    pii_risk_level: PiiRiskLevel
     columns: tuple[ObservedColumn, ...]
 
 
@@ -221,7 +222,7 @@ def validate_query_plan(
             )
         )
 
-    risks = {column.pii_risk_level for column in selected_columns}
+    risks = {schema.pii_risk_level, *(column.pii_risk_level for column in selected_columns)}
     if risks & {PiiRiskLevel.HIGH, PiiRiskLevel.UNKNOWN}:
         _raise(PlanValidationCode.PII_BLOCKED, "el plan usa columnas PII high o unknown")
     medium_pii = PiiRiskLevel.MEDIUM in risks

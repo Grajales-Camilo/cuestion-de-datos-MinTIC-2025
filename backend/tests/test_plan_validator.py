@@ -26,6 +26,7 @@ def schema(
     return ObservedDatasetSchema(
         dataset_id="abcd-1234",
         eligibility_status=eligibility,
+        pii_risk_level=value_pii,
         columns=(
             ObservedColumn(
                 field_name="municipio",
