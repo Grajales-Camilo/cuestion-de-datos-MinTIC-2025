@@ -84,7 +84,7 @@ def _explicit_intent_boost(item: CatalogSearchItem, intent: IntentExtraction) ->
         )
     )
     overlap = len(name.intersection(explicit))
-    return min(0.72, overlap * 0.18)
+    return min(1.0, overlap * 0.26)
 
 
 async def retrieve_candidates_multiquery(
