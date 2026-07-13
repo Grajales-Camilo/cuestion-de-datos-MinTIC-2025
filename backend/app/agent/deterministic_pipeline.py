@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from app.agent.persistence import persist_claims, persist_evidence_and_quality
 from app.agent.plan_validator import ValidatedQueryPlan
 from app.agent.query_plan import PiiRiskLevel, QueryOperation
 from app.agent.soql_renderer import RenderedQuery, render_soql
@@ -22,6 +27,7 @@ from app.quality.validator import (
     SelectedColumn,
     validate_evidence,
 )
+from app.tools.ejecutar_soql import ejecutar_soql
 
 QueryExecutor = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
@@ -34,14 +40,23 @@ class ExecutionMetadata:
     dataset_eligibility_status: str
     dataset_eligibility_reasons: tuple[str, ...] = ()
     data_updated_at: datetime | None = None
+    official_publisher_id: str | None = None
 
 
 @dataclass(frozen=True)
 class DeterministicExecutionResult:
     rendered_query: RenderedQuery
     tool_output: dict[str, Any]
+    evidence_draft: EvidenceDraft
     quality: QualityResult
     claims: ClaimsBuildResult
+
+
+@dataclass(frozen=True)
+class PersistedDeterministicExecution:
+    execution: DeterministicExecutionResult
+    evidence: dict[str, Any]
+    claims: tuple[dict[str, Any], ...]
 
 
 class DeterministicExecutionError(RuntimeError):
@@ -144,6 +159,83 @@ async def execute_validated_plan(
     return DeterministicExecutionResult(
         rendered_query=rendered,
         tool_output=output,
+        evidence_draft=evidence,
         quality=quality,
         claims=claims,
+    )
+
+
+def make_soql_executor(
+    *,
+    engine: AsyncEngine,
+    http_client: httpx.AsyncClient,
+    app_token: str | None = None,
+) -> QueryExecutor:
+    """Adapta T5 al contrato mínimo consumido por el pipeline."""
+
+    async def _execute(payload: dict[str, Any]) -> dict[str, Any]:
+        return await ejecutar_soql(
+            payload,
+            engine=engine,
+            http_client=http_client,
+            app_token=app_token,
+        )
+
+    return _execute
+
+
+async def persist_deterministic_execution(
+    execution: DeterministicExecutionResult,
+    *,
+    engine: AsyncEngine,
+    run_id: uuid.UUID,
+    official_publisher_id: str | None,
+) -> PersistedDeterministicExecution:
+    """Persiste T6 y T7 usando exclusivamente IDs creados por código."""
+
+    evidence = await persist_evidence_and_quality(
+        engine,
+        run_id,
+        execution.evidence_draft,
+        execution.quality,
+        official_publisher_id=official_publisher_id,
+    )
+    evidence_id = uuid.UUID(str(evidence["evidence_id"]))
+    claim_records = await persist_claims(
+        engine,
+        run_id,
+        evidence_id,
+        execution.rendered_query.dataset_id,
+        execution.claims.claims,
+    )
+    return PersistedDeterministicExecution(
+        execution=execution,
+        evidence=evidence,
+        claims=tuple(claim_records),
+    )
+
+
+async def execute_and_persist_validated_plan(
+    plan: ValidatedQueryPlan,
+    *,
+    engine: AsyncEngine,
+    run_id: uuid.UUID,
+    http_client: httpx.AsyncClient,
+    metadata: ExecutionMetadata,
+    app_token: str | None = None,
+) -> PersistedDeterministicExecution:
+    execution = await execute_validated_plan(
+        plan,
+        executor=make_soql_executor(
+            engine=engine,
+            http_client=http_client,
+            app_token=app_token,
+        ),
+        metadata=metadata,
+    )
+    return await persist_deterministic_execution(
+        execution,
+        engine=engine,
+        run_id=run_id,
+        official_publisher_id=metadata.official_publisher_id,
     )

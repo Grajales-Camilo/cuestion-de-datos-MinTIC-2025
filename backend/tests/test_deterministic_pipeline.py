@@ -1,8 +1,13 @@
+import uuid
 from datetime import UTC, datetime
 
 import pytest
 
-from app.agent.deterministic_pipeline import ExecutionMetadata, execute_validated_plan
+from app.agent.deterministic_pipeline import (
+    ExecutionMetadata,
+    execute_validated_plan,
+    persist_deterministic_execution,
+)
 from app.agent.plan_validator import validate_query_plan
 from app.agent.query_plan import (
     ColumnReference,
@@ -93,3 +98,50 @@ async def test_direct_lookup_parses_text_number_with_separators() -> None:
     result = await execute_validated_plan(validated(plan), executor=executor, metadata=metadata())
     assert result.claims.claims[0].raw_value == 3_893_283_514_468
     assert result.claims.claims[0].source_hash.startswith("sha256:")
+
+
+@pytest.mark.asyncio
+async def test_persistence_uses_evidence_id_created_by_persistence(monkeypatch) -> None:
+    generated_evidence_id = uuid.uuid4()
+    run_id = uuid.uuid4()
+    captured: dict[str, object] = {}
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [{"dim_1": "Pasto", "metric_sum_1": "1250"}],
+            "source_url": "https://example.test/resource/abcd-1234.json",
+        }
+
+    execution = await execute_validated_plan(
+        validated(sum_plan()), executor=executor, metadata=metadata()
+    )
+
+    async def fake_persist_evidence(*args, **kwargs):
+        captured["draft"] = args[2]
+        return {"evidence_id": str(generated_evidence_id)}
+
+    async def fake_persist_claims(*args, **kwargs):
+        captured["run_id"] = args[1]
+        captured["evidence_id"] = args[2]
+        captured["claims"] = args[4]
+        return [{"claim_id": str(uuid.uuid4())}]
+
+    monkeypatch.setattr(
+        "app.agent.deterministic_pipeline.persist_evidence_and_quality",
+        fake_persist_evidence,
+    )
+    monkeypatch.setattr(
+        "app.agent.deterministic_pipeline.persist_claims", fake_persist_claims
+    )
+    persisted = await persist_deterministic_execution(
+        execution,
+        engine=object(),  # type: ignore[arg-type]
+        run_id=run_id,
+        official_publisher_id="publisher-1",
+    )
+    assert captured["run_id"] == run_id
+    assert captured["evidence_id"] == generated_evidence_id
+    assert captured["claims"] == execution.claims.claims
+    assert persisted.evidence["evidence_id"] == str(generated_evidence_id)
