@@ -131,3 +131,20 @@ async def test_explicit_topic_phrase_in_title_outranks_small_similarity_differen
 
     result = await retrieve_candidates_multiquery(intent, searcher=searcher)
     assert result.candidates[0].item.dataset_id == "exact-01"
+
+
+@pytest.mark.asyncio
+async def test_topic_token_boost_normalizes_plural_against_short_title() -> None:
+    async def searcher(query: str, k: int) -> CatalogSearchSummary:
+        del query, k
+        return CatalogSearchSummary(
+            query="homicidios reportados",
+            results=[
+                _item("generic-1", 0.82, name="Indicadores de seguridad"),
+                _item("homicide", 0.68, name="HOMICIDIO"),
+            ],
+        )
+
+    result = await retrieve_candidates_multiquery(_intent(), searcher=searcher)
+
+    assert result.candidates[0].item.dataset_id == "homicide"

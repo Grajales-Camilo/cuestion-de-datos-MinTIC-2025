@@ -7,6 +7,8 @@ de las consultas que aportaron cada candidato.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -63,13 +65,26 @@ def _candidate_score(item: CatalogSearchItem, *, rank: int, matches: int) -> flo
 
 
 def _explicit_intent_boost(item: CatalogSearchItem, intent: IntentExtraction) -> float:
-    name = " ".join(item.name.casefold().split())
-    topic = " ".join(intent.topic.casefold().split())
-    entity = " ".join((intent.entity or "").casefold().split())
-    boost = 0.35 if topic and topic in name else 0.0
-    if entity and entity in name:
-        boost += 0.15
-    return boost
+    def tokens(value: str) -> set[str]:
+        plain = unicodedata.normalize("NFKD", value.casefold()).encode("ascii", "ignore").decode()
+        observed = set(re.findall(r"[a-z0-9]+", plain))
+        return {
+            token[:-1] if token.endswith("s") and len(token) > 4 else token
+            for token in observed
+        }
+
+    name = tokens(item.name)
+    explicit = tokens(
+        " ".join(
+            (
+                intent.topic,
+                intent.entity or "",
+                *intent.administrative_terms,
+            )
+        )
+    )
+    overlap = len(name.intersection(explicit))
+    return min(0.45, overlap * 0.225)
 
 
 async def retrieve_candidates_multiquery(
