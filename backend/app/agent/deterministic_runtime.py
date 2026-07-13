@@ -109,6 +109,7 @@ Explorer = Callable[
 ]
 Executor = Callable[[ValidatedQueryPlan], Awaitable[DeterministicExecutionResult]]
 Synthesizer = Callable[[IntentExtraction, ClaimsBuildResult], Awaitable[GroundedSynthesis]]
+TransitionObserver = Callable[[RuntimeTraceEntry, SupervisorUsage], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -221,6 +222,7 @@ async def run_deterministic_agent(
     dependencies: DeterministicRuntimeDependencies,
     budgets: SupervisorBudgets | None = None,
     is_cancelled: Callable[[], bool] | None = None,
+    observe_transition: TransitionObserver | None = None,
 ) -> DeterministicRuntimeResult:
     """Ejecuta el ciclo completo sin permitir que el LLM elija transiciones."""
 
@@ -275,7 +277,10 @@ async def run_deterministic_agent(
             ),
         )
         transition = decide_next_transition(snapshot)
-        trace.append(RuntimeTraceEntry(transition.node, transition.reason, current))
+        trace_entry = RuntimeTraceEntry(transition.node, transition.reason, current)
+        trace.append(trace_entry)
+        if observe_transition is not None:
+            await observe_transition(trace_entry, snapshot.usage)
 
         if transition.node is SupervisorNode.COMPLETE:
             return DeterministicRuntimeResult(

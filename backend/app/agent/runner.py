@@ -55,6 +55,7 @@ from app.agent.graph import (
 from app.agent.persistence import (
     load_dataset_evidence_metadata,
     persist_final_answer,
+    record_step_and_event,
 )
 from app.agent.toy_graph import NODES, build_toy_graph
 from app.config import Settings
@@ -343,6 +344,25 @@ async def execute_deterministic_agent_run_async(
         )
         async with httpx.AsyncClient(base_url=SOCRATA_RESOURCE_BASE_URL) as http_client:
             llm_usage = RuntimeLLMUsage()
+            observed_steps = 0
+
+            async def observe_transition(entry, usage) -> None:
+                nonlocal observed_steps
+                observed_steps += 1
+                await record_step_and_event(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    node=entry.node.value,
+                    display_message=entry.reason,
+                    detail={
+                        "runtime": "deterministic",
+                        "candidate_index": entry.candidate_index,
+                        "usage": usage.model_dump(mode="json"),
+                    },
+                )
+                await touch_run_heartbeat(engine, run_id)
+
             dependencies = build_real_runtime_dependencies(
                 settings=settings,
                 engine=engine,
@@ -362,6 +382,7 @@ async def execute_deterministic_agent_run_async(
                     max_duration_ms=settings.run_max_duration_s * 1000,
                 ),
                 is_cancelled=cancel_event.is_set,
+                observe_transition=observe_transition,
             )
         await touch_run_heartbeat(engine, run_id)
         latency_ms = round((time.monotonic() - started) * 1000)

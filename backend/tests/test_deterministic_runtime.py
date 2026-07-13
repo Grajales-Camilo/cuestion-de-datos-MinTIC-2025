@@ -10,6 +10,7 @@ from app.agent.deterministic_pipeline import (
     DeterministicExecutionResult,
 )
 from app.agent.deterministic_runtime import (
+    DeterministicRunCancelled,
     DeterministicRuntimeDependencies,
     ExploredColumnValues,
     ProfiledCandidate,
@@ -287,3 +288,37 @@ async def test_runtime_forces_text_value_exploration_and_replanning() -> None:
     assert result.status == "completed"
     assert result.usage.explorations == 1
     assert SupervisorNode.EXPLORE_VALUE in [entry.node for entry in result.trace]
+
+
+@pytest.mark.asyncio
+async def test_runtime_observes_every_transition_for_durable_steps() -> None:
+    observed = []
+
+    async def observer(entry, usage) -> None:
+        observed.append((entry, usage))
+
+    result = await run_deterministic_agent(
+        "¿Cuál es el total?",
+        dependencies=_dependencies(),
+        observe_transition=observer,
+    )
+    assert [entry for entry, _usage in observed] == list(result.trace)
+    assert observed[-1][0].node is SupervisorNode.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_runtime_honors_cooperative_cancellation_between_transitions() -> None:
+    cancelled = False
+
+    async def observer(entry, usage) -> None:
+        nonlocal cancelled
+        del entry, usage
+        cancelled = True
+
+    with pytest.raises(DeterministicRunCancelled):
+        await run_deterministic_agent(
+            "¿Cuál es el total?",
+            dependencies=_dependencies(),
+            observe_transition=observer,
+            is_cancelled=lambda: cancelled,
+        )
