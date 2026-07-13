@@ -419,6 +419,51 @@ def normalize_ranked_aggregate(
     )
 
 
+def normalize_lookup_total_column(
+    selection: EnumeratedPlanSelection,
+    *,
+    question: str,
+    context: EnumeratedPlanningContext,
+) -> EnumeratedPlanSelection:
+    """Prefiere la columna total frente a subtipos en preguntas de cantidad."""
+
+    words = _semantic_tokens(question)
+    if selection.operation is not QueryOperation.LOOKUP or not words.intersection(
+        {"cuanto", "cuanta", "total"}
+    ):
+        return selection
+    if selection.dataset_index >= len(context.candidates):
+        return selection
+    columns = context.candidates[selection.dataset_index].columns
+    totals = [
+        column
+        for column in columns
+        if "total" in _semantic_tokens(column.field_name)
+        and len(words.intersection(_semantic_tokens(column.field_name))) >= 1
+    ]
+    if not totals:
+        return selection
+    best = max(
+        totals,
+        key=lambda column: (
+            len(words.intersection(_semantic_tokens(column.field_name))),
+            -column.index,
+        ),
+    )
+    concept = _semantic_tokens(best.field_name) - {"total", "no"}
+    dimensions = tuple(
+        index
+        for index in selection.dimension_column_indexes
+        if not (
+            concept.intersection(_semantic_tokens(columns[index].field_name))
+            and "total" not in _semantic_tokens(columns[index].field_name)
+        )
+    )
+    return selection.model_copy(
+        update={"dimension_column_indexes": tuple(dict.fromkeys((*dimensions, best.index)))}
+    )
+
+
 def materialize_query_plan(
     selection: EnumeratedPlanSelection,
     *,
