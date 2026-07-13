@@ -23,11 +23,12 @@ from app.agent.deterministic_runtime import (
     ProfiledCandidate,
 )
 from app.agent.llm_contracts import (
+    CandidateRanking,
     EnumeratedPlanSelection,
     GroundedSynthesis,
     IntentExtraction,
 )
-from app.agent.multiquery_retrieval import retrieve_candidates_multiquery
+from app.agent.multiquery_retrieval import MultiQueryRetrievalResult, retrieve_candidates_multiquery
 from app.agent.persistence import load_dataset_evidence_metadata
 from app.agent.plan_validator import ObservedColumn, ObservedDatasetSchema
 from app.agent.query_plan import (
@@ -150,6 +151,7 @@ def build_real_runtime_dependencies(
     """Construye dependencias productivas sin ninguna ruta de fallback legado."""
 
     intent_model = _model(settings, IntentExtraction)
+    ranking_model = _model(settings, CandidateRanking)
     planner_model = _model(settings, EnumeratedPlanSelection)
     synthesis_model = _model(settings, GroundedSynthesis)
     app_token = _secret(settings.socrata_app_token)
@@ -193,7 +195,53 @@ def build_real_runtime_dependencies(
                 stale_after_days=settings.catalog_stale_after_days,
             )
 
-        return await retrieve_candidates_multiquery(intent, searcher=searcher)
+        result = await retrieve_candidates_multiquery(intent, searcher=searcher)
+        if not result.candidates:
+            return result
+        ranking = await _invoke(
+            ranking_model,
+            CandidateRanking,
+            [
+                SystemMessage(
+                    content=(
+                        "Ordena candidatos por relevancia para la intención. Selecciona sólo "
+                        "índices enumerados; no inventes datasets, campos ni identificadores."
+                    )
+                ),
+                HumanMessage(
+                    content=json.dumps(
+                        {
+                            "intent": intent.model_dump(mode="json"),
+                            "candidates": [
+                                {
+                                    "candidate_index": index,
+                                    "title": candidate.item.name,
+                                    "publisher": candidate.item.publisher,
+                                    "columns": candidate.item.columns_preview,
+                                }
+                                for index, candidate in enumerate(result.candidates)
+                            ],
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+            ],
+            settings=settings,
+            usage=usage,
+        )
+        invalid = [
+            index
+            for index in ranking.ranked_candidate_indexes
+            if index >= len(result.candidates)
+        ]
+        if invalid:
+            raise ValueError(f"ranking contiene índices inexistentes: {invalid}")
+        ranked = list(ranking.ranked_candidate_indexes)
+        ranked.extend(index for index in range(len(result.candidates)) if index not in ranked)
+        return MultiQueryRetrievalResult(
+            queries=result.queries,
+            candidates=tuple(result.candidates[index] for index in ranked),
+        )
 
     async def profile(dataset_id: str) -> ProfiledCandidate:
         metadata = await load_dataset_evidence_metadata(engine, dataset_id)
