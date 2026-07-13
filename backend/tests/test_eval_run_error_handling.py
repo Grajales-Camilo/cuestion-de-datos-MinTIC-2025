@@ -6,6 +6,8 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
+
 import eval.run as run_module
 from app.config import Settings
 from eval.loader import GoldenCase, GoldenSuite
@@ -199,3 +201,21 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
     assert persisted_calls[1]["agent_run_id"] is None
     assert persisted_calls[1]["error_code"] == "RuntimeError"
     assert persisted_calls[2]["agent_run_id"] is not None
+
+def test_select_cases_supports_exact_generic_case_ids() -> None:
+    suite = _fake_suite()
+
+    selected = run_module._select_cases(
+        suite.cases,
+        limit=None,
+        case_ids=[suite.cases[1].case_id],
+    )
+
+    assert selected == [suite.cases[1]]
+
+
+def test_select_cases_rejects_unknown_case_id() -> None:
+    suite = _fake_suite()
+
+    with pytest.raises(RuntimeError, match="case_id inexistente: missing"):
+        run_module._select_cases(suite.cases, limit=None, case_ids=["missing"])

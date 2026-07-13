@@ -37,6 +37,17 @@ from eval.persistence import PersistedGoldenSuite, sync_golden_suite
 SUCCESS_RATE_THRESHOLD = 0.80
 
 
+def _select_cases(cases, *, limit: int | None, case_ids: list[str] | None):
+    if not case_ids:
+        return cases[:limit] if limit is not None else cases
+    requested = set(case_ids)
+    selected = [case for case in cases if case.case_id in requested]
+    missing = requested.difference(case.case_id for case in selected)
+    if missing:
+        raise RuntimeError(f"case_id inexistente: {', '.join(sorted(missing))}")
+    return selected
+
+
 def _git_commit() -> str:
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"], capture_output=True, check=False, text=True
@@ -194,6 +205,7 @@ async def run_suite(
     model: str | None,
     seed: int,
     limit: int | None,
+    case_ids: list[str] | None = None,
 ) -> RunSuiteResult:
     settings = get_settings()
     if not settings.eval_mode:
@@ -205,7 +217,7 @@ async def run_suite(
         }
     )
     suite = load_golden_suite(default_suite_path(suite_name))
-    selected_cases = suite.cases[:limit] if limit is not None else suite.cases
+    selected_cases = _select_cases(suite.cases, limit=limit, case_ids=case_ids)
     engine = create_app_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
     worker_id: str | None = None
     try:
@@ -289,9 +301,17 @@ def main() -> int:
     parser.add_argument("--model")
     parser.add_argument("--seed", type=int, default=601000)
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--case-id",
+        dest="case_ids",
+        action="append",
+        help="Ejecuta sólo el case_id indicado; puede repetirse.",
+    )
     args = parser.parse_args()
     if args.limit is not None and args.limit < 1:
         parser.error("--limit debe ser mayor que cero")
+    if args.limit is not None and args.case_ids:
+        parser.error("--limit y --case-id son mutuamente excluyentes")
     kwargs = vars(args)
     try:
         if sys.platform == "win32":
