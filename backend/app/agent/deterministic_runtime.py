@@ -377,6 +377,19 @@ async def run_deterministic_agent(
                 assert current is not None
                 _replace_status(candidates, current, CandidateStatus.PLANNED)
             except PlanValidationError as exc:
+                if exc.code in {
+                    PlanValidationCode.DATASET_MISMATCH,
+                    PlanValidationCode.DATASET_NOT_ELIGIBLE,
+                    PlanValidationCode.PII_BLOCKED,
+                }:
+                    assert current is not None
+                    _replace_status(candidates, current, CandidateStatus.REJECTED)
+                    current = None
+                    profile = selection = validated = execution = None
+                    explored = ()
+                    validation_error = None
+                    repairs = 0
+                    continue
                 validation_error = exc
                 validated = None
                 repairs += 1
