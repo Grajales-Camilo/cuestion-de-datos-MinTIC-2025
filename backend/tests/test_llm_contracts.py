@@ -16,6 +16,7 @@ from app.agent.llm_contracts import (
     materialize_query_plan,
     normalize_aggregate_intent,
     normalize_budget_snapshot,
+    normalize_lookup_filters,
     normalize_lookup_output_columns,
     normalize_ranked_aggregate,
     normalize_sort_references,
@@ -120,6 +121,52 @@ def test_materializes_query_plan_with_system_owned_provenance() -> None:
     assert plan.metrics[0].column is not None
     assert plan.metrics[0].column.column_index == 1
     assert plan.metrics[0].provenance.origin is SelectionOrigin.INTENT
+
+
+def test_lookup_keeps_filter_whose_value_is_literal_in_question() -> None:
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        filters=(
+            FilterChoice(
+                column_index=1,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.NUMBER,
+                values=("2024",),
+            ),
+        ),
+    )
+
+    normalized = normalize_lookup_filters(
+        selection,
+        question="¿Qué valor aparece en 2024?",
+        context=context(),
+    )
+
+    assert normalized.filters == selection.filters
+
+
+def test_lookup_discards_ungrounded_filter_on_arbitrary_column() -> None:
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        filters=(
+            FilterChoice(
+                column_index=1,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.NUMBER,
+                values=("999",),
+            ),
+        ),
+    )
+
+    normalized = normalize_lookup_filters(
+        selection,
+        question="¿Qué valor aparece en un registro?",
+        context=context(),
+    )
+
+    assert normalized.filters == ()
 
 
 def test_materialization_rejects_invented_column_index() -> None:

@@ -278,6 +278,15 @@ def _semantic_tokens(value: str) -> set[str]:
     return {token[:-1] if token.endswith("s") and len(token) > 4 else token for token in tokens}
 
 
+def _normalized_phrase(value: str) -> str:
+    return " ".join(
+        unicodedata.normalize("NFKD", value.casefold())
+        .encode("ascii", "ignore")
+        .decode()
+        .split()
+    )
+
+
 def normalize_aggregate_intent(intent: IntentExtraction, question: str) -> IntentExtraction:
     """Distingue total acumulado de extremo de fila antes de planificar."""
 
@@ -550,16 +559,16 @@ def normalize_lookup_output_columns(
         column.index: len(column_tokens[column.index].intersection(words))
         for column in columns
     }
-    relevant_indexes: list[int] = []
-    for word in words:
+    relevant_indexes: set[int] = set()
+    for word in sorted(words):
         if len(word) < 4:
             continue
         matching = [column.index for column in columns if word in column_tokens[column.index]]
         if not matching:
             continue
         best = max(relevance[index] for index in matching)
-        relevant_indexes.extend(index for index in matching if relevance[index] == best)
-    relevant = tuple(dict.fromkeys(relevant_indexes))
+        relevant_indexes.update(index for index in matching if relevance[index] == best)
+    relevant = tuple(sorted(relevant_indexes, key=lambda index: (-relevance[index], index)))
     identifiers = tuple(
         column.index
         for column in columns
@@ -613,7 +622,7 @@ def normalize_lookup_filters(
     question: str,
     context: EnumeratedPlanningContext,
 ) -> EnumeratedPlanSelection:
-    """Descarta filtros lookup no justificados por territorio, entidad o periodo."""
+    """Conserva solo filtros lookup justificados por semántica o texto literal."""
 
     if selection.operation is not QueryOperation.LOOKUP or not context.candidates:
         return selection
@@ -630,6 +639,18 @@ def normalize_lookup_filters(
         "mes",
     }
     columns = context.candidates[selection.dataset_index].columns
+    normalized_question = _normalized_phrase(question)
+
+    def grounded_in_question(item: FilterChoice) -> bool:
+        if not item.values:
+            return False
+        for value in item.values:
+            normalized_value = _normalized_phrase(value)
+            compact_value = re.sub(r"[^a-z0-9]", "", normalized_value)
+            if len(compact_value) < 3 or normalized_value not in normalized_question:
+                return False
+        return True
+
     filters = tuple(
         item
         for item in selection.filters
@@ -637,6 +658,7 @@ def normalize_lookup_filters(
         and (
             _semantic_tokens(columns[item.column_index].field_name).intersection(allowed)
             or columns[item.column_index].field_name.startswith(("a_o", "ano", "anio"))
+            or grounded_in_question(item)
         )
     )
     return selection.model_copy(update={"filters": filters})
