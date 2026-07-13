@@ -464,6 +464,47 @@ def normalize_lookup_total_column(
     )
 
 
+def normalize_intent_for_observed_schema(
+    intent: IntentExtraction,
+    *,
+    question: str,
+    context: EnumeratedPlanningContext,
+) -> IntentExtraction:
+    """Evita reagregar indicadores que el dataset ya publica como columnas."""
+
+    if not context.candidates:
+        return intent
+    words = _semantic_tokens(question)
+    column_tokens = {
+        column.index: _semantic_tokens(column.field_name)
+        for column in context.candidates[0].columns
+    }
+    has_total_concept = any(
+        "total" in tokens and len((tokens - {"total", "no"}).intersection(words)) > 0
+        for tokens in column_tokens.values()
+    )
+    has_gender_breakdown = sum(
+        bool(tokens.intersection({"genero", "sexo", "hombre", "mujer"}))
+        for tokens in column_tokens.values()
+    ) >= 2
+    has_rate_columns = any(
+        tokens.intersection({"tasa", "desercion", "porcentaje"})
+        for tokens in column_tokens.values()
+    )
+    has_volume_column = any(
+        tokens.intersection({"tonelada", "volumen"}) for tokens in column_tokens.values()
+    )
+    should_lookup = (
+        (bool(words.intersection({"cuanto", "cuanta"})) and has_total_concept)
+        or (bool(words.intersection({"sexo", "genero"})) and has_gender_breakdown)
+        or (bool(words.intersection({"tasa", "porcentaje"})) and has_rate_columns)
+        or ("volumen" in words and has_volume_column)
+    )
+    if should_lookup:
+        return intent.model_copy(update={"operation": QueryOperation.LOOKUP})
+    return intent
+
+
 def materialize_query_plan(
     selection: EnumeratedPlanSelection,
     *,

@@ -32,6 +32,7 @@ from app.agent.llm_contracts import (
     materialize_query_plan,
     normalize_aggregate_intent,
     normalize_budget_snapshot,
+    normalize_intent_for_observed_schema,
     normalize_lookup_total_column,
     normalize_ranked_aggregate,
     normalize_sort_references,
@@ -340,6 +341,11 @@ async def run_deterministic_agent(
             assert current is not None
             dataset_id = retrieval.candidates[current].item.dataset_id
             profile = await dependencies.profile(dataset_id)
+            intent = normalize_intent_for_observed_schema(
+                intent,
+                question=question,
+                context=profile.context,
+            )
             _replace_status(candidates, current, CandidateStatus.PROFILED)
             continue
         if transition.node is SupervisorNode.BUILD_PLAN:
