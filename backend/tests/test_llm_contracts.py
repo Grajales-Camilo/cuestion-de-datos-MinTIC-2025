@@ -359,6 +359,47 @@ def test_latest_lookup_orders_by_year_and_month_not_indicator() -> None:
     assert normalized.limit == 1
 
 
+def test_plant_count_lookup_prioritizes_total_and_year_over_subtypes() -> None:
+    plant_context = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="fvq4-wwtz",
+                title="Planta por entidad",
+                publisher="DAFP",
+                columns=tuple(
+                    ColumnOption(
+                        index=index,
+                        field_name=name,
+                        display_name=name,
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    )
+                    for index, name in enumerate(
+                        (
+                            "nombre",
+                            "no_planta_docente",
+                            "no_planta_permanente",
+                            "no_planta_temporal",
+                            "no_total_planta",
+                            "anio_aplicar",
+                        )
+                    )
+                ),
+            ),
+        )
+    )
+
+    normalized = normalize_lookup_output_columns(
+        EnumeratedPlanSelection(dataset_index=0, operation=QueryOperation.LOOKUP),
+        question="¿Cuántos cargos de planta tiene la entidad y en qué año aplica?",
+        context=plant_context,
+    )
+
+    assert normalized.dimension_column_indexes[:2] == (4, 5)
+    assert 1 not in normalized.dimension_column_indexes
+
+
 def test_ranked_aggregate_materializes_group_order_and_top_one() -> None:
     proposed = EnumeratedPlanSelection(
         dataset_index=0,

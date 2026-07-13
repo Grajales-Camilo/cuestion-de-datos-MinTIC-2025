@@ -522,6 +522,8 @@ def normalize_lookup_output_columns(
         words.update({"genero", "hombre", "mujer"})
     if "volumen" in words:
         words.update({"tonelada", "empresa"})
+    if "planta" in words and words.intersection({"cuanto", "cantidad", "total"}):
+        words.add("total")
     context_tokens = {
         "municipio",
         "departamento",
