@@ -163,7 +163,13 @@ def build_real_runtime_dependencies(
                     content=(
                         "Extrae la intención analítica. No inventes datasets, columnas, "
                         "identificadores ni consultas. Conserva territorio, entidad y periodo "
-                        "solo cuando estén explícitos en la pregunta."
+                        "solo cuando estén explícitos en la pregunta. `operation` representa "
+                        "la agregación necesaria, no la palabra superlativa: preguntas por el "
+                        "mayor volumen, la mayor concentración o el total acumulado por grupo "
+                        "normalmente requieren SUM; MAX/MIN se reservan para el máximo/mínimo "
+                        "de un valor individual; LOOKUP recupera campos de un registro. Conserva "
+                        "calificadores sustantivos (por ejemplo tipo, categoría o corte) en "
+                        "administrative_terms."
                     )
                 ),
                 HumanMessage(content=question),
@@ -239,7 +245,14 @@ def build_real_runtime_dependencies(
                     content=(
                         "Selecciona exclusivamente índices del contexto. No escribas nombres "
                         "de campos, IDs, SQL o SoQL. COUNT significa count(*). Usa filtros "
-                        "tipados y solicita exploración si un valor categórico no está confirmado."
+                        "tipados y solicita exploración si un valor categórico no está confirmado. "
+                        "Si se pregunta qué grupo tiene el mayor o menor agregado, incluye la "
+                        "dimensión, la métrica agregada, ordena por esa métrica (DESC o ASC) y usa "
+                        "limit=1. No sustituyas SUM por MAX para resolver un ranking. En LOOKUP "
+                        "devuelve sólo columnas necesarias para responder. Si una ejecución anual "
+                        "tiene registros periódicos, selecciona determinísticamente el registro de "
+                        "cierre mediante la columna temporal ordenada DESC y limit=1; aplica los "
+                        "calificadores categóricos presentes en la intención."
                     )
                 ),
                 HumanMessage(
@@ -353,6 +366,8 @@ def build_real_runtime_dependencies(
                 SystemMessage(
                     content=(
                         "Redacta una respuesta clara usando solo los claims enumerados. Toda "
+                        "respuesta debe citar como máximo 12 claims y priorizar los que contestan "
+                        "directamente la pregunta. "
                         "cifra debe copiar un display_value citado. No agregues cálculos, fechas, "
                         "porcentajes ni cantidades que no estén en esos claims."
                     )

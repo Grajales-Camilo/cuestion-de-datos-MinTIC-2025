@@ -104,7 +104,7 @@ class EnumeratedPlanSelection(_LLMOutput):
 
 class GroundedSynthesis(_LLMOutput):
     answer: str = Field(min_length=1, max_length=8_000)
-    cited_claim_indexes: tuple[int, ...] = Field(min_length=1, max_length=100)
+    cited_claim_indexes: tuple[int, ...] = Field(min_length=1, max_length=12)
 
     @model_validator(mode="after")
     def _unique_claims(self) -> GroundedSynthesis:
