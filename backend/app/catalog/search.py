@@ -156,6 +156,29 @@ async def search_catalog(
               AND e.model = :model
             ORDER BY e.embedding <=> :query_embedding
             LIMIT :candidate_limit
+        ),
+        lexical_candidates AS (
+            SELECT d.id AS dataset_id
+            FROM catalog_datasets d
+            WHERE d.api_active = true
+              AND :text_query <> ''
+              AND to_tsvector(
+                    'spanish',
+                    concat_ws(' ', d.name, d.publisher, d.category, d.description, d.embedding_text)
+                  ) @@ to_tsquery('spanish', :text_query)
+            ORDER BY ts_rank_cd(
+                to_tsvector(
+                    'spanish',
+                    concat_ws(' ', d.name, d.publisher, d.category, d.description, d.embedding_text)
+                ),
+                to_tsquery('spanish', :text_query)
+            ) DESC
+            LIMIT 100
+        ),
+        candidate_ids AS (
+            SELECT dataset_id FROM vector_candidates
+            UNION
+            SELECT dataset_id FROM lexical_candidates
         )
         SELECT *
         FROM (
@@ -193,8 +216,12 @@ async def search_catalog(
                     to_tsquery('spanish', :text_query)
                 )
             END AS lexical_rank
-        FROM vector_candidates vc
-        JOIN catalog_datasets d ON d.id = vc.dataset_id
+        FROM candidate_ids candidates
+        JOIN catalog_datasets d ON d.id = candidates.dataset_id
+        JOIN catalog_embeddings e ON e.dataset_id = d.id AND e.model = :model
+        CROSS JOIN LATERAL (
+            SELECT e.embedding <=> :query_embedding AS distance
+        ) vc
         LEFT JOIN LATERAL (
             SELECT
                 (

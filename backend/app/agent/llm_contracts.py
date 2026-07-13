@@ -535,20 +535,47 @@ def normalize_lookup_output_columns(
     filter_indexes = tuple(
         item.column_index for item in selection.filters if item.column_index < len(columns)
     )
+    relevance = {
+        column.index: len(_semantic_tokens(column.field_name).intersection(words))
+        for column in columns
+    }
+    max_relevance = max(relevance.values(), default=0)
     relevant = tuple(
         column.index
         for column in columns
-        if _semantic_tokens(column.field_name).intersection(words)
+        if max_relevance > 0 and relevance[column.index] == max_relevance
     )
     identifiers = tuple(
         column.index
         for column in columns
         if _semantic_tokens(column.field_name).intersection(context_tokens)
+        or column.field_name.startswith(("a_o", "ano", "anio"))
     )
     dimensions = tuple(dict.fromkeys((*filter_indexes, *relevant, *identifiers)))[:8]
     if not dimensions:
         return selection
-    return selection.model_copy(update={"dimension_column_indexes": dimensions, "metrics": ()})
+    update: dict[str, object] = {"dimension_column_indexes": dimensions, "metrics": ()}
+    if words.intersection({"ultimo", "reciente", "disponible"}):
+        temporal = tuple(
+            column.index
+            for column in columns
+            if column.index in dimensions
+            and (
+                _semantic_tokens(column.field_name).intersection({"ano", "anio", "mes", "fecha"})
+                or column.field_name.startswith(("a_o", "ano", "anio"))
+            )
+        )
+        if temporal:
+            update["order_by"] = tuple(
+                SortChoice(
+                    target_kind=SortTargetKind.DIMENSION,
+                    target_index=index,
+                    direction=SortDirection.DESC,
+                )
+                for index in temporal
+            )
+            update["limit"] = 1
+    return selection.model_copy(update=update)
 
 
 def normalize_lookup_filters(

@@ -60,6 +60,17 @@ def test_query_variants_are_deterministic_unique_and_grounded_in_intent() -> Non
     assert build_query_variants(_intent()) == variants
 
 
+def test_query_variants_add_structural_public_workforce_recall() -> None:
+    variants = build_query_variants(
+        IntentExtraction(
+            topic="¿Cómo está compuesta por sexo la planta de un ministerio?",
+            operation=QueryOperation.LOOKUP,
+        )
+    )
+
+    assert "caracterizacion empleo publico genero hombre mujer" in variants
+
+
 @pytest.mark.asyncio
 async def test_multiquery_deduplicates_and_rewards_cross_query_coverage() -> None:
     shared = _item("aaaa-1111", 0.72)

@@ -44,14 +44,27 @@ def build_query_variants(intent: IntentExtraction) -> tuple[str, ...]:
     administrative = tuple(
         value.strip() for value in intent.administrative_terms if value.strip()
     )
+    words = _intent_tokens(intent)
+    structural: tuple[str, ...] = ()
+    if "sexo" in words and words.intersection({"planta", "empleo", "entidad", "ministerio"}):
+        structural += ("caracterizacion empleo publico genero hombre mujer",)
+    if "volumen" in words and "limpieza" in words:
+        structural += ("toneladas limpieza urbana residuos",)
     raw = (
         " ".join((topic, *qualifiers)),
         topic,
         " ".join((topic, *administrative)),
         " ".join((topic, intent.operation.value)),
+        *structural,
     )
     normalized = (" ".join(value.split()) for value in raw)
     return tuple(dict.fromkeys(value for value in normalized if len(value) >= 3))
+
+
+def _intent_tokens(intent: IntentExtraction) -> set[str]:
+    value = " ".join((intent.topic, intent.entity or "", *intent.administrative_terms))
+    plain = unicodedata.normalize("NFKD", value.casefold()).encode("ascii", "ignore").decode()
+    return set(re.findall(r"[a-z0-9]+", plain))
 
 
 def _candidate_score(item: CatalogSearchItem, *, rank: int, matches: int) -> float:

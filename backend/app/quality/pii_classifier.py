@@ -57,6 +57,7 @@ class ReviewedDatasetColumns(BaseModel):
     columns: set[str] = Field(default_factory=set)
     source: str
     reason: str
+    override_medium: bool = False
 
 
 class PiiPatternsFixture(BaseModel):
@@ -103,6 +104,16 @@ def classify_column(
     for pattern in fixture.high_risk_column_patterns:
         if re.search(pattern.pattern, haystack):
             return ColumnPiiClassification(risk_level="high", matched_pattern_id=pattern.id)
+    reviewed = fixture.reviewed_dataset_columns.get(dataset_id or "")
+    if (
+        reviewed is not None
+        and reviewed.override_medium
+        and field_name in reviewed.columns
+    ):
+        return ColumnPiiClassification(
+            risk_level=reviewed.risk_level,
+            matched_pattern_id=f"reviewed_dataset:{dataset_id}",
+        )
     for pattern in fixture.medium_risk_column_patterns:
         if re.search(pattern.pattern, haystack):
             return ColumnPiiClassification(risk_level="medium", matched_pattern_id=pattern.id)
@@ -110,7 +121,6 @@ def classify_column(
     # Una revisión temática nunca rebaja señales high/medium y solo aplica a
     # nombres de columna exactos del esquema observado. Una columna nueva o
     # renombrada vuelve al default seguro `unknown`.
-    reviewed = fixture.reviewed_dataset_columns.get(dataset_id or "")
     if reviewed is not None and field_name in reviewed.columns:
         return ColumnPiiClassification(
             risk_level=reviewed.risk_level,

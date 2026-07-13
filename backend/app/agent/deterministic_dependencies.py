@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -304,9 +305,14 @@ def build_real_runtime_dependencies(
             raise ValueError("el plan solicitó exploración sin filtro textual pendiente")
         column = profile.option.columns[target.column_index]
         proposed = target.values[0]
+        plain = "".join(
+            character
+            for character in unicodedata.normalize("NFKD", proposed)
+            if not unicodedata.combining(character)
+        )
         terms = tuple(
             dict.fromkeys(
-                (proposed, *(part for part in proposed.split() if len(part) >= 4))
+                (proposed, plain, *(part for part in plain.split() if len(part) >= 4))
             )
         )[:3]
         output: dict[str, Any] = {"ok": True, "values": ()}

@@ -36,6 +36,7 @@ from app.agent.query_plan import (
     ScalarType,
 )
 from app.catalog.search import CatalogSearchItem
+from app.llm.factory import LLMProviderError
 from app.quality.claims import BuiltClaim, ClaimsBuildResult
 
 
@@ -127,6 +128,7 @@ def _dependencies(
     fail_first: bool = False,
     invalid_plan_first: bool = False,
     invalid_synthesis_first: bool = False,
+    synthesis_provider_error: bool = False,
     text_filter: bool = False,
 ):
     executions = 0
@@ -192,6 +194,8 @@ def _dependencies(
         nonlocal syntheses
         del intent, claims
         syntheses += 1
+        if synthesis_provider_error:
+            raise LLMProviderError("504 timeout")
         answer = (
             "El total observado fue 999."
             if invalid_synthesis_first and syntheses == 1
@@ -281,6 +285,18 @@ async def test_runtime_retries_synthesis_with_orphan_figures() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_falls_back_to_grounded_synthesis_on_provider_error() -> None:
+    result = await run_deterministic_agent(
+        "¿Cuál es el total?",
+        dependencies=_dependencies(synthesis_provider_error=True),
+    )
+    assert result.status == "completed"
+    assert result.usage.llm_calls == 3
+    assert result.synthesis is not None
+    assert result.synthesis.answer == "Resultados calculados con la evidencia consultada: 42."
+
+
+@pytest.mark.asyncio
 async def test_runtime_forces_text_value_exploration_and_replanning() -> None:
     result = await run_deterministic_agent(
         "¿Cuál es el total en Pasto?",
@@ -289,6 +305,93 @@ async def test_runtime_forces_text_value_exploration_and_replanning() -> None:
     assert result.status == "completed"
     assert result.usage.explorations == 1
     assert SupervisorNode.EXPLORE_VALUE in [entry.node for entry in result.trace]
+
+
+@pytest.mark.asyncio
+async def test_runtime_canonicalizes_explored_values_without_diacritics() -> None:
+    dependencies = _dependencies(text_filter=True)
+
+    async def explore(profile, selection, explored) -> ExploredColumnValues:
+        del profile, selection, explored
+        return ExploredColumnValues(
+            column_index=1,
+            search_term="Villamaria",
+            values=("VILLAMARIA",),
+        )
+
+    async def plan(intent, context, explored, error):
+        del intent, context, error
+        return EnumeratedPlanSelection(
+            dataset_index=0,
+            operation=QueryOperation.SUM,
+            metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=0),),
+            filters=(
+                FilterChoice(
+                    column_index=1,
+                    operator=FilterOperator.EQ,
+                    value_type=ScalarType.TEXT,
+                    values=(("Villamaría" if not explored else "Villamaría"),),
+                ),
+            ),
+            needs_value_exploration=True,
+        )
+
+    dependencies = DeterministicRuntimeDependencies(
+        dependencies.extract_intent,
+        dependencies.retrieve,
+        dependencies.profile,
+        plan,
+        explore,
+        dependencies.execute,
+        dependencies.synthesize,
+    )
+    result = await run_deterministic_agent("¿Cuál es el total?", dependencies=dependencies)
+    assert result.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_runtime_retains_observed_filter_when_replan_omits_it() -> None:
+    dependencies = _dependencies(text_filter=True)
+    captured = {}
+
+    async def plan(intent, context, explored, error):
+        del intent, context, error
+        return EnumeratedPlanSelection(
+            dataset_index=0,
+            operation=QueryOperation.SUM,
+            metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=0),),
+            filters=(
+                ()
+                if explored
+                else (
+                    FilterChoice(
+                        column_index=1,
+                        operator=FilterOperator.EQ,
+                        value_type=ScalarType.TEXT,
+                        values=("Pasto",),
+                    ),
+                )
+            ),
+            needs_value_exploration=not explored,
+        )
+
+    async def execute(validated):
+        captured["filters"] = validated.filters
+        return _execution()
+
+    dependencies = DeterministicRuntimeDependencies(
+        dependencies.extract_intent,
+        dependencies.retrieve,
+        dependencies.profile,
+        plan,
+        dependencies.explore,
+        execute,
+        dependencies.synthesize,
+    )
+    result = await run_deterministic_agent("¿Cuál es el total en Pasto?", dependencies=dependencies)
+
+    assert result.status == "completed"
+    assert captured["filters"][0].values[0].value == "PASTO"
 
 
 @pytest.mark.asyncio

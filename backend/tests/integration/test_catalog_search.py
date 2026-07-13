@@ -9,7 +9,6 @@ from app.catalog.embeddings import EMBEDDING_DIMENSION, EXPECTED_EMBEDDING_MODEL
 from app.catalog.search import search_catalog
 from app.config import normalize_database_url_for_sqlalchemy
 from app.db.engine import create_app_async_engine
-from tests.integration._snapshot import backup_tables, restore_tables
 
 pytestmark = pytest.mark.integration
 
@@ -39,15 +38,18 @@ async def engine():
 
 @pytest.fixture
 async def clean_catalog(engine):
-    tables = ("catalog_datasets", "catalog_columns", "catalog_embeddings")
+    dataset_ids = ("aaaa-0001", "aaaa-0002", "aaaa-0003")
     async with engine.begin() as connection:
-        await backup_tables(connection, *tables)
-        await connection.execute(text("DELETE FROM catalog_embeddings"))
-        await connection.execute(text("DELETE FROM catalog_columns"))
-        await connection.execute(text("DELETE FROM catalog_datasets"))
+        await connection.execute(
+            text("DELETE FROM catalog_datasets WHERE id = ANY(:ids)"),
+            {"ids": list(dataset_ids)},
+        )
     yield
     async with engine.begin() as connection:
-        await restore_tables(connection, *tables)
+        await connection.execute(
+            text("DELETE FROM catalog_datasets WHERE id = ANY(:ids)"),
+            {"ids": list(dataset_ids)},
+        )
 
 
 async def _seed_dataset(
@@ -141,9 +143,13 @@ async def test_search_catalog_orders_by_cosine_similarity_and_excludes_inactive(
     )
 
     assert summary.query == "desercion escolar"
-    assert [item.dataset_id for item in summary.results] == ["aaaa-0001", "aaaa-0002"]
-    assert summary.results[0].similarity > summary.results[1].similarity
-    assert summary.results[0].columns_preview == ["a_columna", "m_columna", "z_columna"]
+    seeded = [
+        item for item in summary.results if item.dataset_id in {"aaaa-0001", "aaaa-0002"}
+    ]
+    assert [item.dataset_id for item in seeded] == ["aaaa-0001", "aaaa-0002"]
+    assert "aaaa-0003" not in {item.dataset_id for item in summary.results}
+    assert seeded[0].similarity > seeded[1].similarity
+    assert seeded[0].columns_preview == ["a_columna", "m_columna", "z_columna"]
 
 
 async def test_search_catalog_marks_stale_index(engine, clean_catalog) -> None:

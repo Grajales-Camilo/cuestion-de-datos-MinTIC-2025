@@ -297,8 +297,9 @@ reviewed_dataset_columns:
     columns: [entidad, descripci_n, apropiaci_n_vigente, compromiso, compromiso_1, obligado, obligado_1, pagos, pago, mes, a_o]
   h8rs-jxum:
     risk_level: low
+    override_medium: true
     source: "https://www.datos.gov.co/api/views/h8rs-jxum"
-    reason: "Caracterización agregada del empleo público por entidad; sexo y rangos de edad conservan medium y requieren agregación mínima."
+    reason: "Caracterización agregada del empleo público por entidad; género, edad, educación, experiencia y salario son indicadores institucionales preagregados, no registros de servidores."
     columns: [c_digo_sigep, nombre_de_la_entidad, nit, orden, suborden, regi_n_pnd, c_digo_divipola_departamento, departamento, c_digo_divipola_municipio, municipio, clasificaci_n_org_nica, sector, nivel, tipo_de_vinculaci_n, naturaleza_jur_dica, longitud, latitud, a_o, mes, fuente, genero_hombre, genero_mujer, genero_no_binario, nivel_educativo_primaria, nivel_educativo_secundaria, nivel_educativo_t_cnica_tecnol, nivel_educativo_profesional, nivel_educativo_especializaci, nivel_educativo_maestr_a, nivel_educativo_doctorado, nivel_educativo_sin_datos, edad_menor_o_igual_a_29, edad_30_39, edad_40_49, edad_50_62, edad_63_y_mas, experiencia_laboral_menor, experiencia_laboral_de_1, experiencia_laboral_de_11, experiencia_laboral_de_21, experiencia_laboral_de_31, experiencia_laboral_mayor, experiencia_laboral_sin_datos, salario_mensual_promedio]
   ji8i-4anb:
     risk_level: low

@@ -7,6 +7,7 @@ transición siguen siendo exclusivas de ``decide_next_transition``.
 from __future__ import annotations
 
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -26,6 +27,7 @@ from app.agent.deterministic_pipeline import (
 )
 from app.agent.llm_contracts import (
     EnumeratedPlanSelection,
+    FilterChoice,
     GroundedSynthesis,
     IntentExtraction,
     ground_intent_topic_in_question,
@@ -56,6 +58,7 @@ from app.agent.query_plan import (
     FilterOperator,
     ScalarType,
 )
+from app.llm.factory import LLMProviderError
 from app.quality.claims import ClaimsBuildResult
 
 
@@ -166,14 +169,17 @@ def _validate_explored_filters(
     selection: EnumeratedPlanSelection,
     explored: tuple[ExploredColumnValues, ...],
 ) -> None:
-    allowed = {item.column_index: set(item.values) for item in explored}
+    allowed = {
+        item.column_index: {_fold_text(value) for value in item.values}
+        for item in explored
+    }
     for item in selection.filters:
         if item.value_type is not ScalarType.TEXT or not item.values:
             continue
         values = allowed.get(item.column_index)
         if values is None:
             raise ValueError(f"column_index {item.column_index} requiere exploración")
-        invalid = [value for value in item.values if value not in values]
+        invalid = [value for value in item.values if _fold_text(value) not in values]
         if invalid:
             raise ValueError(
                 f"valores no observados para column_index {item.column_index}: {invalid}"
@@ -192,20 +198,41 @@ def _normalize_explored_filter_values(
             normalized.append(item)
             continue
         canonical = {
-            value.casefold(): next(
-                observed for observed in values if observed.casefold() == value.casefold()
+            _fold_text(value): next(
+                observed for observed in values if _fold_text(observed) == _fold_text(value)
             )
             for value in item.values
-            if any(observed.casefold() == value.casefold() for observed in values)
+            if any(_fold_text(observed) == _fold_text(value) for observed in values)
         }
         normalized.append(
             item.model_copy(
                 update={
-                    "values": tuple(canonical.get(value.casefold(), value) for value in item.values)
+                    "values": tuple(
+                        canonical.get(_fold_text(value), value) for value in item.values
+                    )
                 }
             )
         )
+    normalized_indexes = {item.column_index for item in normalized}
+    normalized.extend(
+        FilterChoice(
+            column_index=item.column_index,
+            operator=FilterOperator.EQ,
+            value_type=ScalarType.TEXT,
+            values=(item.values[0],),
+        )
+        for item in explored
+        if item.values and item.column_index not in normalized_indexes
+    )
     return selection.model_copy(update={"filters": tuple(normalized)})
+
+
+def _fold_text(value: str) -> str:
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFKD", value.casefold())
+        if not unicodedata.combining(character)
+    )
 
 
 def _deterministic_synthesis(claims: ClaimsBuildResult) -> GroundedSynthesis:
@@ -467,8 +494,12 @@ async def run_deterministic_agent(
             raise AssertionError("execute ya deriva claims de forma determinista")
         if transition.node is SupervisorNode.SYNTHESIZE:
             assert execution is not None
-            synthesis = await dependencies.synthesize(intent, execution.claims)
-            llm_calls += 1
+            try:
+                synthesis = await dependencies.synthesize(intent, execution.claims)
+                llm_calls += 1
+            except LLMProviderError:
+                llm_calls += 1
+                synthesis = _deterministic_synthesis(execution.claims)
             try:
                 validate_grounded_synthesis(synthesis, execution.claims.claims)
             except ValueError:

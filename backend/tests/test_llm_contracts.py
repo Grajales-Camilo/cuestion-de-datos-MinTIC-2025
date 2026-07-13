@@ -16,6 +16,7 @@ from app.agent.llm_contracts import (
     materialize_query_plan,
     normalize_aggregate_intent,
     normalize_budget_snapshot,
+    normalize_lookup_output_columns,
     normalize_ranked_aggregate,
     normalize_sort_references,
     normalize_system_owned_operation,
@@ -265,6 +266,97 @@ def test_lookup_preserves_metric_columns_as_enumerated_output_dimensions() -> No
             GroundedSynthesis(answer="El total fue 99.999.", cited_claim_indexes=(0,)),
             (_claim(),),
         )
+
+
+def test_lookup_prioritizes_exact_indicator_over_generic_unit_columns() -> None:
+    lookup_context = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="d7pt-p5fi",
+                title="Residuos",
+                publisher="SSPD",
+                columns=tuple(
+                    ColumnOption(
+                        index=index,
+                        field_name=name,
+                        display_name=name,
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    )
+                    for index, name in enumerate(
+                        (
+                            "municipio_rea_de_prestaci",
+                            "a_o_del_cargue",
+                            "nombre_empresa",
+                            "toneladas_de_barrido_y",
+                            "toneladas_de_limpieza_urbana",
+                            "toneladas_recolectadas",
+                        )
+                    )
+                ),
+            ),
+        )
+    )
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0, 1, 2, 3, 4, 5),
+    )
+
+    normalized = normalize_lookup_output_columns(
+        proposed,
+        question="¿Qué volumen de limpieza urbana reportó Villamaría?",
+        context=lookup_context,
+    )
+
+    assert normalized.dimension_column_indexes[:4] == (4, 0, 1, 2)
+    assert 3 not in normalized.dimension_column_indexes
+
+
+def test_latest_lookup_orders_by_year_and_month_not_indicator() -> None:
+    latest_context = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="h8rs-jxum",
+                title="Empleo público",
+                publisher="DAFP",
+                columns=tuple(
+                    ColumnOption(
+                        index=index,
+                        field_name=name,
+                        display_name=name,
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    )
+                    for index, name in enumerate(
+                        ("genero_hombre", "genero_mujer", "a_o", "mes")
+                    )
+                ),
+            ),
+        )
+    )
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        order_by=(
+            SortChoice(
+                target_kind=SortTargetKind.DIMENSION,
+                target_index=0,
+                direction=SortDirection.DESC,
+            ),
+        ),
+    )
+
+    normalized = normalize_lookup_output_columns(
+        proposed,
+        question="Composición por sexo en el último mes disponible",
+        context=latest_context,
+    )
+
+    assert tuple(item.target_index for item in normalized.order_by) == (2, 3)
+    assert normalized.limit == 1
 
 
 def test_ranked_aggregate_materializes_group_order_and_top_one() -> None:
