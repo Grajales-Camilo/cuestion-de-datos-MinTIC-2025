@@ -33,6 +33,7 @@ from app.agent.llm_contracts import (
     normalize_aggregate_intent,
     normalize_budget_snapshot,
     normalize_intent_for_observed_schema,
+    normalize_lookup_output_columns,
     normalize_lookup_total_column,
     normalize_ranked_aggregate,
     normalize_sort_references,
@@ -364,6 +365,11 @@ async def run_deterministic_agent(
                 context=profile.context,
             )
             selection = normalize_lookup_total_column(
+                selection,
+                question=question,
+                context=profile.context,
+            )
+            selection = normalize_lookup_output_columns(
                 selection,
                 question=question,
                 context=profile.context,

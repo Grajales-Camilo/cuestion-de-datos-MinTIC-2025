@@ -505,6 +505,52 @@ def normalize_intent_for_observed_schema(
     return intent
 
 
+def normalize_lookup_output_columns(
+    selection: EnumeratedPlanSelection,
+    *,
+    question: str,
+    context: EnumeratedPlanningContext,
+) -> EnumeratedPlanSelection:
+    """Acota LOOKUP a indicadores pedidos e identificadores de contexto."""
+
+    if selection.operation is not QueryOperation.LOOKUP or not context.candidates:
+        return selection
+    words = _semantic_tokens(question)
+    if words.intersection({"presupuestal", "presupuesto"}):
+        return selection
+    if "sexo" in words:
+        words.update({"genero", "hombre", "mujer"})
+    if "volumen" in words:
+        words.update({"tonelada", "empresa"})
+    context_tokens = {
+        "municipio",
+        "departamento",
+        "entidad",
+        "empresa",
+        "ano",
+        "anio",
+        "mes",
+    }
+    columns = context.candidates[selection.dataset_index].columns
+    filter_indexes = tuple(
+        item.column_index for item in selection.filters if item.column_index < len(columns)
+    )
+    relevant = tuple(
+        column.index
+        for column in columns
+        if _semantic_tokens(column.field_name).intersection(words)
+    )
+    identifiers = tuple(
+        column.index
+        for column in columns
+        if _semantic_tokens(column.field_name).intersection(context_tokens)
+    )
+    dimensions = tuple(dict.fromkeys((*filter_indexes, *relevant, *identifiers)))[:8]
+    if not dimensions:
+        return selection
+    return selection.model_copy(update={"dimension_column_indexes": dimensions, "metrics": ()})
+
+
 def materialize_query_plan(
     selection: EnumeratedPlanSelection,
     *,
