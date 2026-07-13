@@ -316,7 +316,12 @@ def normalize_budget_snapshot(
         for name, index in by_name.items()
         if name in {"apropiaci_n_vigente", "pagos"}
     )
-    filters = list(selection.filters)
+    filters = [
+        item
+        for item in selection.filters
+        if item.column_index < len(columns)
+        and columns[item.column_index].field_name in {"a_o", "entidad"}
+    ]
     if description is not None and not any(item.column_index == description for item in filters):
         filters.append(
             FilterChoice(
