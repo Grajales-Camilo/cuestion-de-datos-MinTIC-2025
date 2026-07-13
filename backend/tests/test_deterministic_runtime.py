@@ -24,7 +24,12 @@ from app.agent.llm_contracts import (
     MetricChoice,
 )
 from app.agent.multiquery_retrieval import MultiQueryRetrievalResult, RetrievedCandidate
-from app.agent.plan_validator import ObservedColumn, ObservedDatasetSchema
+from app.agent.plan_validator import (
+    ObservedColumn,
+    ObservedDatasetSchema,
+    PlanValidationCode,
+    PlanValidationError,
+)
 from app.agent.query_plan import (
     ColumnDataType,
     ColumnOption,
@@ -233,6 +238,39 @@ async def test_runtime_rejects_candidate_when_value_exploration_is_incompatible(
 
     assert result.status == "completed"
     assert result.trace[-1].candidate_index == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_rejects_irreparable_privacy_candidate(monkeypatch) -> None:
+    from app.agent import deterministic_runtime
+
+    real_validate = deterministic_runtime.validate_query_plan
+    validations = 0
+
+    def validate_with_first_privacy_failure(*args, **kwargs):
+        nonlocal validations
+        validations += 1
+        if validations == 1:
+            raise PlanValidationError(
+                PlanValidationCode.PII_REQUIRES_AGGREGATION,
+                "las columnas PII medium requieren agregación",
+            )
+        return real_validate(*args, **kwargs)
+
+    monkeypatch.setattr(
+        deterministic_runtime,
+        "validate_query_plan",
+        validate_with_first_privacy_failure,
+    )
+
+    result = await run_deterministic_agent(
+        "¿Cuál es el total?",
+        dependencies=_dependencies(candidates=2),
+    )
+
+    assert result.status == "completed"
+    assert result.trace[-1].candidate_index == 1
+    assert result.usage.plan_repairs == 0
 
 
 @pytest.mark.asyncio

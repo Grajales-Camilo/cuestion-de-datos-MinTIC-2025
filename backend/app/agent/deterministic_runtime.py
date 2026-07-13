@@ -484,6 +484,7 @@ async def run_deterministic_agent(
                     PlanValidationCode.DATASET_MISMATCH,
                     PlanValidationCode.DATASET_NOT_ELIGIBLE,
                     PlanValidationCode.PII_BLOCKED,
+                    PlanValidationCode.PII_REQUIRES_AGGREGATION,
                 }:
                     assert current is not None
                     _replace_status(candidates, current, CandidateStatus.REJECTED)

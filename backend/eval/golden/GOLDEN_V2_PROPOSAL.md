@@ -23,6 +23,12 @@ reemplazarse ni reinterpretarse silenciosamente.
 - `eval/reports/f80dbf19-61d5-4973-93a6-653494b05b79.md`: 038 y 039 consultan el
   dataset esperado con rango diario explícito y seleccionan fecha, estación y
   sensor, pero no coinciden con la observación horaria oculta del golden.
+- `eval/reports/2f2a4e7f-6aab-4576-8277-1f3088a1d692.md`: corrida consolidada
+  de los 50 casos sobre el commit actual. Aprueba 25/50 (50%): los diez casos
+  negativos aprueban, quince positivos consultan el dataset esperado pero no
+  coinciden con el hecho congelado y diez no completan con evidencia del
+  dataset esperado. Frente a la línea anterior de 13/50, demuestra la mejora
+  del runtime y, a la vez, que Gate 6 continúa correctamente bloqueado.
 
 Consultas persistidas para la última corrida:
 
