@@ -11,7 +11,10 @@ from app.agent.llm_contracts import (
     GroundedSynthesis,
     IntentExtraction,
     MetricChoice,
+    SortChoice,
     materialize_query_plan,
+    normalize_ranked_aggregate,
+    normalize_sort_references,
     normalize_system_owned_operation,
     normalize_temporal_year_filters,
     validate_candidate_ranking,
@@ -27,6 +30,8 @@ from app.agent.query_plan import (
     QueryOperation,
     ScalarType,
     SelectionOrigin,
+    SortDirection,
+    SortTargetKind,
 )
 from app.quality.claims import BuiltClaim
 
@@ -254,3 +259,47 @@ def test_lookup_preserves_metric_columns_as_enumerated_output_dimensions() -> No
             GroundedSynthesis(answer="El total fue 99.999.", cited_claim_indexes=(0,)),
             (_claim(),),
         )
+
+
+def test_ranked_aggregate_materializes_group_order_and_top_one() -> None:
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.SUM,
+        metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=1),),
+    )
+
+    normalized = normalize_ranked_aggregate(
+        proposed,
+        question="¿Qué municipios concentran mayor valor?",
+        context=context(),
+    )
+
+    assert normalized.dimension_column_indexes == (0,)
+    assert normalized.order_by == (
+        SortChoice(
+            target_kind=SortTargetKind.METRIC,
+            target_index=0,
+            direction=SortDirection.DESC,
+        ),
+    )
+    assert normalized.limit == 1
+
+
+def test_lookup_sort_column_is_added_and_converted_to_dimension_position() -> None:
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0,),
+        order_by=(
+            SortChoice(
+                target_kind=SortTargetKind.DIMENSION,
+                target_index=1,
+                direction=SortDirection.DESC,
+            ),
+        ),
+    )
+
+    normalized = normalize_sort_references(proposed, context())
+
+    assert normalized.dimension_column_indexes == (0, 1)
+    assert normalized.order_by[0].target_index == 1

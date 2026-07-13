@@ -29,6 +29,8 @@ from app.agent.llm_contracts import (
     GroundedSynthesis,
     IntentExtraction,
     materialize_query_plan,
+    normalize_ranked_aggregate,
+    normalize_sort_references,
     normalize_system_owned_operation,
     normalize_temporal_year_filters,
     validate_grounded_synthesis,
@@ -342,6 +344,12 @@ async def run_deterministic_agent(
             )
             llm_calls += 1
             selection = normalize_system_owned_operation(selection, intent)
+            selection = normalize_ranked_aggregate(
+                selection,
+                question=question,
+                context=profile.context,
+            )
+            selection = normalize_sort_references(selection, profile.context)
             selection = normalize_temporal_year_filters(selection, profile.context)
             selection = _normalize_explored_filter_values(selection, explored)
             if _requires_exploration(selection, explored):

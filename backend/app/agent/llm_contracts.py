@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.agent.query_plan import (
@@ -211,6 +214,116 @@ def normalize_system_owned_operation(
             }
         )
     return selection
+
+
+def normalize_sort_references(
+    selection: EnumeratedPlanSelection,
+    context: EnumeratedPlanningContext,
+) -> EnumeratedPlanSelection:
+    """Traduce índices de columna a posiciones enumeradas de dimensión/métrica."""
+
+    normalized: list[SortChoice] = []
+    dimensions = selection.dimension_column_indexes
+    for item in selection.order_by:
+        if item.target_kind is SortTargetKind.DIMENSION:
+            if item.target_index < len(selection.dimension_column_indexes):
+                normalized.append(item)
+            elif item.target_index in dimensions:
+                normalized.append(
+                    item.model_copy(
+                        update={
+                            "target_index": dimensions.index(item.target_index)
+                        }
+                    )
+                )
+            elif (
+                selection.operation is QueryOperation.LOOKUP
+                and selection.dataset_index < len(context.candidates)
+                and item.target_index
+                < len(context.candidates[selection.dataset_index].columns)
+            ):
+                dimensions = (*dimensions, item.target_index)
+                normalized.append(item.model_copy(update={"target_index": len(dimensions) - 1}))
+            continue
+        if item.target_index < len(selection.metrics):
+            normalized.append(item)
+            continue
+        metric_position = next(
+            (
+                index
+                for index, metric in enumerate(selection.metrics)
+                if metric.column_index == item.target_index
+            ),
+            None,
+        )
+        if metric_position is not None:
+            normalized.append(item.model_copy(update={"target_index": metric_position}))
+        elif not selection.metrics and item.target_index in dimensions:
+            normalized.append(
+                item.model_copy(
+                    update={
+                        "target_kind": SortTargetKind.DIMENSION,
+                        "target_index": dimensions.index(item.target_index),
+                    }
+                )
+            )
+    return selection.model_copy(
+        update={"dimension_column_indexes": dimensions, "order_by": tuple(normalized)}
+    )
+
+
+def _semantic_tokens(value: str) -> set[str]:
+    plain = unicodedata.normalize("NFKD", value.casefold()).encode("ascii", "ignore").decode()
+    tokens = set(re.findall(r"[a-z0-9]+", plain))
+    return {token[:-1] if token.endswith("s") and len(token) > 4 else token for token in tokens}
+
+
+def normalize_ranked_aggregate(
+    selection: EnumeratedPlanSelection,
+    *,
+    question: str,
+    context: EnumeratedPlanningContext,
+) -> EnumeratedPlanSelection:
+    """Materializa agrupación y top-1 cuando la pregunta expresa un ranking."""
+
+    words = _semantic_tokens(question)
+    descending = bool(words.intersection({"mayor", "mas", "concentra", "alto"}))
+    ascending = bool(words.intersection({"menor", "menos", "bajo"}))
+    if not (descending or ascending) or not selection.metrics:
+        return selection
+    dimensions = selection.dimension_column_indexes
+    if not dimensions and selection.dataset_index < len(context.candidates):
+        question_tokens = _semantic_tokens(question)
+        candidates = [
+            column
+            for column in context.candidates[selection.dataset_index].columns
+            if column.data_type is ColumnDataType.TEXT
+        ]
+        ranked = sorted(
+            candidates,
+            key=lambda column: (
+                len(question_tokens.intersection(_semantic_tokens(column.display_name))),
+                -column.index,
+            ),
+            reverse=True,
+        )
+        if ranked and question_tokens.intersection(_semantic_tokens(ranked[0].display_name)):
+            dimensions = (ranked[0].index,)
+    if not dimensions:
+        return selection
+    return selection.model_copy(
+        update={
+            "dimension_column_indexes": dimensions,
+            "order_by": (
+                SortChoice(
+                    target_kind=SortTargetKind.METRIC,
+                    target_index=0,
+                    direction=SortDirection.DESC if descending else SortDirection.ASC,
+                ),
+            ),
+            "limit": 1,
+        }
+    )
 
 
 def materialize_query_plan(
