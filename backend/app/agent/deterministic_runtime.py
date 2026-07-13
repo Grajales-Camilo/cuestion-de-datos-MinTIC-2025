@@ -29,6 +29,8 @@ from app.agent.llm_contracts import (
     GroundedSynthesis,
     IntentExtraction,
     materialize_query_plan,
+    normalize_aggregate_intent,
+    normalize_budget_snapshot,
     normalize_ranked_aggregate,
     normalize_sort_references,
     normalize_system_owned_operation,
@@ -231,6 +233,7 @@ async def run_deterministic_agent(
     limits = budgets or SupervisorBudgets()
     started = time.monotonic()
     intent = await dependencies.extract_intent(question)
+    intent = normalize_aggregate_intent(intent, question)
     llm_calls = 1
     retrieval = await dependencies.retrieve(intent)
     candidates = [
@@ -344,6 +347,11 @@ async def run_deterministic_agent(
             )
             llm_calls += 1
             selection = normalize_system_owned_operation(selection, intent)
+            selection = normalize_budget_snapshot(
+                selection,
+                question=question,
+                context=profile.context,
+            )
             selection = normalize_ranked_aggregate(
                 selection,
                 question=question,

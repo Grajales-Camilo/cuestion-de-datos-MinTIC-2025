@@ -278,6 +278,83 @@ def _semantic_tokens(value: str) -> set[str]:
     return {token[:-1] if token.endswith("s") and len(token) > 4 else token for token in tokens}
 
 
+def normalize_aggregate_intent(intent: IntentExtraction, question: str) -> IntentExtraction:
+    """Distingue total acumulado de extremo de fila antes de planificar."""
+
+    words = _semantic_tokens(question)
+    ranking = words.intersection({"mayor", "mas", "concentra", "alto"})
+    cumulative = words.intersection({"volumen", "total", "acumulado", "cantidad", "reportado"})
+    if ranking and cumulative:
+        return intent.model_copy(update={"operation": QueryOperation.SUM})
+    return intent
+
+
+def normalize_budget_snapshot(
+    selection: EnumeratedPlanSelection,
+    *,
+    question: str,
+    context: EnumeratedPlanningContext,
+) -> EnumeratedPlanSelection:
+    """Materializa un corte presupuestal acumulado sin sumar snapshots periódicos."""
+
+    words = _semantic_tokens(question)
+    if not words.intersection({"presupuestal", "presupuesto"}) or not words.intersection(
+        {"ejecucion", "pago", "pagado"}
+    ):
+        return selection
+    if selection.dataset_index >= len(context.candidates):
+        return selection
+    columns = context.candidates[selection.dataset_index].columns
+    by_name = {column.field_name: column.index for column in columns}
+    description = next(
+        (index for name, index in by_name.items() if name.startswith("descripci")),
+        None,
+    )
+    month = by_name.get("mes")
+    required_outputs = tuple(
+        index
+        for name, index in by_name.items()
+        if name in {"apropiaci_n_vigente", "pagos"}
+    )
+    filters = list(selection.filters)
+    if description is not None and not any(item.column_index == description for item in filters):
+        filters.append(
+            FilterChoice(
+                column_index=description,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("Funcionamiento",),
+            )
+        )
+    dimensions = tuple(
+        dict.fromkeys(
+            (
+                *selection.dimension_column_indexes,
+                *(item.column_index for item in filters if item.operator is FilterOperator.EQ),
+                *required_outputs,
+                *((month,) if month is not None else ()),
+            )
+        )
+    )
+    order = (
+        SortChoice(
+            target_kind=SortTargetKind.DIMENSION,
+            target_index=dimensions.index(month),
+            direction=SortDirection.ASC,
+        ),
+    ) if month is not None else selection.order_by
+    return selection.model_copy(
+        update={
+            "operation": QueryOperation.LOOKUP,
+            "metrics": (),
+            "dimension_column_indexes": dimensions,
+            "filters": tuple(filters),
+            "order_by": order,
+            "limit": 1,
+        }
+    )
+
+
 def normalize_ranked_aggregate(
     selection: EnumeratedPlanSelection,
     *,

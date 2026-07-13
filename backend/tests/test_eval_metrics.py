@@ -141,6 +141,39 @@ def test_positive_matches_a_metric_column_renamed_by_the_llm_pilot_002_style() -
     assert result.passed is True
 
 
+def test_positive_restores_deterministic_dimension_alias_from_rendered_soql() -> None:
+    case = _positive_case(
+        expected_facts=(
+            {
+                "description": "x",
+                "expected_value": {"departamento": "VALLE DEL CAUCA", "total": "66723"},
+                "tolerance": 0,
+            },
+        ),
+    )
+
+    result = assess_case(
+        case,
+        {
+            "status": "completed",
+            "evidence": [
+                {
+                    "dataset_id": "abcd-1234",
+                    "soql_query": (
+                        "SELECT departamento AS dim_1, sum(cantidad) AS metric_sum_1 "
+                        "GROUP BY departamento ORDER BY metric_sum_1 DESC LIMIT 1 OFFSET 0"
+                    ),
+                    "rows": [{"dim_1": "VALLE DEL CAUCA", "metric_sum_1": "66723"}],
+                }
+            ],
+            "claims": [],
+        },
+    )
+
+    assert result.facts_verified is True
+    assert result.passed is True
+
+
 def test_dimension_key_never_falls_back_to_a_differently_named_column() -> None:
     """Una dimensión (valor esperado de texto) exige coincidencia EXACTA de
     nombre de columna -- nunca se adivina, aunque el mismo valor aparezca

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -134,7 +135,16 @@ def _verify_expected_facts(case: GoldenCase, evidence: list[dict[str, Any]]) -> 
         return True
     rows: list[dict[str, Any]] = []
     for item in evidence:
-        rows.extend(item.get("rows") or [])
+        alias_map = {
+            alias: source
+            for source, alias in re.findall(
+                r"(?:^|,)\s*([a-z_][a-z0-9_]*)\s+AS\s+([a-z_][a-z0-9_]*)",
+                (item.get("soql_query") or "").split(" FROM ", 1)[0].removeprefix("SELECT "),
+                flags=re.IGNORECASE,
+            )
+        }
+        for row in item.get("rows") or []:
+            rows.append({alias_map.get(key, key): value for key, value in row.items()})
     for fact in case.expected_facts:
         expected_value = fact.get("expected_value") or {}
         tolerance = float(fact.get("tolerance", 0) or 0)

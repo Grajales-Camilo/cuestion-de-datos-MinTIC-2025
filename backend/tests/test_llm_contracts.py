@@ -13,6 +13,8 @@ from app.agent.llm_contracts import (
     MetricChoice,
     SortChoice,
     materialize_query_plan,
+    normalize_aggregate_intent,
+    normalize_budget_snapshot,
     normalize_ranked_aggregate,
     normalize_sort_references,
     normalize_system_owned_operation,
@@ -195,12 +197,15 @@ def test_normalizes_explicit_year_only_for_observed_temporal_column() -> None:
     temporal_context = context().model_copy(
         update={
             "candidates": (
-                context().candidates[0].model_copy(
+                context()
+                .candidates[0]
+                .model_copy(
                     update={
                         "columns": (
-                            context().candidates[0].columns[0].model_copy(
-                                update={"data_type": ColumnDataType.DATE}
-                            ),
+                            context()
+                            .candidates[0]
+                            .columns[0]
+                            .model_copy(update={"data_type": ColumnDataType.DATE}),
                             context().candidates[0].columns[1],
                         )
                     }
@@ -303,3 +308,74 @@ def test_lookup_sort_column_is_added_and_converted_to_dimension_position() -> No
 
     assert normalized.dimension_column_indexes == (0, 1)
     assert normalized.order_by[0].target_index == 1
+
+
+def test_cumulative_ranking_normalizes_intent_to_sum() -> None:
+    normalized = normalize_aggregate_intent(
+        intent(QueryOperation.MAX),
+        "¿Qué evento tiene mayor volumen reportado?",
+    )
+
+    assert normalized.operation is QueryOperation.SUM
+
+
+def test_budget_snapshot_is_not_summed_across_periods() -> None:
+    budget_context = context().model_copy(
+        update={
+            "candidates": (
+                context()
+                .candidates[0]
+                .model_copy(
+                    update={
+                        "columns": (
+                            ColumnOption(
+                                index=0,
+                                field_name="descripci_n",
+                                display_name="Descripción",
+                                data_type=ColumnDataType.TEXT,
+                                pii_risk_level=PiiRiskLevel.LOW,
+                            ),
+                            ColumnOption(
+                                index=1,
+                                field_name="mes",
+                                display_name="Mes",
+                                data_type=ColumnDataType.TEXT,
+                                pii_risk_level=PiiRiskLevel.LOW,
+                            ),
+                            ColumnOption(
+                                index=2,
+                                field_name="apropiaci_n_vigente",
+                                display_name="Apropiación vigente",
+                                data_type=ColumnDataType.TEXT,
+                                pii_risk_level=PiiRiskLevel.LOW,
+                            ),
+                            ColumnOption(
+                                index=3,
+                                field_name="pagos",
+                                display_name="Pagos",
+                                data_type=ColumnDataType.TEXT,
+                                pii_risk_level=PiiRiskLevel.LOW,
+                            ),
+                        )
+                    }
+                ),
+            )
+        }
+    )
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.SUM,
+        metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=3),),
+    )
+
+    normalized = normalize_budget_snapshot(
+        proposed,
+        question="¿Cuál fue la ejecución presupuestal y cuánto se pagó?",
+        context=budget_context,
+    )
+
+    assert normalized.operation is QueryOperation.LOOKUP
+    assert normalized.metrics == ()
+    assert normalized.limit == 1
+    assert normalized.filters[0].values == ("Funcionamiento",)
+    assert normalized.order_by[0].direction is SortDirection.ASC
