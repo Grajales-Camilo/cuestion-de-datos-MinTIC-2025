@@ -50,6 +50,12 @@ class PiiRiskLevel(StrEnum):
     UNKNOWN = "unknown"
 
 
+class EligibilityStatus(StrEnum):
+    ELIGIBLE = "eligible"
+    DIAGNOSTIC_ONLY = "diagnostic_only"
+    BLOCKED = "blocked"
+
+
 class QueryOperation(StrEnum):
     LOOKUP = "lookup"
     COUNT = "count"
