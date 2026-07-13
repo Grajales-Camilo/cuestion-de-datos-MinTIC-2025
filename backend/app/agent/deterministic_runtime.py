@@ -501,7 +501,17 @@ async def run_deterministic_agent(
         if transition.node is SupervisorNode.EXPLORE_VALUE:
             assert profile is not None
             assert selection is not None
-            item = await dependencies.explore(profile, selection, explored)
+            try:
+                item = await dependencies.explore(profile, selection, explored)
+            except (LookupError, ValueError):
+                assert current is not None
+                _replace_status(candidates, current, CandidateStatus.REJECTED)
+                current = None
+                profile = selection = validated = execution = None
+                explored = ()
+                validation_error = None
+                repairs = 0
+                continue
             explored = tuple(
                 previous
                 for previous in explored

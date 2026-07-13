@@ -102,6 +102,45 @@ def _claim_specs(
     return tuple(specs)
 
 
+def _lookup_presence_specs(
+    plan: ValidatedQueryPlan,
+    rendered: RenderedQuery,
+    rows: tuple[dict, ...],
+) -> tuple[ClaimSpec, ...]:
+    """Representa filas textuales como presencia verificable, sin fingir magnitudes."""
+
+    specs: list[ClaimSpec] = []
+    field_aliases = tuple(
+        zip(
+            (dimension.field_name for dimension in plan.dimensions),
+            rendered.dimension_aliases,
+            strict=True,
+        )
+    )
+    for row_index, row in enumerate(rows[:12]):
+        observed = tuple(
+            (field_name, alias, row.get(alias))
+            for field_name, alias in field_aliases
+            if row.get(alias) is not None
+        )
+        if not observed:
+            continue
+        description = "Registro observado: " + "; ".join(
+            f"{field_name}={value}" for field_name, _alias, value in observed
+        )
+        count_alias = observed[0][1]
+        specs.append(
+            ClaimSpec(
+                claim_type="derived",
+                description=description,
+                source_row_indexes=(row_index,),
+                columns=(count_alias,),
+                formula={"agg": "count", "col": count_alias},
+            )
+        )
+    return tuple(specs)
+
+
 async def execute_validated_plan(
     plan: ValidatedQueryPlan,
     *,
@@ -153,6 +192,19 @@ async def execute_validated_plan(
         ),
         _claim_specs(plan, rendered, rows),
     )
+    if not claims.claims and plan.operation is QueryOperation.LOOKUP:
+        presence_claims = build_claims(
+            EvidenceContext(
+                dataset_id=rendered.dataset_id,
+                canonical_soql=canonical_soql,
+                rows=rows,
+            ),
+            _lookup_presence_specs(plan, rendered, rows),
+        )
+        claims = ClaimsBuildResult(
+            claims=presence_claims.claims,
+            rejected=claims.rejected + presence_claims.rejected,
+        )
     if not claims.claims:
         reasons = "; ".join(item.reason for item in claims.rejected) or "sin claims"
         raise DeterministicExecutionError(f"CLAIMS_REJECTED: {reasons}")

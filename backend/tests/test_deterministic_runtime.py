@@ -130,10 +130,12 @@ def _dependencies(
     invalid_synthesis_first: bool = False,
     synthesis_provider_error: bool = False,
     text_filter: bool = False,
+    fail_first_exploration: bool = False,
 ):
     executions = 0
     plans = 0
     syntheses = 0
+    explorations = 0
 
     async def extract(question: str) -> IntentExtraction:
         assert question
@@ -187,7 +189,11 @@ def _dependencies(
         return _execution()
 
     async def explore(profile, selection, explored) -> ExploredColumnValues:
+        nonlocal explorations
         del profile, selection, explored
+        explorations += 1
+        if fail_first_exploration and explorations == 1:
+            raise ValueError("la columna observada no admite LIKE")
         return ExploredColumnValues(column_index=1, search_term="Pasto", values=("PASTO",))
 
     async def synthesize(intent, claims) -> GroundedSynthesis:
@@ -212,6 +218,21 @@ def _dependencies(
         execute,
         synthesize,
     )
+
+
+@pytest.mark.asyncio
+async def test_runtime_rejects_candidate_when_value_exploration_is_incompatible() -> None:
+    result = await run_deterministic_agent(
+        "¿Cuál es el total en Pasto?",
+        dependencies=_dependencies(
+            candidates=2,
+            text_filter=True,
+            fail_first_exploration=True,
+        ),
+    )
+
+    assert result.status == "completed"
+    assert result.trace[-1].candidate_index == 1
 
 
 @pytest.mark.asyncio
