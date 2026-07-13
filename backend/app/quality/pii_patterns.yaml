@@ -18,8 +18,8 @@
 # texto adicional (hallazgo T-303, verificado contra el catálogo real).
 # Orden de evaluación: high -> medium -> low -> default.
 
-fixture_version: "1.2.0"
-updated_at: "2026-07-11T00:00:00Z"
+fixture_version: "1.2.1"
+updated_at: "2026-07-13T00:00:00Z"
 default_column_risk: unknown
 
 high_risk_column_patterns:
@@ -300,6 +300,11 @@ reviewed_dataset_columns:
     source: "https://www.datos.gov.co/api/views/h8rs-jxum"
     reason: "Caracterización agregada del empleo público por entidad; sexo y rangos de edad conservan medium y requieren agregación mínima."
     columns: [c_digo_sigep, nombre_de_la_entidad, nit, orden, suborden, regi_n_pnd, c_digo_divipola_departamento, departamento, c_digo_divipola_municipio, municipio, clasificaci_n_org_nica, sector, nivel, tipo_de_vinculaci_n, naturaleza_jur_dica, longitud, latitud, a_o, mes, fuente, genero_hombre, genero_mujer, genero_no_binario, nivel_educativo_primaria, nivel_educativo_secundaria, nivel_educativo_t_cnica_tecnol, nivel_educativo_profesional, nivel_educativo_especializaci, nivel_educativo_maestr_a, nivel_educativo_doctorado, nivel_educativo_sin_datos, edad_menor_o_igual_a_29, edad_30_39, edad_40_49, edad_50_62, edad_63_y_mas, experiencia_laboral_menor, experiencia_laboral_de_1, experiencia_laboral_de_11, experiencia_laboral_de_21, experiencia_laboral_de_31, experiencia_laboral_mayor, experiencia_laboral_sin_datos, salario_mensual_promedio]
+  ji8i-4anb:
+    risk_level: low
+    source: "https://www.datos.gov.co/api/views/ji8i-4anb"
+    reason: "Indicadores educativos agregados por departamento y año; no contiene registros de estudiantes."
+    columns: [ano, aprobacion, aprobacion_media, aprobacion_primaria, aprobacion_secundaria, aprobacion_transicion, c_digo_departamento, cobertura_bruta, cobertura_bruta_media, cobertura_bruta_primaria, cobertura_bruta_secundaria, cobertura_bruta_transicion, cobertura_neta, cobertura_neta_media, cobertura_neta_primaria, cobertura_neta_secundaria, cobertura_neta_transicion, departamento, desercion, desercion_media, desercion_primaria, desercion_secundaria, desercion_transicion, poblacion_5_16, repitencia, repitencia_media, repitencia_primaria, repitencia_secundaria, repitencia_transicion, reprobacion, reprobacion_media, reprobacion_primaria, reprobacion_secundaria, reprobacion_transicion, sedes_conectadas_a_internet, tamano_promedio_grupo, tasa_matriculacion_5_16]
   fvq4-wwtz:
     risk_level: low
     source: "https://www.datos.gov.co/api/views/fvq4-wwtz"
