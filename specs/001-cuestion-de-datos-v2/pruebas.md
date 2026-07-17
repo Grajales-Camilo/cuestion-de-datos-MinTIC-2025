@@ -130,8 +130,8 @@ Esta suite cubre ESC-07 para ingesta e índice: T-201 verifica ingesta idempoten
 
 ### 4.1 Con LLM guionado (deterministas, en CI de cada push)
 Se inyecta un LLM falso que devuelve decisiones predefinidas para probar la MECÁNICA del grafo sin costo ni azar:
-- Respeta `AGENT_MAX_STEPS`: al paso 10 fuerza transición a sintetizador
-  `no_evidence` (RF-201/205).
+- Respeta `AGENT_MAX_STEPS`: al paso 14 por defecto fuerza transición a
+  sintetizador `no_evidence` (RF-201/205; el valor sigue siendo configurable).
 - Tras `SOQL_SYNTAX`, reintenta máximo 2 veces y luego cambia de estrategia.
 - El validador corre SIEMPRE tras `ejecutar_soql` exitoso (imposible saltarlo).
 - El sintetizador solo recibe observaciones de herramientas (aislamiento que sustenta groundedness).

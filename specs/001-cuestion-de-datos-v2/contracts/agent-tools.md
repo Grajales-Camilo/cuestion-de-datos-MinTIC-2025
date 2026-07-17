@@ -361,7 +361,7 @@ Advierte cuando dos o más territorios resueltos por T3 en la misma corrida no s
 
 | Regla | Valor |
 |---|---|
-| Pasos totales máx. por corrida | 10 (configurable `AGENT_MAX_STEPS`) |
+| Pasos totales máx. por corrida | 14 (configurable `AGENT_MAX_STEPS`; RF-201 y `research.md` §19) |
 | Llamadas máx. a `ejecutar_soql` por corrida | 4 |
 | Autocorrecciones de SoQL tras `SOQL_SYNTAX` | 2 por consulta |
 | Filas al contexto LLM | ≤ 50 por consulta (resumen); Evidencia completa ≤ 1.000 |
