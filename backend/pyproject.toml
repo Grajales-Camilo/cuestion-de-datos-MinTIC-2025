@@ -58,6 +58,8 @@ exclude = ["tests*"]
 [tool.pytest.ini_options]
 markers = [
     "integration: pruebas que requieren red, PostgreSQL real o servicios externos",
+    "legacy_agent_acceptance: aceptación E2E del runtime legado congelado (app.agent.graph), solo rollback",
+    "deterministic_agent_acceptance: aceptación E2E del runtime determinista productivo (execute_deterministic_agent_run_async)",
 ]
 asyncio_mode = "auto"
 testpaths = ["tests"]
