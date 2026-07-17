@@ -22,7 +22,9 @@ from app.db.models import (
     QualityReport,
     QuantitativeClaim,
 )
+from app.db.models import TextualFact as TextualFactRecord
 from app.quality.claims import BuiltClaim
+from app.quality.grounded_facts import TextualFact
 from app.quality.validator import EvidenceDraft, QualityResult
 
 TOOL_OUTPUT_SUMMARY_MAX_BYTES = 20 * 1024
@@ -288,6 +290,108 @@ async def persist_claims(
                 }
             )
     return records
+
+
+async def persist_textual_facts(
+    engine: AsyncEngine,
+    run_id: uuid.UUID,
+    facts: tuple[TextualFact, ...],
+) -> None:
+    """Persiste hechos ya construidos sin integrarlos todavía al runtime (T-615C)."""
+
+    if not facts:
+        return
+    evidence_ids = {fact.evidence_id for fact in facts}
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session, session.begin():
+        evidence_rows = (
+            await session.execute(
+                select(
+                    EvidenceResult.id,
+                    EvidenceResult.run_id,
+                    EvidenceResult.dataset_id,
+                ).where(EvidenceResult.id.in_(evidence_ids))
+            )
+        ).all()
+        evidence_by_id = {
+            evidence_id: (evidence_run_id, dataset_id)
+            for evidence_id, evidence_run_id, dataset_id in evidence_rows
+        }
+        missing = evidence_ids - evidence_by_id.keys()
+        if missing:
+            raise ValueError(f"evidence_id inexistente para hechos textuales: {sorted(missing)}")
+
+        for fact in facts:
+            evidence_run_id, dataset_id = evidence_by_id[fact.evidence_id]
+            if evidence_run_id != run_id:
+                raise ValueError(
+                    "el hecho textual y su evidencia deben pertenecer a la misma corrida"
+                )
+            if dataset_id != fact.dataset_id:
+                raise ValueError(
+                    "dataset_id del hecho textual no coincide con la evidencia persistida"
+                )
+            session.add(
+                TextualFactRecord(
+                    id=fact.fact_id,
+                    run_id=run_id,
+                    evidence_id=fact.evidence_id,
+                    fact_text=fact.fact,
+                    operation=fact.operation.value,
+                    source_row_indexes=list(fact.source_row_indexes),
+                    columns_used=list(fact.columns),
+                    raw_values=list(fact.raw_values),
+                    normalized_values=list(fact.normalized_values),
+                    display_value=fact.display_value,
+                    normalization_profile=fact.normalization_profile.value,
+                    operation_params=fact.operation_params.model_dump(mode="json"),
+                    algorithm_version=fact.algorithm_version.value,
+                    source_hash=fact.source_hash,
+                )
+            )
+
+
+async def load_textual_facts(
+    engine: AsyncEngine,
+    run_id: uuid.UUID,
+) -> tuple[TextualFact, ...]:
+    """Reconstruye el contrato tipado desde la tabla aislada de T-615C."""
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(TextualFactRecord, EvidenceResult.dataset_id)
+                .join(
+                    EvidenceResult,
+                    EvidenceResult.id == TextualFactRecord.evidence_id,
+                )
+                .where(TextualFactRecord.run_id == run_id)
+                .order_by(TextualFactRecord.id)
+            )
+        ).all()
+    return tuple(
+        TextualFact.model_validate(
+            {
+                "fact_id": row.id,
+                "fact_kind": "textual",
+                "fact": row.fact_text,
+                "operation": row.operation,
+                "evidence_id": row.evidence_id,
+                "dataset_id": dataset_id,
+                "source_row_indexes": row.source_row_indexes,
+                "columns": row.columns_used,
+                "raw_values": row.raw_values,
+                "normalized_values": row.normalized_values,
+                "display_value": row.display_value,
+                "normalization_profile": row.normalization_profile,
+                "operation_params": row.operation_params,
+                "algorithm_version": row.algorithm_version,
+                "source_hash": row.source_hash,
+            }
+        )
+        for row, dataset_id in rows
+    )
 
 
 async def update_evidence_narratives(

@@ -267,9 +267,9 @@ bloqueadas.
 
 - [ ] **T-615 Diseñar e implementar hechos textuales de primera clase
   (RF-210/RNF-013 propuestos; RF-208/RNF-003 preservados).**
-  - **Estado:** T-615A aprobada y T-615B cerrada el 2026-07-17 sobre el HEAD
-    normativo `f7725eeced8afc93ccd7fcc250e248a05f2db616`. T-615C y posteriores
-    continúan bloqueadas. Diseño: `research.md` §27 y
+  - **Estado:** T-615A aprobada y T-615B/T-615C cerradas el 2026-07-17 sobre
+    el HEAD normativo `f7725eeced8afc93ccd7fcc250e248a05f2db616`. T-615D y
+    posteriores continúan bloqueadas. Diseño: `research.md` §27 y
     `proposals/textual-claims.md`.
   - **Regla global:** no representar texto mediante `raw_value=1`, conteos
     ficticios ni claims cuantitativos; no editar `golden-v1`; no iniciar
@@ -317,9 +317,9 @@ bloqueadas.
       T-615C.
     - **Cierre:** modelos tipados, unión interna y contrato cuantitativo
       compatible verificados el 2026-07-17; OpenAPI productivo sin cambios.
-      T-615C permanece bloqueada y requiere autorización específica.
+      T-615C fue autorizada y cerrada posteriormente el mismo día.
 
-  - [ ] **T-615C Añadir persistencia aislada y reversible.**
+  - [x] **T-615C Añadir persistencia aislada y reversible.**
     - **Requisitos:** RF-703/RF-803/RF-804, modelo `textual_facts` propuesto.
     - **Archivos previstos:** `backend/app/db/models.py`, una migración
       Alembic nueva, repositorio/persistencia y pruebas de base de datos.
@@ -330,6 +330,11 @@ bloqueadas.
       compatible; downgrade elimina solo `textual_facts`.
     - **Rollback:** downgrade de la migración y revert del repositorio.
     - **Gate:** PostgreSQL real verde antes de construir hechos.
+    - **Cierre:** migración `20260717_0006`, modelo ORM y repositorio aislado
+      verificados el 2026-07-17 contra PostgreSQL real: upgrade/downgrade,
+      checks, FK, índices, round-trip, cascades, retención idempotente y OE3
+      sin contenido textual. `quantitative_claims` conservó su firma completa.
+      T-615D permanece bloqueada y requiere autorización específica.
 
   - [ ] **T-615D Implementar normalización, operaciones y hash puros.**
     - **Requisitos:** RF-210; `direct_text`, `value_presence`,
