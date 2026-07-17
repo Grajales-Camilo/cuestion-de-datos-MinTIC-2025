@@ -466,6 +466,37 @@ Pero incluso con el filtro correcto, `app/quality/claims.py::_to_decimal` (`Deci
 
 **Consecuencias.** `plan.md` documenta desde esta enmienda la arquitectura dual; `pruebas.md` define suites, diagnósticos y puertas; `tasks.md` contiene la secuencia ejecutable T-610…T-617. La siguiente implementación autorizada es T-611, precedida únicamente por el cierre reproducible de la línea base T-610. No se autorizan todavía cambios de comportamiento para mejorar recuperación, claims o síntesis.
 
+## 26. Decisión registrada: materialización lexical para RNF-010 — `DECIDIDA`
+
+**Problema.** T-614R1 conserva cobertura completa y cero errores, pero obtiene
+p95 1293,6 ms. `EXPLAIN ANALYZE` atribuye ~545 ms a recalcular por solicitud un
+`to_tsvector` mediante `Parallel Seq Scan`; HNSW tarda menos de 1 ms.
+
+**Alternativas.** Se descartó una generated column porque no puede agregar
+filas hijas de `catalog_columns`. El mantenimiento exclusivo en la aplicación
+no cubre escrituras SQL externas. Se compararon GIN y GiST sobre una tabla
+experimental reversible con los 8.398 datasets reales.
+
+**Decisión.** `catalog_datasets.lexical_search_vector` será `tsvector NOT NULL`
+con configuración `spanish` y contendrá exactamente `name`, `description`,
+`publisher`, `category`, `embedding_text` y, ordenados por `field_name`,
+`catalog_columns.field_name`, `display_name` y `description`. Un trigger de
+dataset y triggers de sentencia con transition tables para cambios de columnas
+lo mantendrán transaccionalmente. El índice será GIN.
+
+**Evidencia.** GIN midió 0,38 ms frente a 6,17 ms de GiST para búsqueda
+selectiva; GiST exigió 8.321 rechecks falsos. GIN ocupó ~3,0–3,3 MiB y se
+construyó en 146–175 ms; GiST ocupó ~3,1 MiB y se construyó en 114–118 ms.
+Actualizar 100 vectores costó ~2,7 ms con ambos. Para términos amplios el
+planificador puede recorrer el vector almacenado en 12–22 ms; esto sigue
+eliminando el recálculo dominante de ~545 ms.
+
+**Consecuencias.** La migración hace backfill idempotente (~3,2 s medidos),
+crea triggers e índice y es reversible. No cambia contrato HTTP, embedding,
+dimensión, percentiles, muestras, golden ni fórmula híbrida. La evidencia
+completa vive en `proposals/rnf010-lexical-materialization.md` y
+`backend/eval/reports/rnf010-lexical-optimization.md`.
+
 ---
 
 *Para añadir una nueva decisión: sección numerada, estado, problema, alternativas, criterios, decisión y consecuencias. Las decisiones `PENDIENTE` bloquean las tareas que dependan de ellas (ver tasks.md).*

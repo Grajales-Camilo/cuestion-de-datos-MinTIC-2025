@@ -56,12 +56,17 @@ Espejo de metadatos de un dataset de datos.gov.co. Fuente: Discovery API.
 | `eligibility_status` | text NOT NULL default `diagnostic_only` | CHECK IN (`eligible`, `diagnostic_only`, `blocked`). Controla si el agente puede ejecutar SoQL sobre el dataset. |
 | `eligibility_reasons` | jsonb NOT NULL default `[]` | Códigos deterministas: `publisher_unknown`, `publisher_private`, `pii_unknown`, `pii_high`, `pii_medium_requires_aggregation`, `api_inactive`, etc. |
 | `embedding_text` | text | Texto compuesto usado para el embedding (auditable). |
+| `lexical_search_vector` | tsvector NOT NULL | Representación lexical `spanish` materializada e indexada con GIN. Contiene `name`, `description`, `publisher`, `category`, `embedding_text` y `catalog_columns.field_name`, `display_name`, `description`. |
 
 **Reglas de negocio:**
 - Upsert por `id` (idempotencia, RF-304). Nunca se borra físicamente: si desaparece del portal, `api_active = false`.
 - Un dataset sin `name` no se indexa.
 - `data_updated_at` puede conocerse en la ingesta; `latest_observed_cutoff_at` solo se actualiza como pista desde evidencias ya calculadas. El corte normativo vive en `evidence_results`.
 - `eligibility_status` se calcula en ingesta y se revalida antes de T5. Solo `eligible` puede usarse como evidencia; `diagnostic_only` puede aparecer en búsqueda con advertencia; `blocked` no se propone al agente.
+- `lexical_search_vector` se mantiene dentro de la transacción: trigger de
+  dataset para INSERT/UPDATE de metadatos y triggers a nivel de sentencia para
+  INSERT/UPDATE/DELETE de `catalog_columns`. El backfill es idempotente. No es
+  generated column porque depende de filas de otra tabla.
 
 ### `official_publishers`
 Registro canónico y versionado de publicadores oficiales elegibles (RF-401). Se carga desde fixture del repositorio; no se embebe en código.

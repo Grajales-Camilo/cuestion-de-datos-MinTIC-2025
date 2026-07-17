@@ -175,6 +175,13 @@ cuestion-de-datos/
 3c. **Publicador oficial:** normalizar el publicador del catálogo contra `official_publishers` y `official_publisher_aliases` (fixture versionado cargado en T-106). Guardar `official_publisher_id` y `publisher_verification_status` (`verified` | `unknown` | `private_or_non_official`). Los alias no únicos se registran con `ambiguous=true`, pero el dataset queda `unknown` y no elegible. Los datasets no verificados pueden indexarse para diagnóstico, pero no son elegibles como evidencia hasta resolver el publicador.
 3d. **Estado de elegibilidad:** calcular `eligibility_status` y `eligibility_reasons` por dataset y columna antes de permitir T5. `eligible` significa que puede consultarse como evidencia; `diagnostic_only` significa que puede aparecer en búsqueda con advertencia pero no ejecutarse; `blocked` significa que el agente debe descartarlo y buscar alternativa.
 4. **Texto de embedding por dataset:** `título + descripción + entidad + categoría + nombres de columnas` (estrategia de compensación de metadatos pobres: si la descripción < 100 caracteres, se pesa más el título y las columnas).
+4b. **Texto lexical materializado (T-614R2, RF-301/RF-302/RNF-010):**
+`catalog_datasets.lexical_search_vector` usa configuración `spanish` e incluye
+nombre, descripción, publicador, categoría, `embedding_text` y nombre técnico,
+nombre visible y descripción de todas las columnas. Se mantiene
+transaccionalmente con triggers de dataset y triggers por sentencia para
+cambios de `catalog_columns`, y se indexa con GIN según la decisión medida en
+`research.md` §26. La ingesta no reconstruye el vector fuera de su transacción.
 5. **Embeddings por lotes** → upsert en `catalog_datasets` + `catalog_embeddings` (idempotencia por `dataset_id`, RF-304).
 6. **Reporte:** filas nuevas/actualizadas/fallidas → tabla `ingest_runs` (RF-701).
 7. **Programación:** GitHub Actions cron semanal + ejecución manual por CLI.

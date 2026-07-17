@@ -1,6 +1,7 @@
-# Propuesta PENDIENTE — T-614R2 materialización lexical RNF-010
+# Decisión SDD — T-614R2 materialización lexical RNF-010
 
-**Estado:** PENDIENTE de aprobación SDD · **Requisitos:** RF-302, RNF-010
+**Estado:** DECIDIDA con medición local reversible (2026-07-16) ·
+**Requisitos:** RF-301, RF-302, RF-304, RNF-010
 
 ## Problema y presupuesto
 
@@ -8,21 +9,51 @@ R1 redujo RNF-010 a p50 923,5 ms/p95 1293,6 ms, pero la rama lexical consume
 ~457 ms en un `Parallel Seq Scan` que recalcula `to_tsvector`. R2 debe recuperar
 al menos 300 ms de p95 sin cambiar ranking, cobertura, modelo o contrato.
 
-## Diseño por validar
+## Diseño aprobado
 
-1. Añadir a `catalog_datasets` un `tsvector` mantenido e indexado con exactamente
+1. Añadir a `catalog_datasets` un `tsvector` normal, `NOT NULL`, mantenido e
+   indexado con exactamente
    `name`, `publisher`, `category`, `description`, `embedding_text` y el texto
    de `catalog_columns(field_name, display_name, description)`.
-2. Usar configuración `spanish`; conservar normalización, `ts_rank_cd`, boost
+2. Usar configuración PostgreSQL `spanish` sobre `concat_ws`, que conserva el
+   tratamiento vigente de nulos y aplica stemming en español. Conservar
+   normalización de la consulta, `ts_rank_cd`, boost
    máximo y sinónimos acotados existentes, sin IDs ni conocimiento golden.
-3. Candidato inicial: columna normal actualizada por la ingesta en la misma
-   transacción. Una generated column no agrega filas de `catalog_columns`; un
-   trigger cruzado agrega complejidad. Ambos mecanismos deben medirse.
-4. Comparar GIN y GiST con datos reales. GIN parte como candidato por lectura
-   de términos; GiST solo si tamaño/escritura/latencia lo justifican. No son
-   equivalentes.
-5. Backfill idempotente de datasets existentes, lotes acotados y sin borrar
-   embeddings. Rollback: retirar índice y columna/trigger y volver al SQL actual.
+3. Mantenerla en la base mediante un trigger `BEFORE INSERT OR UPDATE` de los
+   cinco campos del dataset y tres triggers `AFTER ... REFERENCING ... TABLE`
+   a nivel de sentencia para INSERT, UPDATE y DELETE de columnas. Los triggers
+   de columnas recalculan cada dataset afectado una sola vez por sentencia.
+   Esto cubre ingesta y escrituras fuera de la aplicación sin el coste de un
+   trigger por fila. Una generated column se descarta porque PostgreSQL no
+   permite agregar filas de `catalog_columns` en su expresión.
+4. Elegir GIN. En el catálogo local real (8.398 filas), la tabla experimental
+   reversible midió GIN 0,38 ms frente a GiST 6,17 ms para un término selectivo;
+   GiST devolvió 8.398 entradas y descartó 8.321 en recheck. GIN tardó
+   146–175 ms en construirse frente a 114–118 ms de GiST y ocupó
+   3.056–3.352 KiB frente a 3.104 KiB. Actualizar 100 vectores costó ~2,7 ms
+   con ambos. La carga es predominantemente de lectura y la ventaja de
+   recuperación de GIN domina el pequeño ahorro de construcción de GiST.
+5. En términos amplios (14–19 % del catálogo), PostgreSQL puede elegir un
+   scan del `tsvector` ya almacenado (12–22 ms). Es correcto: desaparece el
+   recálculo `to_tsvector` de ~545 ms; para términos selectivos el plan usa
+   `Bitmap Index Scan` sobre GIN.
+6. Backfill idempotente en una sola sentencia sobre el catálogo existente
+   (~3,2 s medidos), sin tocar embeddings. Rollback: retirar triggers, función,
+   índice y columna; el downgrade de aplicación vuelve al SQL anterior.
+
+## Invariantes y compatibilidad
+
+- El contrato HTTP, `k`, percentiles, muestras, modelo y dimensión no cambian.
+- La rama vectorial y `vector_cosine_ops` no cambian.
+- El vector materializado contiene los ocho campos acordados. El ranking final
+  conserva su fórmula y se valida contra un corpus controlado y la búsqueda
+  híbrida real antes de la puerta normativa.
+- INSERT/UPDATE de dataset e INSERT/UPDATE/DELETE de columnas mantienen el
+  vector dentro de la misma transacción.
+- La ingesta existente no necesita una segunda operación de aplicación: sus
+  escrituras activan los triggers; reejecutarla conserva idempotencia.
+- `columns_preview` y `columns_all` permanecen en R2. Mover enriquecimiento
+  después del top-10 queda reservado para T-614R3 solo si aún fuera necesario.
 
 ## Enriquecimiento de columnas
 
@@ -43,5 +74,5 @@ riesgo, se separará como T-614R3.
 - RNF-010 una vez; si pasa, repetir. Puerta: dos corridas p95 <=1000 ms,
   cobertura 100 %, cero errores y sin regresión funcional.
 
-Esta propuesta no autoriza todavía la migración. Mantenimiento y GIN/GiST se
-cierran con planes y tiempos reales antes del código.
+Esta decisión autoriza únicamente la migración lexical mínima de T-614R2. No
+autoriza cambios de contratos, golden, modelo de embeddings ni ranking amplio.
