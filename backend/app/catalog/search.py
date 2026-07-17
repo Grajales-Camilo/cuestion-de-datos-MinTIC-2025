@@ -162,15 +162,9 @@ async def search_catalog(
             FROM catalog_datasets d
             WHERE d.api_active = true
               AND :text_query <> ''
-              AND to_tsvector(
-                    'spanish',
-                    concat_ws(' ', d.name, d.publisher, d.category, d.description, d.embedding_text)
-                  ) @@ to_tsquery('spanish', :text_query)
+              AND d.lexical_search_vector @@ to_tsquery('spanish', :text_query)
             ORDER BY ts_rank_cd(
-                to_tsvector(
-                    'spanish',
-                    concat_ws(' ', d.name, d.publisher, d.category, d.description, d.embedding_text)
-                ),
+                d.lexical_search_vector,
                 to_tsquery('spanish', :text_query)
             ) DESC
             LIMIT 100
