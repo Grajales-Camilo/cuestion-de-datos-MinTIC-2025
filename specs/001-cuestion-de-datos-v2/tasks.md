@@ -321,7 +321,7 @@ bloqueadas.
   - [ ] **T-615D Implementar normalización, operaciones y hash puros.**
     - **Requisitos:** RF-210; `direct_text`, `value_presence`,
       `category_selection`, `argmax_label`, `argmin_label`,
-      `ordered_text_set`; `text-es-v1`; `tie_policy=reject`.
+      `canonical_text_set`; `text-es-v1`; `tie_policy=reject`.
     - **Archivos previstos:** módulo de dominio de T-615B y pruebas unitarias.
     - **Dependencias:** T-615B; puede desarrollarse sin escribir DB.
     - **Pruebas:** matriz `pruebas.md` §4.5: tildes, puntuación, orden,
@@ -361,15 +361,16 @@ bloqueadas.
     - **Gate:** aceptación determinista dirigida verde, sin activar API
       textual todavía.
 
-  - [ ] **T-615G Habilitar API discriminada y lectura histórica.**
+  - [ ] **T-615G Habilitar API textual aditiva y lectura histórica.**
     - **Requisitos:** contrato REST §4b; SSE/parciales; compatibilidad.
     - **Archivos previstos:** `backend/app/schemas.py`, rutas/serializadores,
       persistencia de respuesta y pruebas de contrato.
     - **Dependencias:** T-615F.
-    - **Pruebas:** listas cuantitativa, textual y mixta; históricos sin
-      discriminador; formas ambiguas; `completed`, `interrupted`, `failed`.
-    - **Aceptación:** campos cuantitativos conservados; consumidores pueden
-      discriminar; nunca se infiere texto desde históricos.
+    - **Pruebas:** snapshots/OpenAPI de `claims` cuantitativo intacto; campos
+      `textual_facts`/`partial_textual_facts`; históricos sin esos campos;
+      clientes estrictos/tolerantes; `completed`, `interrupted`, `failed`.
+    - **Aceptación:** ningún discriminador nuevo en claims cuantitativos;
+      históricos equivalen a listas textuales vacías y nunca se infiere texto.
     - **Rollback:** detener emisión textual; tabla/datos pueden permanecer
       inaccesibles hasta reactivar.
     - **Gate:** contrato y API verdes antes de síntesis pública.

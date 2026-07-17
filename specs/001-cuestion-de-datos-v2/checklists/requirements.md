@@ -159,7 +159,7 @@ Get-ChildItem . -Recurse -Filter *.md |
   `textual_facts`; RF-208/RNF-003 permanecen intactos.
 - [ ] **R7-2 Operaciones cerradas.** Aprobar
   `direct_text`, `value_presence`, `category_selection`, `argmax_label`,
-  `argmin_label` y `ordered_text_set`; prohibir texto mediante `count=1`.
+  `argmin_label` y `canonical_text_set`; prohibir texto mediante `count=1`.
 - [ ] **R7-3 Normalización.** Aprobar `text-es-v1`: NFC, espacios/saltos
   canónicos, `casefold` solo para comparación y preservación de
   tildes/`ñ`/puntuación/grafía mostrada.
@@ -168,7 +168,7 @@ Get-ChildItem . -Recurse -Filter *.md |
 - [ ] **R7-5 Procedencia y hash.** Aprobar material canónico, exclusión de
   UUIDs/timestamps y dataset resuelto obligatoriamente desde la evidencia.
 - [ ] **R7-6 API.** Aprobar lista `claims` única con discriminador
-  `claim_kind`, campos cuantitativos conservados y adaptador histórico
+  `claims[]` cuantitativo intacto, campos textuales raíz aditivos y lectura histórica
   estrictamente cuantitativo.
 - [ ] **R7-7 Síntesis.** Aprobar selección de IDs + conectores cerrados +
   renderizado factual determinista; no admitir prosa factual libre.

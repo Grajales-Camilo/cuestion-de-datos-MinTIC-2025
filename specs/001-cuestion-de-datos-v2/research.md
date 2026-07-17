@@ -534,14 +534,15 @@ demuestran integridad textual.
 **Decisión propuesta.**
 
 - Concepto común `GroundedFact`, discriminado por
-  `claim_kind=quantitative|textual`; `QuantitativeClaim` conserva
+  `fact_kind=quantitative|textual` solo en el dominio interno;
+  `QuantitativeClaim` conserva
   `claim_type=direct|derived`, DSL, formato y todas las guardas RNF-003.
 - Tabla separada `textual_facts`, vinculada a corrida y evidencia, con
   operación cerrada, filas, columnas, valores brutos/normalizados, valor
   presentado, perfil de normalización, parámetros, versión y hash.
 - Operaciones iniciales: `direct_text`, `value_presence`,
   `category_selection`, `argmax_label`, `argmin_label` y
-  `ordered_text_set`.
+  `canonical_text_set`.
 - Perfil `text-es-v1`: Unicode NFC, saltos y espacios canonicalizados,
   `casefold` solo para comparación, tildes/`ñ`/puntuación preservadas; la
   presentación conserva caja y grafía de la fuente.
@@ -550,9 +551,10 @@ demuestran integridad textual.
 - `source_hash` incluye versión, operación, normalización, dataset, SoQL
   canónica, filas y subconjunto fuente, columnas, valores y parámetros; no
   incluye UUIDs de instancia ni timestamps.
-- `RespuestaFinal.claims` permanece como lista única con modelos tipados
-  discriminados. Los históricos sin `claim_kind` solo pueden inferirse como
-  cuantitativos si cumplen su forma completa; nunca se infiere texto.
+- La API v2 conserva `RespuestaFinal.claims` y `partial_claims` exactamente
+  cuantitativos, sin discriminador. Añade `textual_facts` y
+  `partial_textual_facts` optativos; los históricos ausentes equivalen a
+  listas vacías. No se infieren tipos por forma ni se reescriben históricos.
 - La síntesis factual se vuelve estructural: el LLM selecciona identificadores
   y conectores cerrados; un renderizador determinista inserta valores y
   plantillas. No se promete detectar hechos arbitrarios dentro de prosa libre.

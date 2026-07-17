@@ -219,12 +219,13 @@ trazabilidad numérica.
 
 - **Hecho fundamentado (`GroundedFact`):** unión conceptual de
   `QuantitativeClaim` y `TextualFact`, discriminada por
-  `claim_kind=quantitative|textual`.
+  `fact_kind=quantitative|textual` en el dominio interno; la API pública v2
+  conserva `claims[]` cuantitativo sin discriminador.
 - **Hecho textual (`TextualFact`):** registro estructurado que prueba un valor
   textual mediante una operación cerrada sobre filas y columnas de una
   evidencia elegible. Sus operaciones iniciales son `direct_text`,
   `value_presence`, `category_selection`, `argmax_label`, `argmin_label` y
-  `ordered_text_set`.
+  `canonical_text_set`.
 - **Segmento factual:** unidad renderizada que contiene datos y debe referir
   uno o más hechos aceptados. Los conectores y plantillas de limitación no
   son segmentos factuales y no pueden introducir entidades, categorías,

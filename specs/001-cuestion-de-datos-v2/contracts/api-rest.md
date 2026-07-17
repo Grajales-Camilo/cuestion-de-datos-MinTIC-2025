@@ -136,24 +136,21 @@ Reglas: primer evento ≤ 2 s tras la conexión (RNF-008); heartbeat `: ping` ca
 > **PROPUESTA PARA REVISIÓN — NO VIGENTE.** La forma JSON vigente continúa
 > siendo la de §4 hasta que T-615 sea aprobada, implementada y verificada.
 
-La propuesta conserva una sola propiedad `claims`, pero la tipa como:
+La propuesta conserva `claims` y `partial_claims` exactamente cuantitativos,
+sin discriminador ni campos nuevos dentro de sus elementos. Añade dos
+propiedades raíz optativas:
 
 ```text
-list[QuantitativeClaimResponse | TextualFactResponse]
-discriminator = "claim_kind"
+textual_facts: list[TextualFactResponse] = []
+partial_textual_facts: list[TextualFactResponse] = []
 ```
-
-La variante cuantitativa añade el campo
-`"claim_kind": "quantitative"` y conserva sin renombrar `claim_id`, `claim`,
-`claim_type`, `formula`, `raw_value`, `display_value`, `unit`, `rounding`,
-`source_hash` y la procedencia vigente.
 
 Ejemplo de la variante textual:
 
 ```json
 {
   "fact_id": "8d2e...uuid",
-  "claim_kind": "textual",
+  "fact_kind": "textual",
   "fact": "El municipio observado es Medellín.",
   "operation": "direct_text",
   "evidence_id": "9a2b...",
@@ -166,28 +163,24 @@ Ejemplo de la variante textual:
   "normalization_profile": "text-es-v1",
   "operation_params": {},
   "algorithm_version": "textual-fact-v1",
-  "source_hash": "sha256:cd34..."
+  "source_hash": "sha256-jcs-v1:cd34..."
 }
 ```
 
 **Compatibilidad propuesta:**
 
-- `claims` y `partial_claims` usan la misma unión.
-- Una respuesta histórica sin `claim_kind` solo se adapta a
-  `quantitative` si contiene todos los campos cuantitativos obligatorios y
-  `claim_type=direct|derived`. No se reescribe el JSON persistido.
-- Nunca se infiere `textual` desde una descripción o desde `raw_value=1`.
-- Un consumidor debe discriminar por `claim_kind`; no debe asumir que todos
-  los elementos tienen fórmula, unidad o valor numérico.
-- Antes de emitir la primera variante textual, las pruebas deben cubrir
-  serialización mixta, SSE, lectura histórica y clientes cuantitativos
-  tolerantes. La auditoría actual no encontró un consumidor de `claims`
-  implementado en el frontend, pero esa ausencia no elimina la obligación.
+- Un histórico sin campos textuales equivale a listas vacías. No se reescribe
+  ni se infiere tipo por forma, descripción o `raw_value=1`.
+- El dominio interno puede discriminar por `fact_kind`; las tablas y la API
+  pública permanecen separadas.
+- Antes de emitir texto, snapshots y diff OpenAPI deben demostrar que
+  `claims.items` no cambió; también se prueban SSE, históricos, clientes
+  estrictos y tolerantes. No encontrar consumidores no prueba compatibilidad.
 
-**Invariante de síntesis propuesto:** cada segmento factual lleva uno o más
-`claim_id`/`fact_id` existentes. El LLM solo devuelve el orden de IDs y un
-conector de enum cerrado; un renderizador determinista inserta los
-`display_value` y plantillas aceptados. No se admite prosa factual libre como
+**Invariante de síntesis propuesto:** cada segmento factual lleva referencias
+tipadas a `claim_id`/`fact_id` existentes. El LLM solo devuelve el esquema
+`grounded-synthesis-plan-v1` definido en `agent-tools.md`; un renderizador
+determinista inserta literalmente los `display_value`. No se admite prosa factual libre como
 medio de eludir el discriminador. RNF-003 sigue verificando cifras sin cambio.
 
 ## 5. Objeto `Evidencia`

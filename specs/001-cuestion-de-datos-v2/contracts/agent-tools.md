@@ -265,7 +265,7 @@ factual.
   "facts": [
     {
       "fact_id": "8d2e...",
-      "claim_kind": "textual",
+      "fact_kind": "textual",
       "fact": "El departamento con el valor máximo es Valle del Cauca.",
       "operation": "argmax_label",
       "evidence_id": "9a2b...",
@@ -282,7 +282,7 @@ factual.
         "tie_policy": "reject"
       },
       "algorithm_version": "textual-fact-v1",
-      "source_hash": "sha256:cd34..."
+      "source_hash": "sha256-jcs-v1:cd34..."
     }
   ],
   "rejected": []
@@ -292,14 +292,14 @@ factual.
 **Reglas propuestas:**
 
 - Enum cerrado:
-  `direct_text|value_presence|category_selection|argmax_label|argmin_label|ordered_text_set`.
+  `direct_text|value_presence|category_selection|argmax_label|argmin_label|canonical_text_set`.
 - `text-es-v1`: Unicode NFC, saltos/espacios canonicalizados, `casefold` solo
   para igualdad; tildes, `ñ`, caja de presentación y puntuación se conservan.
 - `null`, vacío, fila fuera de rango, columna ausente, operación desconocida,
   métrica no numérica o regla no reproducible rechazan el hecho.
 - `argmax_label` y `argmin_label` usan inicialmente
   `tie_policy="reject"`; un empate no se resuelve por orden incidental.
-- `ordered_text_set` deduplica por valor normalizado y ordena
+- `canonical_text_set` deduplica por valor normalizado y ordena
   canónicamente; no depende del orden accidental de respuesta.
 - El hash incluye versión, operación, normalización, dataset, SoQL canónica,
   filas/subconjunto fuente, columnas, valores y parámetros. No incluye UUIDs
@@ -310,6 +310,25 @@ factual.
 - Una evidencia `blocked`, `diagnostic_only` o `no_recomendada` no puede
   producir un hecho entregable automáticamente; aplica la misma puerta de
   elegibilidad que a T7.
+
+**Contrato propuesto de síntesis factual (`grounded-synthesis-plan-v1`)**
+
+El LLM solo puede devolver `schema_version`, `segments` y `closing`. Cada
+segmento contiene `segment_id`, `connector`, `template` y `fact_refs` tipadas
+por `fact_kind` e `id`; se prohíben campos libres. Enums:
+
+- `connector`: `sin_conector|ademas|por_otra_parte|en_conjunto`;
+- `template`: `fact_statement|subject_fact|comparison_pair`;
+- `closing`: `sin_cierre|limitacion_disponibilidad|advertencia_calidad`.
+
+Los IDs deben pertenecer a claims/facts persistidos, aceptados y de evidencia
+elegible de la misma corrida. `comparison_pair` exige dos referencias
+compatibles; las otras plantillas exigen una. El renderer produce toda cláusula
+factual e inserta `display_value` literalmente. ID desconocido, duplicado,
+incompatible, evidencia ausente/no elegible, enum/campo extra o JSON inválido
+rechazan el plan completo. Sin hechos elegibles, o agotada la reparación
+presupuestada, se usa la plantilla de abstención `no_evidence` o
+`insufficient_evidence`; nunca se entrega contenido factual parcial.
 
 ## T8 — `comparabilidad_territorial`
 Advierte cuando dos o más territorios resueltos por T3 en la misma corrida no son comparables entre sí (Cap. 9 del Handbook de CSS para Política, `docs/capitulos-css-politicas-publicas.md`). Nodo determinista: no usa LLM, no acepta invocación libre del enrutador. El grafo lo ejecuta automáticamente cuando T3 devuelve `divipola_code` de ≥2 territorios distintos en el mismo run. Implementado por `app/quality/territorial.py` sobre la tabla `territorio_tipologia` (tarea T-404).
@@ -342,7 +361,7 @@ Advierte cuando dos o más territorios resueltos por T3 en la misma corrida no s
 
 | Regla | Valor |
 |---|---|
-| Pasos totales máx. por corrida | 14 (configurable `AGENT_MAX_STEPS`; RF-201 y `research.md` §19) |
+| Pasos totales máx. por corrida | 10 (configurable `AGENT_MAX_STEPS`) |
 | Llamadas máx. a `ejecutar_soql` por corrida | 4 |
 | Autocorrecciones de SoQL tras `SOQL_SYNTAX` | 2 por consulta |
 | Filas al contexto LLM | ≤ 50 por consulta (resumen); Evidencia completa ≤ 1.000 |

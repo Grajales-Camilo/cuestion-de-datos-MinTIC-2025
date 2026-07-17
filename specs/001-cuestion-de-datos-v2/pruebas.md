@@ -130,8 +130,8 @@ Esta suite cubre ESC-07 para ingesta e índice: T-201 verifica ingesta idempoten
 
 ### 4.1 Con LLM guionado (deterministas, en CI de cada push)
 Se inyecta un LLM falso que devuelve decisiones predefinidas para probar la MECÁNICA del grafo sin costo ni azar:
-- Respeta `AGENT_MAX_STEPS`: al paso 14 por defecto fuerza transición a
-  sintetizador `no_evidence` (RF-201/205; el valor sigue siendo configurable).
+- Respeta `AGENT_MAX_STEPS`: al paso 10 fuerza transición a sintetizador
+  `no_evidence` (RF-201/205).
 - Tras `SOQL_SYNTAX`, reintenta máximo 2 veces y luego cambia de estrategia.
 - El validador corre SIEMPRE tras `ejecutar_soql` exitoso (imposible saltarlo).
 - El sintetizador solo recibe observaciones de herramientas (aislamiento que sustenta groundedness).
@@ -266,23 +266,24 @@ Al superar la puerta, `AGENT_RUNTIME=deterministic` se convierte inmediatamente 
 | `value_presence` | coincidencia tras normalizar; ausencia; columna parcial | Ausencia o columna inválida rechazan. |
 | `category_selection` | selección reproducible; filtro no presente en SoQL; varias ganadoras | Solo regla completamente anclada produce hecho. |
 | Extremos | `argmax_label` y `argmin_label`; métrica nula/no numérica; empate | Empate termina en rechazo, nunca orden incidental. |
-| Varias filas | `ordered_text_set` con orden distinto y duplicados | Mismo orden, deduplicación y hash. |
+| Varias filas | `canonical_text_set` con orden distinto y duplicados | Mismo orden, deduplicación y hash. |
 | Hash | dos corridas equivalentes; cambio de fila, columna, consulta, operación, perfil, valor o parámetro | Equivalentes: igual; cambio semántico: distinto. |
 | Enum | operación/perfil/versión desconocidos | Rechazo tipado. |
 | Regresión | suite completa de `QuantitativeClaim` y detector de cifras | RF-208/RNF-003 sin cambios. |
 
 #### Contrato, persistencia y retención
 
-- Modelos Pydantic cerrados y unión discriminada; no `dict[str, Any]` para
-  hechos públicos.
+- Modelos Pydantic cerrados: unión discriminada solo interna; no
+  `dict[str, Any]` para hechos públicos.
 - Round-trip de `textual_facts`; checks/FK/índices; migración `upgrade` y
   `downgrade` sin tocar `quantitative_claims`.
 - Cascade al borrar evidencia/corrida, RF-803 y barrido RF-804 idempotentes.
 - `eval_case_results` guarda solo fingerprints; prueba negativa para texto,
   valores fuente, filas y narrativa.
-- API/SSE con listas cuantitativa, textual y mixta; parciales; errores.
-- Respuesta histórica sin `claim_kind` se adapta solo a cuantitativa completa;
-  forma ambigua o incompleta se rechaza.
+- Snapshots/OpenAPI prueban que `claims`/`partial_claims` no cambian; API/SSE
+  añaden `textual_facts`/`partial_textual_facts`; parciales y errores.
+- Respuesta histórica sin campos textuales equivale a listas vacías; no hay
+  inferencia por forma ni reescritura.
 
 #### Síntesis fundamentada
 

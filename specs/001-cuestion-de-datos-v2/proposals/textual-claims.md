@@ -45,13 +45,14 @@ Que un caso pase hoy no demuestra integridad textual. En particular,
 
 ## 2. Decisión propuesta
 
-Se propone un concepto común de API, **hecho fundamentado**, con dos variantes
-discriminadas y persistencias separadas:
+Se propone un concepto común **interno**, **hecho fundamentado**, con dos
+variantes discriminadas y persistencias separadas. Este concepto no cambia la
+forma pública vigente de `claims[]`:
 
 ```text
 GroundedFact
-├── QuantitativeClaim  (claim_kind = "quantitative")
-└── TextualFact        (claim_kind = "textual")
+├── QuantitativeClaim  (fact_kind = "quantitative")
+└── TextualFact        (fact_kind = "textual")
 ```
 
 `QuantitativeClaim` conserva sin cambios su semántica `direct|derived`, su DSL,
@@ -91,11 +92,11 @@ Se elige una tabla nueva `textual_facts` porque:
 | `category_selection` | Selecciona una etiqueta bajo filtros y orden explícitos ya materializados en la consulta. | Una fila ganadora, una columna de etiqueta. |
 | `argmax_label` | Devuelve la etiqueta asociada al máximo de una columna métrica. | Una o más filas; columna de etiqueta y métrica. |
 | `argmin_label` | Devuelve la etiqueta asociada al mínimo de una columna métrica. | Una o más filas; columna de etiqueta y métrica. |
-| `ordered_text_set` | Produce una colección textual deduplicada y ordenada canónicamente desde varias filas. | Una o más filas, una columna. |
+| `canonical_text_set` | Produce una colección textual deduplicada y ordenada canónicamente desde varias filas. | Una o más filas, una columna. |
 
 No se adopta el nombre genérico `presence`: `value_presence` nombra qué se
 prueba. No se adopta `categorical_selection`: `category_selection` es más
-breve sin perder precisión. `ordered_text_set` cubre de forma explícita el
+breve sin perder precisión. `canonical_text_set` cubre de forma explícita el
 texto derivado de varias filas; no se sobrecarga `direct_text`.
 
 No existen operaciones abiertas, expresiones textuales arbitrarias ni
@@ -105,27 +106,47 @@ funciones suministradas por el LLM. Una operación desconocida se rechaza.
 
 - `direct_text`: `source_row_indexes` tiene exactamente un elemento y
   `columns_used`, uno.
-- `value_presence`: exige `target_normalized` y una columna; las filas
-  referenciadas contienen al menos una coincidencia.
-- `category_selection`: exige `selection_rule` canónica, una fila ganadora y
-  una columna de etiqueta. La regla no puede añadir filtros ausentes de la
-  consulta ejecutada.
+- `value_presence`: el objetivo literal procede de un filtro explícito del
+  `QueryPlan` validado, nunca de una elección posterior del LLM. Exige
+  `target_raw`, `target_normalized` y una columna; prueba que existe al menos
+  una coincidencia y presenta el representante fuente canónico.
+- `category_selection`: no recibe un objetivo. Exige exactamente una de las
+  reglas cerradas `unique_normalized_value` (una sola categoría distinta) o
+  `first_by_validated_order` (primera fila de una consulta con `ORDER BY`
+  total y `LIMIT` explícitos en el `QueryPlan`). Cero o varias ganadoras
+  rechazan el hecho; el LLM no elige categorías.
 - `argmax_label` / `argmin_label`: exigen `label_column`, `metric_column` y
   `tie_policy="reject"`. La métrica debe ser numérica y finita. Si dos filas
   empatan en el extremo, no se elige por orden incidental: el hecho se
   rechaza como ambiguo.
-- `ordered_text_set`: deduplica por valor normalizado y ordena por
+- `canonical_text_set`: deduplica por valor normalizado y ordena por
   `normalized_value ASC`, con desempate por valor bruto UTF-8. No conserva el
   orden incidental de Socrata. `display_value` une los valores presentados
   con la secuencia literal `"; "`; esa transformación forma parte de
   `textual-fact-v1` y se recomputa en el verificador.
+
+Todas las operaciones eliminan `null` solo cuando su regla permite varias
+filas; después rechazan si no queda valor. Una celda vacía tras `text-es-v1`
+siempre es error. Máximo: 100 filas fuente y 50 valores normalizados distintos;
+excederlo produce `textual_cardinality_exceeded`, no truncamiento silencioso.
+Los duplicados normalizados usan como representante el menor valor bruto por
+orden de bytes UTF-8 después de NFC.
+
+| Operación | Entradas y regla determinista | Salida | Errores/abstención | Ejemplo genérico |
+|---|---|---|---|---|
+| `direct_text` | Un índice y una columna. | Copia literal de la celda. | Nulo, vacío, fila/columna inválida o cardinalidad distinta de 1. | Una celda `"Activo"` produce `"Activo"`. |
+| `value_presence` | Objetivo literal del `QueryPlan`, una columna y ≥1 filas; igualdad por normalizado. | Representante fuente de las coincidencias. | Objetivo ausente o más de un representante bruto incompatible. | Objetivo `"rural"` coincide con `"Rural"`. |
+| `category_selection` | Una columna; regla `unique_normalized_value` o `first_by_validated_order`. | Única categoría ganadora. | Cero/varias ganadoras, orden no total o regla libre. | Un único valor distinto produce esa categoría. |
+| `argmax_label` | Columna etiqueta + métrica finita; `tie_policy=reject`. | Etiqueta de máximo único. | Nulo/no numérico, máximo empatado o etiqueta vacía. | Métricas 2 y 5 seleccionan la etiqueta de 5. |
+| `argmin_label` | Igual a anterior para mínimo. | Etiqueta de mínimo único. | Nulo/no numérico, mínimo empatado o etiqueta vacía. | Métricas 2 y 5 seleccionan la etiqueta de 2. |
+| `canonical_text_set` | Una columna y ≥1 filas; deduplicación y orden canónicos. | Valores unidos por `"; "`. | Conjunto vacío o límites excedidos. | `["B", "a", "B"]` produce el orden canónico de `"a"; "B"`. |
 
 ## 4. Modelo lógico de `TextualFact`
 
 ```json
 {
   "fact_id": "uuid",
-  "claim_kind": "textual",
+  "fact_kind": "textual",
   "fact": "El municipio observado es Medellín.",
   "operation": "direct_text",
   "evidence_id": "uuid",
@@ -148,7 +169,7 @@ la evidencia referenciada. En persistencia no se duplica: la FK
 constructor debe recibir y materializar ese `dataset_id` dentro del hash.
 
 `raw_values` y `normalized_values` son listas aun para operaciones unitarias,
-de modo que la estructura cubre `ordered_text_set` sin tipos alternos. Ninguna
+de modo que la estructura cubre `canonical_text_set` sin tipos alternos. Ninguna
 lista puede estar vacía. `display_value` tampoco puede ser vacío.
 
 ## 5. Normalización y presentación
@@ -170,7 +191,7 @@ fuente. No aplica `title case`, no elimina acentos y no traduce etiquetas.
 valor mostrado. Una búsqueda tolerante a tildes pertenece a recuperación o a
 la consulta, no a la reproducción del hecho.
 
-## 6. Procedencia, orden y hash
+## 6. Procedencia, orden, hash e inmutabilidad
 
 `source_row_indexes` siempre se valida contra
 `evidence_results.rows` y se canonicaliza ascendente en el material de hash.
@@ -178,8 +199,9 @@ Los índices son cero-basados y no se permite el centinela `-1` para hechos
 textuales. Todas las columnas declaradas deben existir en todas las filas que
 la operación usa.
 
-El `source_hash` es SHA-256 de JSON canónico UTF-8, claves ordenadas y sin
-espacios, con:
+El formato versionado es `sha256-jcs-v1:<64 hex minúsculos>`: SHA-256 sobre
+los bytes UTF-8 de JSON canonicalizado conforme a RFC 8785 (JCS). El objeto
+raíz contiene exactamente:
 
 ```text
 {
@@ -194,13 +216,42 @@ espacios, con:
   raw_values,
   normalized_values,
   display_value,
-  operation_params_canonical
+  operation_params
 }
 ```
 
+Las claves del objeto y de `operation_params` se ordenan por JCS; no se
+permiten números no finitos. Enteros, booleanos y `null` usan la representación
+JSON de RFC 8785. Las cadenas se serializan con escapes JSON, en Unicode NFC,
+sin alterar caja salvo dentro de `normalized_values`. Los arrays preservan el
+orden semántico: `source_row_indexes` es ascendente, único y cero-basado;
+`columns_used` sigue el orden definido por la operación; `raw_values` y
+`normalized_values` mantienen correspondencia posicional; los conjuntos usan
+el orden de `canonical_text_set`. `rows_subset_canonical` contiene solo las
+columnas usadas, una fila por índice canónico. `canonical_soql` es la consulta
+ya canonicalizada por el ejecutor.
+
 No incluye `run_id`, `evidence_id`, `fact_id`, timestamps ni texto libre del
-LLM. Cambiar una fila, columna, valor, regla de selección, desempate,
-normalización, consulta o versión de algoritmo cambia el hash.
+LLM. Cambiar una fila, columna, valor, regla, normalización, consulta o versión
+cambia el hash. Una futura regla requiere nuevo prefijo/`algorithm_version`;
+los verificadores antiguos no reinterpretan hashes nuevos.
+
+En v1 no se separan identidad y presentación: `display_value` forma parte del
+material porque la garantía auditada incluye reproducción literal. Una mejora
+meramente editorial crea una nueva versión y hash; esta decisión favorece una
+sola prueba verificable sobre dos identidades parcialmente solapadas.
+
+Después de construir un hecho, el `EvidenceResult`, su `canonical_soql` y sus
+filas fuente quedan congelados: no se actualizan; una corrección crea nueva
+evidencia y nuevos hechos. El orden obligatorio es: persistir y congelar
+evidencia → validar calidad → construir y recomputar hechos → persistirlos en
+la misma transacción lógica → validar el plan de síntesis → renderizar →
+evaluar/recomputar → copiar únicamente métricas y fingerprints → aplicar
+retención por cascade. Tras la retención, el fingerprint permite comparar,
+pero no recalcular sin filas; no se afirma lo contrario. La persistencia
+operativa conserva hasta el vencimiento solo dataset, consulta, índices,
+columnas, parámetros, versión, hash y valores estrictamente necesarios; OE3
+conserva algoritmo, operación y hash, nunca filas, texto ni valores personales.
 
 ## 7. Persistencia propuesta
 
@@ -221,7 +272,7 @@ Tabla nueva `textual_facts`:
 | `normalization_profile` | text NOT NULL, inicialmente `text-es-v1`. |
 | `operation_params` | jsonb NOT NULL; estructura validada por operación. |
 | `algorithm_version` | text NOT NULL, inicialmente `textual-fact-v1`. |
-| `source_hash` | text NOT NULL, formato `sha256:<64 hex>`. |
+| `source_hash` | text NOT NULL, formato `sha256-jcs-v1:<64 hex minúsculos>`. |
 
 Índices: `run_id`, `evidence_id` y `source_hash`. `source_hash` no es UNIQUE:
 dos corridas pueden probar el mismo hecho. Las restricciones específicas por
@@ -242,31 +293,29 @@ hubo uso, pero no altera `quantitative_claims`, evidencias ni corridas.
 
 ## 8. Contrato API y compatibilidad
 
-`RespuestaFinal.claims` continúa como una única lista, pero su esquema pasa a
-ser una unión discriminada por `claim_kind`:
+La compatibilidad elegida separa tres capas:
 
-```text
-claims: list[QuantitativeClaimResponse | TextualFactResponse]
-```
+- **Dominio interno:** `GroundedFact` es unión discriminada por
+  `fact_kind=quantitative|textual`.
+- **Persistencia:** `quantitative_claims` y `textual_facts` permanecen tablas
+  separadas; no se backfillean ni reinterpretan registros históricos.
+- **API pública v2:** `claims` y `partial_claims` conservan exactamente su
+  esquema cuantitativo actual y no reciben `claim_kind`. Se añaden los campos
+  optativos y aditivos `textual_facts` y `partial_textual_facts`, ausentes o
+  `[]` cuando no aplican. Sus elementos llevan `fact_kind="textual"`.
 
-- La variante cuantitativa añade `claim_kind="quantitative"` y conserva
-  `claim_id`, `claim`, `claim_type`, `formula`, `raw_value`,
-  `display_value`, `unit`, `rounding` y procedencia.
-- La variante textual usa `claim_kind="textual"`, `fact_id`, `fact`,
-  `operation`, valores textuales y procedencia. No expone `raw_value`
-  numérico, fórmula, unidad ni redondeo.
-- `partial_claims` usa la misma unión.
+Los históricos sin campos textuales se interpretan como
+`textual_facts=[]`; sus claims siguen siendo cuantitativos por pertenecer a
+`claims`, sin inferencia estructural ni reescritura. Unificar tipos dentro de
+`claims` requeriría una nueva versión pública y no pertenece a T-615.
 
-La adición del discriminador se implementa antes de emitir hechos textuales.
-Para respuestas históricas persistidas sin `claim_kind`, el serializador de
-lectura puede inferir **solo** `quantitative` cuando existen los campos
-cuantitativos obligatorios y `claim_type` es `direct|derived`; nunca infiere
-un hecho textual. No se reescribe el JSON histórico.
-
-La auditoría del frontend no encontró consumidores actuales del arreglo
-`claims`; la UI v2 correspondiente sigue pendiente. Aun así, la prueba de
-contrato debe cubrir clientes tolerantes, históricos y filtrado por
-discriminador antes de activar texto.
+No encontrar un consumidor no demuestra compatibilidad. Antes de activar
+texto deben pasar snapshots byte/forma de respuestas cuantitativas actuales,
+OpenAPI diff sin cambios dentro de `claims.items`, históricos sin campos
+nuevos, clientes estrictos que ignoran el campo raíz aditivo, SSE parcial y
+respuestas textual/mixta. Un cliente que rechace propiedades raíz nuevas
+requiere negociación/versionado antes de activación; ese hallazgo bloquea
+T-615G, no se oculta.
 
 ## 9. Síntesis y ausencia de hechos huérfanos
 
@@ -274,16 +323,45 @@ Comprobar que una frase libre “suena factual” no es una garantía medible. P
 eso la primera versión propuesta no permite al LLM redactar valores
 textuales factuales libremente:
 
-1. el sintetizador devuelve una lista ordenada de `claim_id`/`fact_id` y un
-   identificador de conector de un enum cerrado;
-2. un renderizador determinista inserta `fact_text`/`display_value` de los
-   registros aceptados;
-3. los conectores permitidos (`ademas`, `por_otra_parte`, `en_conjunto`,
-   `sin_conector`) no contienen datos;
-4. no se acepta un segmento factual sin identificador;
-5. una referencia inexistente, duplicada de forma incompatible o a evidencia
-   no elegible bloquea la respuesta;
-6. las cifras siguen pasando por el verificador RNF-003 sin cambios.
+El LLM devuelve exclusivamente este esquema cerrado:
+
+```json
+{
+  "schema_version": "grounded-synthesis-plan-v1",
+  "segments": [{
+    "segment_id": "s1",
+    "connector": "sin_conector",
+    "template": "fact_statement",
+    "fact_refs": [{"fact_kind": "textual", "id": "uuid"}]
+  }],
+  "closing": "sin_cierre"
+}
+```
+
+`connector` ∈ `sin_conector|ademas|por_otra_parte|en_conjunto`;
+`template` ∈ `fact_statement|subject_fact|comparison_pair`; `closing` ∈
+`sin_cierre|limitacion_disponibilidad|advertencia_calidad`. Los únicos IDs
+seleccionables son claims/facts persistidos de la corrida, aceptados y ligados
+a evidencia elegible. `comparison_pair` exige dos referencias compatibles;
+las demás, una. El LLM no devuelve prosa ni valores.
+
+Un **segmento factual** es toda cláusula que afirma como resultado un valor,
+entidad, categoría, estado, periodo, comparación o cifra del dataset. El
+renderer produce el segmento completo desde la plantilla versionada,
+metadatos seguros y `display_value` literal; no parafrasea el valor. Conectores
+y cierres son plantillas fijas no factuales y no admiten argumentos libres.
+
+ID desconocido/no elegible, referencia repetida, incompatibilidad de plantilla,
+segmento duplicado, enum/campo extra, JSON inválido o valor alterado rechazan
+todo el plan y permiten como máximo la reparación presupuestada vigente. Si
+no hay hechos elegibles, o se agota la reparación, se renderiza una plantilla
+de abstención (`no_evidence` o `insufficient_evidence`) sin afirmaciones
+factuales. Nunca se entrega un plan parcial.
+
+Ejemplo válido: un `fact_statement` con un ID textual aceptado; el renderer
+inserta exactamente su `display_value`. Ejemplos inválidos: incluir
+`"texto":"la categoría es X"`, citar un UUID ajeno, repetir el mismo ID en dos
+segmentos o usar `comparison_pair` con una sola referencia.
 
 El texto explicativo no factual queda limitado a plantillas versionadas:
 alcance, advertencia de calidad, limitación y ausencia de evidencia. Los
@@ -332,7 +410,7 @@ Unitarias:
 - `category_selection` con regla reproducible y filtro oculto rechazado.
 - `argmax_label`/`argmin_label` válidos; métrica no numérica y empate
   rechazados.
-- `ordered_text_set` estable ante distinto orden de entrada y duplicados.
+- `canonical_text_set` estable ante distinto orden de entrada y duplicados.
 - hash igual entre corridas equivalentes; distinto al cambiar cualquier
   material semántico.
 - operación desconocida rechazada.

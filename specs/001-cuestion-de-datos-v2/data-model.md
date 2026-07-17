@@ -309,7 +309,7 @@ representa mediante una cantidad ficticia.
 | `run_id` | uuid FK → agent_runs CASCADE | Permite borrado integral por corrida. |
 | `evidence_id` | uuid FK → evidence_results CASCADE | NOT NULL. Determina de forma no ambigua el `dataset_id`; no se duplica este último en la tabla. |
 | `fact_text` | text NOT NULL | Plantilla determinista por operación; no texto libre del LLM. |
-| `operation` | text NOT NULL | CHECK IN (`direct_text`, `value_presence`, `category_selection`, `argmax_label`, `argmin_label`, `ordered_text_set`). |
+| `operation` | text NOT NULL | CHECK IN (`direct_text`, `value_presence`, `category_selection`, `argmax_label`, `argmin_label`, `canonical_text_set`). |
 | `source_row_indexes` | int[] NOT NULL | No vacío; índices cero-basados válidos, canonicalizados ascendentes; no admite `-1`. |
 | `columns_used` | text[] NOT NULL | No vacío; todas existen en las filas usadas. |
 | `raw_values` | text[] NOT NULL | No vacío; grafía fuente conservada. |
@@ -318,7 +318,7 @@ representa mediante una cantidad ficticia.
 | `normalization_profile` | text NOT NULL | Inicialmente `text-es-v1`. |
 | `operation_params` | jsonb NOT NULL | Parámetros cerrados y validados por operación, incluida selección/desempate. |
 | `algorithm_version` | text NOT NULL | Inicialmente `textual-fact-v1`. |
-| `source_hash` | text NOT NULL | `sha256:<64 hex>` sobre contenido canónico. |
+| `source_hash` | text NOT NULL | `sha256-jcs-v1:<64 hex minúsculos>` sobre RFC 8785/JCS UTF-8. |
 
 **Restricciones propuestas.**
 
@@ -327,7 +327,7 @@ representa mediante una cantidad ficticia.
   mostrada.
 - `direct_text` exige una fila/columna. `argmax_label` y `argmin_label`
   exigen columnas de etiqueta/métrica y `tie_policy=reject`.
-  `ordered_text_set` deduplica por normalizado y ordena canónicamente.
+  `canonical_text_set` deduplica por normalizado y ordena canónicamente.
 - El hash incluye versión, operación, perfil, `dataset_id` resuelto desde la
   evidencia, SoQL canónica, filas/subconjunto fuente, columnas, valores,
   presentación y parámetros; excluye UUIDs de instancia y timestamps.
@@ -339,7 +339,7 @@ representa mediante una cantidad ficticia.
 
 **Retención propuesta.** RF-803 y RF-804 borran `textual_facts` por la misma
 cascade que el resto de contenido operativo. Antes del borrado, evaluación
-solo puede copiar el `source_hash` a una lista de fingerprints; quedan
+solo puede copiar algoritmo, operación y `source_hash` a fingerprints; quedan
 prohibidos `fact_text`, `raw_values`, `normalized_values`, `display_value` y
 filas en `eval_case_results`.
 

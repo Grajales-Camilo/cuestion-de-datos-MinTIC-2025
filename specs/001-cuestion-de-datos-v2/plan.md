@@ -397,7 +397,7 @@ evidencia elegible
         → normalización text-es-v1
         → verificador RF-210/RNF-013
              ↓
-     persistencia separada y lista API discriminada
+     persistencia separada y campos API textuales aditivos
              ↓
      selección de IDs + conectores cerrados por el LLM
              ↓
@@ -419,7 +419,7 @@ Nunca sustituye texto con `count=1`.
    por rechazo, hash y plantillas.
 4. **Integración del pipeline:** planificación textual separada, persistencia
    transaccional y terminación tipada.
-5. **API y síntesis:** discriminador, compatibilidad histórica, segmentos
+5. **API y síntesis:** frontera aditiva, compatibilidad histórica, segmentos
    factuales por identificador y conectores cerrados.
 6. **Evaluación:** métricas separadas, fingerprints sin contenido y pruebas de
    regresión cuantitativa.
@@ -432,13 +432,13 @@ aceptación, rollback y gate por incremento, está en `tasks.md`.
 ### 14.3 Compatibilidad
 
 - `quantitative_claims`, RF-208 y RNF-003 no cambian de significado.
-- `RespuestaFinal.claims` sigue siendo una lista; añade `claim_kind` y una
-  variante textual. Los campos cuantitativos actuales se conservan.
-- Los históricos sin discriminador se leen mediante un adaptador
-  cuantitativo estricto, sin reescritura ni inferencia textual.
-- El frontend debe discriminar antes de renderizar; la auditoría actual no
-  encontró consumidores implementados de `claims`, pero esa ausencia no
-  sustituye pruebas de contrato.
+- `RespuestaFinal.claims` y `partial_claims` conservan exactamente la lista
+  cuantitativa vigente, sin `claim_kind`.
+- `textual_facts` y `partial_textual_facts` son campos raíz optativos y
+  aditivos; un histórico que no los tenga equivale a listas vacías.
+- El dominio interno usa `fact_kind`; la persistencia mantiene tablas
+  separadas. No encontrar consumidores no sustituye snapshots, OpenAPI diff,
+  clientes estrictos y pruebas de contrato/SSE.
 - El runtime legado sigue disponible como rollback. T-615 no cambia defaults
   ni autoriza su retiro.
 
