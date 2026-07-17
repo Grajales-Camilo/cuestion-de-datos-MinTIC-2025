@@ -137,6 +137,7 @@ class CatalogDataset(Base):
     )
     embedding_text: Mapped[str | None] = mapped_column(Text)
     lexical_search_vector: Mapped[str] = mapped_column(TSVECTOR, nullable=False)
+    lexical_rank_vector: Mapped[str] = mapped_column(TSVECTOR, nullable=False)
 
 
 class CatalogColumn(Base):

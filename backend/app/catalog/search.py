@@ -173,9 +173,8 @@ async def search_catalog(
             SELECT dataset_id FROM vector_candidates
             UNION
             SELECT dataset_id FROM lexical_candidates
-        )
-        SELECT *
-        FROM (
+        ),
+        ranked AS (
         SELECT
             d.id AS dataset_id,
             d.name,
@@ -191,22 +190,10 @@ async def search_catalog(
             d.latest_observed_cutoff_at,
             d.metadata_synced_at,
             d.metadata_synced_at < :stale_threshold AS index_stale,
-            COALESCE(c.columns_preview, ARRAY[]::text[]) AS columns_preview,
-            COALESCE(c.columns_all, ARRAY[]::text[]) AS columns_all,
             CASE
                 WHEN :text_query = '' THEN 0
                 ELSE ts_rank_cd(
-                    to_tsvector(
-                        'spanish',
-                        concat_ws(
-                            ' ',
-                            d.name,
-                            d.publisher,
-                            d.category,
-                            d.description,
-                            COALESCE(c.columns_text, '')
-                        )
-                    ),
+                    d.lexical_rank_vector,
                     to_tsquery('spanish', :text_query)
                 )
             END AS lexical_rank
@@ -216,6 +203,20 @@ async def search_catalog(
         CROSS JOIN LATERAL (
             SELECT e.embedding <=> :query_embedding AS distance
         ) vc
+        ),
+        ranked_top AS (
+            SELECT *
+            FROM ranked
+            ORDER BY
+                similarity + LEAST(0.25, lexical_rank * 0.02) DESC,
+                similarity DESC
+            LIMIT :k
+        )
+        SELECT
+            ranked_top.*,
+            COALESCE(c.columns_preview, ARRAY[]::text[]) AS columns_preview,
+            COALESCE(c.columns_all, ARRAY[]::text[]) AS columns_all
+        FROM ranked_top
         LEFT JOIN LATERAL (
             SELECT
                 (
@@ -223,7 +224,7 @@ async def search_catalog(
                     FROM (
                         SELECT field_name
                         FROM catalog_columns
-                        WHERE dataset_id = d.id
+                        WHERE dataset_id = ranked_top.dataset_id
                         ORDER BY field_name
                         LIMIT 5
                     ) column_subset
@@ -231,23 +232,12 @@ async def search_catalog(
                 (
                     SELECT array_agg(field_name ORDER BY field_name)
                     FROM catalog_columns
-                    WHERE dataset_id = d.id
-                ) AS columns_all,
-                (
-                    SELECT string_agg(
-                        concat_ws(' ', field_name, display_name, description),
-                        ' '
-                        ORDER BY field_name
-                    )
-                    FROM catalog_columns
-                    WHERE dataset_id = d.id
-                ) AS columns_text
+                    WHERE dataset_id = ranked_top.dataset_id
+                ) AS columns_all
         ) c ON true
-        ) ranked
         ORDER BY
             similarity + LEAST(0.25, lexical_rank * 0.02) DESC,
             similarity DESC
-        LIMIT :k
         """
     ).bindparams(bindparam("query_embedding", type_=Vector(EMBEDDING_DIMENSION)))
 

@@ -95,6 +95,31 @@ async def test_vector_contains_all_dataset_and_column_fields(engine) -> None:
         engine,
         "alfa & beta & gamma & delta & epsilon & zeta & eta & theta",
     )
+    async with engine.connect() as connection:
+        exact_rank = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT lexical_rank_vector = to_tsvector(
+                        'spanish',
+                        concat_ws(
+                            ' ',
+                            name,
+                            publisher,
+                            category,
+                            description,
+                            'campo_zeta Visible Eta Descripcion Theta'
+                        )
+                    )
+                    FROM catalog_datasets
+                    WHERE id = :dataset_id
+                    """
+                ),
+                {"dataset_id": DATASET_ID},
+            )
+        ).scalar_one()
+
+    assert exact_rank is True
 
 
 async def test_dataset_and_column_mutations_refresh_vector(engine) -> None:
