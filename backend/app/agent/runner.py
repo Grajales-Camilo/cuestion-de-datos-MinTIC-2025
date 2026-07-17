@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import dataclasses
 import hashlib
 import secrets
 import sys
@@ -345,10 +346,20 @@ async def execute_deterministic_agent_run_async(
         async with httpx.AsyncClient(base_url=SOCRATA_RESOURCE_BASE_URL) as http_client:
             llm_usage = RuntimeLLMUsage()
             observed_steps = 0
+            retrieved_dataset_ids: list[str] = []
+            attempted_dataset_ids: list[str] = []
 
             async def observe_transition(entry, usage) -> None:
                 nonlocal observed_steps
                 observed_steps += 1
+                dataset_id = (
+                    retrieved_dataset_ids[entry.candidate_index]
+                    if entry.candidate_index is not None
+                    and entry.candidate_index < len(retrieved_dataset_ids)
+                    else None
+                )
+                if entry.node.value == "select_candidate" and dataset_id:
+                    attempted_dataset_ids.append(dataset_id)
                 await record_step_and_event(
                     engine,
                     run_id,
@@ -358,6 +369,12 @@ async def execute_deterministic_agent_run_async(
                     detail={
                         "runtime": "deterministic",
                         "candidate_index": entry.candidate_index,
+                        "dataset_id": dataset_id,
+                        "retrieved_dataset_ids": list(retrieved_dataset_ids),
+                        "attempted_dataset_ids": list(dict.fromkeys(attempted_dataset_ids)),
+                        "plan_validation_errors": (
+                            [entry.diagnostic_code] if entry.diagnostic_code else []
+                        ),
                         "usage": usage.model_dump(mode="json"),
                     },
                 )
@@ -370,6 +387,16 @@ async def execute_deterministic_agent_run_async(
                 embedding_client=embedding_client,
                 usage=llm_usage,
             )
+            original_retrieve = dependencies.retrieve
+
+            async def retrieve_with_diagnostics(intent):
+                retrieval = await original_retrieve(intent)
+                retrieved_dataset_ids.extend(
+                    candidate.item.dataset_id for candidate in retrieval.candidates
+                )
+                return retrieval
+
+            dependencies = dataclasses.replace(dependencies, retrieve=retrieve_with_diagnostics)
             result = await run_deterministic_agent(
                 run.question,
                 dependencies=dependencies,
@@ -589,9 +616,7 @@ async def execute_legacy_agent_run_async(
                 max_steps=settings.agent_max_steps,
                 context_hint=run.context_hint,
             )
-            async with AsyncPostgresSaver.from_conn_string(
-                settings.psycopg_database_url
-            ) as saver:
+            async with AsyncPostgresSaver.from_conn_string(settings.psycopg_database_url) as saver:
                 await saver.setup()
                 graph = build_graph(deps, saver, interrupt=True)
                 while True:

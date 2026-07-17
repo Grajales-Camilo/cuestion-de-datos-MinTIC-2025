@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from eval.diagnostics import StageObservation, build_stage_diagnostics
 from eval.loader import GoldenCase
 from eval.metrics import assess_case, recall_hit_at_10
 
@@ -302,3 +303,189 @@ def test_recall_hit_at_10_true_when_expected_dataset_in_search_results() -> None
 def test_recall_hit_at_10_is_none_for_negative_cases() -> None:
     case = GoldenCase("n", "negative", "q", (), (), 2, "n")
     assert recall_hit_at_10(case, ["abcd-1234"]) is None
+
+
+def _failed_assessment(*, expected_hit=False, facts_verified=False) -> object:
+    return assess_case(
+        _positive_case(),
+        {
+            "status": "no_evidence",
+            "evidence": ([{"dataset_id": "abcd-1234", "rows": []}] if expected_hit else []),
+            "claims": [],
+        },
+    )
+
+
+def test_diagnostics_classifies_expected_dataset_not_retrieved() -> None:
+    diagnostics = build_stage_diagnostics(
+        _positive_case(),
+        {"status": "no_evidence", "evidence": [], "claims": [], "usage": {}},
+        _failed_assessment(),
+        [StageObservation("tool:buscar_catalogo", {}, {"results": [{"dataset_id": "other"}]})],
+    )
+
+    assert diagnostics["failure_stage"] == "retrieval"
+    assert diagnostics["failure_code"] == "expected_dataset_not_retrieved"
+    assert diagnostics["retrieved_dataset_ids"] == ["other"]
+
+
+def test_diagnostics_distinguishes_retrieved_but_not_attempted() -> None:
+    diagnostics = build_stage_diagnostics(
+        _positive_case(),
+        {"status": "no_evidence", "evidence": [], "claims": [], "usage": {}},
+        _failed_assessment(),
+        [
+            StageObservation(
+                "retrieve_candidates", {"retrieved_dataset_ids": ["other", "abcd-1234"]}, {}
+            )
+        ],
+    )
+
+    assert diagnostics["failure_code"] == "expected_dataset_not_attempted"
+    assert diagnostics["expected_dataset_rank"] == 2
+
+
+def test_diagnostics_classifies_invalid_plan_with_canonical_errors() -> None:
+    diagnostics = build_stage_diagnostics(
+        _positive_case(),
+        {"status": "no_evidence", "evidence": [], "claims": [], "usage": {}},
+        _failed_assessment(),
+        [
+            StageObservation(
+                "validate_plan",
+                {
+                    "retrieved_dataset_ids": ["abcd-1234"],
+                    "attempted_dataset_ids": ["abcd-1234"],
+                    "plan_validation_errors": ["unknown_column"],
+                },
+                {},
+            )
+        ],
+    )
+
+    assert diagnostics["failure_stage"] == "plan_validation"
+    assert diagnostics["failure_code"] == "plan_invalid"
+    assert diagnostics["plan_validation_errors"] == ["unknown_column"]
+
+
+def test_diagnostics_classifies_zero_rows_after_query_execution() -> None:
+    diagnostics = build_stage_diagnostics(
+        _positive_case(),
+        {"status": "no_evidence", "evidence": [], "claims": [], "usage": {}},
+        _failed_assessment(),
+        [
+            StageObservation(
+                "execute_query",
+                {
+                    "retrieved_dataset_ids": ["abcd-1234"],
+                    "attempted_dataset_ids": ["abcd-1234"],
+                },
+                {},
+            )
+        ],
+    )
+
+    assert diagnostics["failure_code"] == "zero_rows"
+
+
+def test_diagnostics_classifies_rejected_claims() -> None:
+    final = {
+        "status": "no_evidence",
+        "evidence": [{"dataset_id": "abcd-1234", "rows": [{"total": 1}]}],
+        "claims": [],
+        "usage": {},
+    }
+    diagnostics = build_stage_diagnostics(
+        _positive_case(),
+        final,
+        assess_case(_positive_case(), final),
+        [
+            StageObservation(
+                "derive_claims",
+                {
+                    "retrieved_dataset_ids": ["abcd-1234"],
+                    "attempted_dataset_ids": ["abcd-1234"],
+                },
+                {},
+            )
+        ],
+    )
+
+    assert diagnostics["failure_code"] == "claims_rejected"
+
+
+def test_diagnostics_classifies_rejected_evidence() -> None:
+    final = {
+        "status": "no_evidence",
+        "evidence": [{"dataset_id": "other-id", "rows": [{"total": 1}]}],
+        "claims": [],
+        "usage": {},
+    }
+    diagnostics = build_stage_diagnostics(
+        _positive_case(),
+        final,
+        assess_case(_positive_case(), final),
+        [
+            StageObservation(
+                "validate_quality",
+                {
+                    "retrieved_dataset_ids": ["abcd-1234", "other-id"],
+                    "attempted_dataset_ids": ["abcd-1234"],
+                },
+                {},
+            )
+        ],
+    )
+
+    assert diagnostics["failure_stage"] == "evidence_quality"
+    assert diagnostics["failure_code"] == "evidence_not_eligible"
+
+
+def test_diagnostics_marks_ambiguous_golden_as_golden_owned() -> None:
+    ambiguous_case = _positive_case(expected_facts=({"description": "sin valor"},))
+    diagnostics = build_stage_diagnostics(
+        ambiguous_case,
+        {"status": "no_evidence", "evidence": [], "claims": [], "usage": {}},
+        _failed_assessment(),
+    )
+
+    assert diagnostics["failure_code"] == "ambiguous_golden"
+    assert diagnostics["failure_owner"] == "golden"
+
+
+def test_diagnostics_classifies_profile_failure_from_last_observed_stage() -> None:
+    diagnostics = build_stage_diagnostics(
+        _positive_case(),
+        {"status": "eval_error", "evidence": [], "claims": [], "usage": {}},
+        _failed_assessment(),
+        [
+            StageObservation(
+                "profile_dataset",
+                {
+                    "retrieved_dataset_ids": ["abcd-1234"],
+                    "attempted_dataset_ids": ["abcd-1234"],
+                },
+                {},
+            )
+        ],
+        infrastructure_error="TimeoutError",
+    )
+
+    assert diagnostics["failure_stage"] == "profiling"
+    assert diagnostics["failure_code"] == "profile_failed"
+
+
+def test_diagnostics_approved_case_has_no_failure() -> None:
+    final = {
+        "status": "completed",
+        "evidence": [{"dataset_id": "abcd-1234", "rows": []}],
+        "claims": [],
+        "usage": {"latency_ms": 12, "estimated_cost_usd": 0.001},
+    }
+    assessment = assess_case(_positive_case(), final)
+    diagnostics = build_stage_diagnostics(_positive_case(), final, assessment)
+
+    assert assessment.passed is True
+    assert diagnostics["last_successful_stage"] == "acceptance"
+    assert diagnostics["failure_stage"] is None
+    assert diagnostics["failure_code"] is None

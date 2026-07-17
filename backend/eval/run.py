@@ -22,6 +22,7 @@ from app.agent.worker_lease import mark_worker_shutdown, register_worker_instanc
 from app.config import get_settings
 from app.db.engine import create_app_async_engine
 from app.db.models import AgentStep, EvalCaseResult, EvalRun
+from eval.diagnostics import StageObservation, build_stage_diagnostics
 from eval.loader import default_suite_path, load_golden_suite
 from eval.metrics import CaseAssessment, assess_case, recall_hit_at_10
 from eval.persistence import PersistedGoldenSuite, sync_golden_suite
@@ -83,10 +84,33 @@ async def _planner_search_dataset_ids(engine, agent_run_id: uuid.UUID) -> list[s
     if not isinstance(results, list):
         return []
     return [
-        item["dataset_id"]
-        for item in results
-        if isinstance(item, dict) and item.get("dataset_id")
+        item["dataset_id"] for item in results if isinstance(item, dict) and item.get("dataset_id")
     ]
+
+
+async def _stage_observations(
+    engine, agent_run_id: uuid.UUID | None
+) -> tuple[StageObservation, ...]:
+    if agent_run_id is None:
+        return ()
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        steps = (
+            await session.scalars(
+                select(AgentStep)
+                .where(AgentStep.run_id == agent_run_id)
+                .order_by(AgentStep.step_number)
+            )
+        ).all()
+    return tuple(
+        StageObservation(
+            node=step.node,
+            detail=step.detail if isinstance(step.detail, dict) else {},
+            output=step.tool_output_summary if isinstance(step.tool_output_summary, dict) else {},
+            message=step.display_message,
+        )
+        for step in steps
+    )
 
 
 async def _persist_case_result(
@@ -97,33 +121,58 @@ async def _persist_case_result(
     agent_run_id: uuid.UUID | None,
     final: dict,
     assessment: CaseAssessment,
+    stage_diagnostics: dict[str, object],
     error_code: str | None = None,
 ) -> None:
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session, session.begin():
         session.add(
-            EvalCaseResult(
-                id=uuid.uuid4(),
+            _case_result_model(
                 eval_run_id=eval_run_id,
-                case_id=case_db_id,
+                case_db_id=case_db_id,
                 agent_run_id=agent_run_id,
-                passed=assessment.passed,
-                status_final=str(final.get("status", "failed")),
-                expected_dataset_hit=assessment.expected_dataset_hit,
-                metrics={
-                    "fabrication": assessment.fabrication,
-                    "facts_verified": assessment.facts_verified,
-                    "orphan_figures": list(assessment.orphan_figures),
-                    "recall_hit": assessment.recall_hit,
-                    "usage": final.get("usage", {}),
-                },
-                quality_summary=[item.get("quality") for item in final.get("evidence", [])],
-                evidence_dataset_ids=list(assessment.evidence_dataset_ids),
-                claim_fingerprint_hashes=list(assessment.claim_hashes),
+                final=final,
+                assessment=assessment,
+                stage_diagnostics=stage_diagnostics,
                 error_code=error_code,
-                failure_reason=assessment.failure_reason,
             )
         )
+
+
+def _case_result_model(
+    *,
+    eval_run_id: uuid.UUID,
+    case_db_id: uuid.UUID,
+    agent_run_id: uuid.UUID | None,
+    final: dict,
+    assessment: CaseAssessment,
+    stage_diagnostics: dict[str, object],
+    error_code: str | None = None,
+) -> EvalCaseResult:
+    """Construye la fila sin I/O para probar el contrato JSONB de T-613."""
+
+    return EvalCaseResult(
+        id=uuid.uuid4(),
+        eval_run_id=eval_run_id,
+        case_id=case_db_id,
+        agent_run_id=agent_run_id,
+        passed=assessment.passed,
+        status_final=str(final.get("status", "failed")),
+        expected_dataset_hit=assessment.expected_dataset_hit,
+        metrics={
+            "fabrication": assessment.fabrication,
+            "facts_verified": assessment.facts_verified,
+            "orphan_figures": list(assessment.orphan_figures),
+            "recall_hit": assessment.recall_hit,
+            "usage": final.get("usage", {}),
+            "stage_diagnostics": stage_diagnostics,
+        },
+        quality_summary=[item.get("quality") for item in final.get("evidence", [])],
+        evidence_dataset_ids=list(assessment.evidence_dataset_ids),
+        claim_fingerprint_hashes=list(assessment.claim_hashes),
+        error_code=error_code,
+        failure_reason=assessment.failure_reason,
+    )
 
 
 async def _create_eval_record(
@@ -147,14 +196,14 @@ async def _create_eval_record(
 
 
 async def _finalize_eval_record(
-    engine, *, record_id: uuid.UUID, results: list[tuple[str, CaseAssessment]]
+    engine, *, record_id: uuid.UUID, results: list[tuple[str, CaseAssessment, dict[str, object]]]
 ) -> None:
     """Cierra la corrida OE3 con los agregados disponibles del smoke/completo."""
 
     total = len(results)
-    passed = sum(assessment.passed for _, assessment in results)
+    passed = sum(assessment.passed for _, assessment, _ in results)
     positive = [item for item in results if item[1].recall_hit is not None]
-    recall_hits = sum(bool(assessment.recall_hit) for _, assessment in positive)
+    recall_hits = sum(bool(assessment.recall_hit) for _, assessment, _ in positive)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session, session.begin():
         record = await session.get(EvalRun, record_id)
@@ -162,16 +211,23 @@ async def _finalize_eval_record(
         record.finished_at = datetime.now(UTC)
         record.success_rate = Decimal(passed) / Decimal(total) if total else None
         record.recall_at_10 = Decimal(recall_hits) / Decimal(len(positive)) if positive else None
-        record.fabrication_count = sum(assessment.fabrication for _, assessment in results)
+        record.fabrication_count = sum(assessment.fabrication for _, assessment, _ in results)
         record.orphan_figures_count = sum(
-            len(assessment.orphan_figures) for _, assessment in results
+            len(assessment.orphan_figures) for _, assessment, _ in results
         )
 
 
+def _md(value: object) -> str:
+    return str(value if value is not None else "").replace("|", "\\|").replace("\n", " ")
+
+
 def _write_report(
-    path: Path, *, record: EvalRun, results: list[tuple[str, CaseAssessment]]
+    path: Path,
+    *,
+    record: EvalRun,
+    results: list[tuple[str, CaseAssessment, dict[str, object]]],
 ) -> None:
-    passed = sum(item.passed for _, item in results)
+    passed = sum(item.passed for _, item, _ in results)
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         f"# Evaluación {record.id}",
@@ -182,12 +238,47 @@ def _write_report(
         f"- Casos aprobados: {passed}",
         f"- Éxito: {passed / len(results):.1%}" if results else "- Éxito: no aplica",
         "",
-        "| Caso | Aprobó | Motivo |",
-        "|---|---:|---|",
+        "## Resultado por caso",
+        "",
+        "| Caso | Aprobó | Etapa de fallo | Código | Responsable | Motivo |",
+        "|---|---:|---|---|---|---|",
     ]
     lines.extend(
-        f"| {case_id} | {'sí' if item.passed else 'no'} | {item.failure_reason or ''} |"
-        for case_id, item in results
+        f"| {_md(case_id)} | {'sí' if item.passed else 'no'} | "
+        f"{_md(diag['failure_stage'])} | {_md(diag['failure_code'])} | "
+        f"{_md(diag['failure_owner'])} | {_md(item.failure_reason)} |"
+        for case_id, item, diag in results
+    )
+    stage_counts: dict[str, int] = {}
+    code_counts: dict[str, int] = {}
+    for _case_id, _item, diagnostics in results:
+        if diagnostics["failure_stage"]:
+            key = str(diagnostics["failure_stage"])
+            stage_counts[key] = stage_counts.get(key, 0) + 1
+        if diagnostics["failure_code"]:
+            key = str(diagnostics["failure_code"])
+            code_counts[key] = code_counts.get(key, 0) + 1
+    lines.extend(["", "## Fallos por etapa", "", "| Etapa | Casos |", "|---|---:|"])
+    lines.extend(f"| {_md(key)} | {count} |" for key, count in sorted(stage_counts.items()))
+    lines.extend(["", "## Motivos de fallo", "", "| Código | Casos |", "|---|---:|"])
+    lines.extend(f"| {_md(key)} | {count} |" for key, count in sorted(code_counts.items()))
+    lines.extend(
+        [
+            "",
+            "## Recuperación",
+            "",
+            "| Caso | Recuperados | Intentados | Aceptado | Rango esperado | "
+            "Candidatos | Consultas | Exploraciones | Llamadas LLM |",
+            "|---|---|---|---|---:|---:|---:|---:|---:|",
+        ]
+    )
+    lines.extend(
+        f"| {_md(case_id)} | {_md(', '.join(diag['retrieved_dataset_ids']))} | "
+        f"{_md(', '.join(diag['attempted_dataset_ids']))} | {_md(diag['accepted_dataset_id'])} | "
+        f"{_md(diag['expected_dataset_rank'])} | {diag['candidate_count']} | "
+        f"{diag['query_count']} | "
+        f"{diag['exploration_count']} | {diag['llm_call_count']} |"
+        for case_id, _item, diag in results
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -224,7 +315,7 @@ async def run_suite(
         persisted = await sync_golden_suite(engine, suite)
         record = await _create_eval_record(engine, persisted, settings, seed)
         worker_id = await register_worker_instance(engine, settings.worker_lease_ttl_s)
-        results: list[tuple[str, CaseAssessment]] = []
+        results: list[tuple[str, CaseAssessment, dict[str, object]]] = []
         for case in selected_cases:
             agent_run_id: uuid.UUID | None = None
             error_code: str | None = None
@@ -254,6 +345,14 @@ async def run_suite(
                     claim_hashes=(),
                     failure_reason=f"Error de infraestructura al ejecutar el caso: {exc}",
                 )
+            observations = await _stage_observations(engine, agent_run_id)
+            stage_diagnostics = build_stage_diagnostics(
+                case,
+                final,
+                assessment,
+                observations,
+                infrastructure_error=error_code,
+            )
             try:
                 await _persist_case_result(
                     engine,
@@ -262,6 +361,7 @@ async def run_suite(
                     agent_run_id=agent_run_id,
                     final=final,
                     assessment=assessment,
+                    stage_diagnostics=stage_diagnostics,
                     error_code=error_code,
                 )
             except Exception as exc:  # noqa: BLE001
@@ -277,15 +377,16 @@ async def run_suite(
                         agent_run_id=None,
                         final=final,
                         assessment=assessment,
+                        stage_diagnostics=stage_diagnostics,
                         error_code=type(exc).__name__,
                     )
                 except Exception:  # noqa: BLE001
                     pass
-            results.append((case.case_id, assessment))
+            results.append((case.case_id, assessment, stage_diagnostics))
         await _finalize_eval_record(engine, record_id=record.id, results=results)
         report_path = Path("eval/reports") / f"{record.id}.md"
         _write_report(report_path, record=record, results=results)
-        passed = sum(assessment.passed for _, assessment in results)
+        passed = sum(assessment.passed for _, assessment, _ in results)
         success_rate = passed / len(results) if results else None
         return RunSuiteResult(report_path=report_path, success_rate=success_rate)
     finally:

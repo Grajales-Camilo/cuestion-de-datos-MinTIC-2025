@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -79,6 +80,7 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
         ),
     )
     monkeypatch.setattr(run_module, "_planner_search_dataset_ids", AsyncMock(return_value=[]))
+    monkeypatch.setattr(run_module, "_stage_observations", AsyncMock(return_value=()))
 
     persisted_calls = []
 
@@ -115,6 +117,7 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
     assert failed_call["agent_run_id"] is None
     assert failed_call["error_code"] == "RuntimeError"
     assert failed_call["assessment"].passed is False
+    assert failed_call["stage_diagnostics"]["failure_code"] == "query_failed"
     assert "boom" in failed_call["assessment"].failure_reason
 
     ok_call = persisted_calls[1]
@@ -165,6 +168,7 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
         ),
     )
     monkeypatch.setattr(run_module, "_planner_search_dataset_ids", AsyncMock(return_value=[]))
+    monkeypatch.setattr(run_module, "_stage_observations", AsyncMock(return_value=()))
     monkeypatch.setattr(
         run_module,
         "_create_eval_record",
@@ -184,8 +188,7 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
         # Solo la primera llamada (caso 1, con agent_run_id valido) falla.
         if len(persisted_calls) == 1:
             raise RuntimeError(
-                'insert or update on table "eval_case_results" violates '
-                "foreign key constraint"
+                'insert or update on table "eval_case_results" violates foreign key constraint'
             )
 
     monkeypatch.setattr(run_module, "_persist_case_result", flaky_persist)
@@ -201,6 +204,7 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
     assert persisted_calls[1]["agent_run_id"] is None
     assert persisted_calls[1]["error_code"] == "RuntimeError"
     assert persisted_calls[2]["agent_run_id"] is not None
+
 
 def test_select_cases_supports_exact_generic_case_ids() -> None:
     suite = _fake_suite()
@@ -219,3 +223,33 @@ def test_select_cases_rejects_unknown_case_id() -> None:
 
     with pytest.raises(RuntimeError, match="case_id inexistente: missing"):
         run_module._select_cases(suite.cases, limit=None, case_ids=["missing"])
+
+
+def test_report_renders_stage_reason_and_retrieval_tables(tmp_path: Path) -> None:
+    assessment = run_module.CaseAssessment(False, False, False, (), (), "sin dataset")
+    diagnostics = {
+        "failure_stage": "retrieval",
+        "failure_code": "expected_dataset_not_retrieved",
+        "failure_owner": "agent",
+        "retrieved_dataset_ids": ["other-id"],
+        "attempted_dataset_ids": [],
+        "accepted_dataset_id": None,
+        "expected_dataset_rank": None,
+        "candidate_count": 1,
+        "query_count": 0,
+        "exploration_count": 0,
+        "llm_call_count": 1,
+    }
+    target = tmp_path / "report.md"
+
+    run_module._write_report(
+        target,
+        record=SimpleNamespace(id="eval-1", llm_provider="google", llm_model="model"),
+        results=[("case-1", assessment, diagnostics)],
+    )
+
+    report = target.read_text(encoding="utf-8")
+    assert "## Fallos por etapa" in report
+    assert "expected_dataset_not_retrieved" in report
+    assert "## Recuperación" in report
+    assert "other-id" in report

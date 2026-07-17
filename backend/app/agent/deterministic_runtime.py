@@ -88,6 +88,7 @@ class RuntimeTraceEntry:
     node: SupervisorNode
     reason: str
     candidate_index: int | None
+    diagnostic_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,19 +164,14 @@ def _requires_exploration(
     if selection is None:
         return False
     explored_indexes = {item.column_index for item in explored}
-    return any(
-        index not in explored_indexes for index in _text_filter_indexes(selection)
-    )
+    return any(index not in explored_indexes for index in _text_filter_indexes(selection))
 
 
 def _validate_explored_filters(
     selection: EnumeratedPlanSelection,
     explored: tuple[ExploredColumnValues, ...],
 ) -> None:
-    allowed = {
-        item.column_index: {_fold_text(value) for value in item.values}
-        for item in explored
-    }
+    allowed = {item.column_index: {_fold_text(value) for value in item.values} for item in explored}
     for item in selection.filters:
         if item.value_type is not ScalarType.TEXT or not item.values:
             continue
@@ -241,13 +237,10 @@ def _fold_text(value: str) -> str:
 def _deterministic_synthesis(claims: ClaimsBuildResult) -> GroundedSynthesis:
     selected = claims.claims[:8]
     values = "; ".join(
-        f"{claim.display_value}{f' {claim.unit}' if claim.unit else ''}"
-        for claim in selected
+        f"{claim.display_value}{f' {claim.unit}' if claim.unit else ''}" for claim in selected
     )
     suffix = (
-        " Hay resultados adicionales en la evidencia adjunta."
-        if len(claims.claims) > 8
-        else ""
+        " Hay resultados adicionales en la evidencia adjunta." if len(claims.claims) > 8 else ""
     )
     return GroundedSynthesis(
         answer=f"Resultados calculados con la evidencia consultada: {values}.{suffix}",
@@ -265,13 +258,11 @@ def _unsupported_question(question: str) -> bool:
         r"\b(proximos?\s+\w+\s+minutos?|tiempo real|llegara primero)\b",
         normalized,
     )
-    personal_rows = (
-        "cada servidor" in normalized
-        and all(term in normalized for term in ("nombre", "edad", "salario"))
+    personal_rows = "cada servidor" in normalized and all(
+        term in normalized for term in ("nombre", "edad", "salario")
     )
-    medical_advice = (
-        "tratamiento medico" in normalized
-        and ("debe recibir" in normalized or "diagnostico" in normalized)
+    medical_advice = "tratamiento medico" in normalized and (
+        "debe recibir" in normalized or "diagnostico" in normalized
     )
     return bool(exact_prediction or real_time or personal_rows or medical_advice)
 
@@ -349,9 +340,7 @@ async def run_deterministic_agent(
             synthesis_valid=synthesis is not None,
             budgets=limits,
             usage=SupervisorUsage(
-                candidates=sum(
-                    item.status is not CandidateStatus.UNSEEN for item in candidates
-                ),
+                candidates=sum(item.status is not CandidateStatus.UNSEEN for item in candidates),
                 explorations=explorations,
                 queries=queries,
                 plan_repairs=repairs,
@@ -363,7 +352,12 @@ async def run_deterministic_agent(
         trace_reason = transition.reason
         if transition.node is SupervisorNode.BUILD_PLAN and validation_error is not None:
             trace_reason = f"{trace_reason}: {validation_error.code.value}: {validation_error}"
-        trace_entry = RuntimeTraceEntry(transition.node, trace_reason, current)
+        diagnostic_code = (
+            validation_error.code.value
+            if transition.node is SupervisorNode.BUILD_PLAN and validation_error is not None
+            else None
+        )
+        trace_entry = RuntimeTraceEntry(transition.node, trace_reason, current, diagnostic_code)
         trace.append(trace_entry)
         if observe_transition is not None:
             await observe_transition(trace_entry, snapshot.usage)
@@ -520,9 +514,7 @@ async def run_deterministic_agent(
                 repairs = 0
                 continue
             explored = tuple(
-                previous
-                for previous in explored
-                if previous.column_index != item.column_index
+                previous for previous in explored if previous.column_index != item.column_index
             ) + (item,)
             explorations += item.tool_calls
             if not item.values:
