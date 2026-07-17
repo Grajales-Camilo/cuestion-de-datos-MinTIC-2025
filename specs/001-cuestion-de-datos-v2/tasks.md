@@ -409,7 +409,7 @@ permanecen bloqueadas.
       T-615G quedó bloqueada hasta definir la matriz terminal; la corrección
       documental del 2026-07-17 la reautoriza sin iniciar T-615H.
 
-  - [ ] **T-615G Habilitar API textual aditiva y lectura histórica.**
+  - [x] **T-615G Habilitar API textual aditiva y lectura histórica.**
     - **Requisitos:** contrato REST §4b; SSE/parciales; compatibilidad.
     - **Archivos previstos:** `backend/app/schemas.py`, rutas/serializadores,
       persistencia de respuesta y pruebas de contrato.
@@ -432,6 +432,14 @@ permanecen bloqueadas.
     - **Corrección documental (2026-07-17):** la matriz terminal aprobada en
       `research.md` §27 y contrato REST §4b resuelve el bloqueo semántico y
       reautoriza exclusivamente T-615G. T-615H sigue bloqueada.
+    - **Cierre (2026-07-17):** modelo público cerrado, payload terminal
+      persistido y fronteras REST/SSE/replay exponen las dos listas aditivas;
+      históricos se materializan sin reescritura ni inferencia. Casos
+      cuantitativo, textual puro, mixto, rollback, aislamiento, cascadas y
+      retención verdes contra PostgreSQL real. OpenAPI cambió de
+      `4d607fd6e59d908c8f96e633a1d092f55fc4379394aec8100ad14ba21db44dae`
+      a `d1627ed9394bb729ec98aa4d9d818db054efdd1ff4ce78654c37789ed651d89b`
+      únicamente en la superficie textual aprobada. T-615H no iniciada.
 
   - [ ] **T-615H Restringir síntesis a hechos persistidos.**
     - **Requisitos:** RF-208/RNF-003 y RF-210/RNF-013; IDs existentes;

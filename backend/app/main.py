@@ -46,6 +46,7 @@ from app.schemas import (
     RunResultResponse,
     RunStatusResponse,
     RunUsage,
+    materialize_textual_fact_fields,
 )
 
 POC_SWEEP_INTERVAL_S = 2.0
@@ -990,9 +991,10 @@ async def _agent_sse_generator(database_url: str, run_id: uuid.UUID, since_seq: 
         if run is None:
             return
         for event in events:
+            payload = _public_event_payload(event)
             yield (
                 f"id: {event.seq}\nevent: {event.event_type}\n"
-                f"data: {json.dumps(event.payload, ensure_ascii=False)}\n\n"
+                f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             )
             last_seq = event.seq
             if event.event_type in ("answer", "error"):
@@ -1076,7 +1078,17 @@ def _step_response(step: AgentStep) -> dict[str, object]:
 
 
 def _event_response(event: AgentRunEvent) -> dict[str, object]:
-    return {"seq": event.seq, "event": event.event_type, "data": event.payload}
+    return {"seq": event.seq, "event": event.event_type, "data": _public_event_payload(event)}
+
+
+def _public_event_payload(event: AgentRunEvent) -> dict[str, object]:
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    if event.event_type == "answer":
+        return materialize_textual_fact_fields(payload)
+    if event.event_type == "error":
+        error = payload.get("error") if isinstance(payload.get("error"), dict) else {}
+        return materialize_textual_fact_fields(payload, status=error.get("status"))
+    return payload
 
 
 @app.get("/v2/agent/runs/{run_id}", response_model=RunStatusResponse | RunResultResponse)
@@ -1105,13 +1117,17 @@ async def agent_run_status(
             last_event_seq=run.last_event_seq,
             partial_evidence=[],
             partial_claims=[],
+            partial_textual_facts=[],
             usage=_run_usage(run),
         )
-    answer = run.final_answer if isinstance(run.final_answer, dict) else {}
+    stored_answer = run.final_answer if isinstance(run.final_answer, dict) else {}
+    answer = materialize_textual_fact_fields(stored_answer, status=run.status)
     return RunResultResponse(
         run_id=str(run.id),
         status=run.status,
         answer=answer,
+        textual_facts=answer["textual_facts"],
+        partial_textual_facts=answer["partial_textual_facts"],
         steps=serialized_steps,
         events=serialized_events,
         last_event_seq=run.last_event_seq,

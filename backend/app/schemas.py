@@ -1,9 +1,24 @@
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
-from app.quality.grounded_facts import QuantitativeClaimResponse as QuantitativeClaimResponse
+from app.quality.grounded_facts import (
+    QuantitativeClaimResponse as QuantitativeClaimResponse,
+)
+from app.quality.grounded_facts import (
+    TextNormalizationProfile,
+    TextualFactAlgorithmVersion,
+    TextualFactKind,
+    TextualFactOperation,
+    TextualFactOperationParams,
+)
+from app.quality.grounded_facts import (
+    TextualFact as InternalTextualFact,
+)
 
 
 class CatalogIndexCheck(BaseModel):
@@ -106,6 +121,85 @@ class RunUsage(BaseModel):
     termination_reason: str | None = None
 
 
+class TextualFactResponse(BaseModel):
+    """Forma pública cerrada de un hecho textual verificado (RF-210)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    fact_id: UUID
+    fact_kind: Literal[TextualFactKind.TEXTUAL] = TextualFactKind.TEXTUAL
+    fact: str = Field(min_length=1)
+    operation: TextualFactOperation
+    evidence_id: UUID
+    dataset_id: str = Field(pattern=r"^[a-z0-9]{4}-[a-z0-9]{4}$")
+    source_row_indexes: tuple[Annotated[int, Field(ge=0)], ...] = Field(
+        min_length=1,
+        max_length=100,
+    )
+    columns: tuple[Annotated[str, Field(min_length=1)], ...] = Field(min_length=1)
+    raw_values: tuple[Annotated[str, Field(min_length=1)], ...] = Field(
+        min_length=1,
+        max_length=50,
+    )
+    normalized_values: tuple[Annotated[str, Field(min_length=1)], ...] = Field(
+        min_length=1,
+        max_length=50,
+    )
+    display_value: str = Field(min_length=1)
+    normalization_profile: Literal[TextNormalizationProfile.TEXT_ES_V1] = (
+        TextNormalizationProfile.TEXT_ES_V1
+    )
+    operation_params: TextualFactOperationParams
+    algorithm_version: Literal[TextualFactAlgorithmVersion.TEXTUAL_FACT_V1] = (
+        TextualFactAlgorithmVersion.TEXTUAL_FACT_V1
+    )
+    source_hash: str = Field(pattern=r"^sha256-jcs-v1:[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _validate_public_shape(self) -> TextualFactResponse:
+        # Reutiliza las invariantes tipadas del dominio sin exponer su modelo
+        # ni convertirlo en la representación pública.
+        InternalTextualFact.model_validate(self.model_dump())
+        return self
+
+
+_TEXTUAL_FACT_LIST = TypeAdapter(list[TextualFactResponse])
+
+
+def materialize_textual_fact_fields(
+    payload: dict[str, Any],
+    *,
+    status: str | None = None,
+) -> dict[str, Any]:
+    """Frontera aditiva de lectura para payloads terminales T-615G.
+
+    Crea una copia, valida cualquier hecho explícito y materializa listas
+    vacías en históricos anteriores. Nunca infiere hechos ni reescribe el
+    JSON persistido.
+    """
+
+    materialized = dict(payload)
+    textual_facts = _TEXTUAL_FACT_LIST.validate_python(materialized.get("textual_facts", []))
+    partial_textual_facts = _TEXTUAL_FACT_LIST.validate_python(
+        materialized.get("partial_textual_facts", [])
+    )
+    terminal_status = status or materialized.get("status")
+
+    if terminal_status in {"no_evidence", "failed"}:
+        textual_facts = []
+        partial_textual_facts = []
+    elif terminal_status == "interrupted":
+        textual_facts = []
+    elif terminal_status == "completed":
+        partial_textual_facts = []
+
+    materialized["textual_facts"] = _TEXTUAL_FACT_LIST.dump_python(textual_facts, mode="json")
+    materialized["partial_textual_facts"] = _TEXTUAL_FACT_LIST.dump_python(
+        partial_textual_facts, mode="json"
+    )
+    return materialized
+
+
 class RunStatusResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -116,6 +210,7 @@ class RunStatusResponse(BaseModel):
     last_event_seq: int
     partial_evidence: list[dict[str, Any]]
     partial_claims: list[dict[str, Any]]
+    partial_textual_facts: list[TextualFactResponse] = Field(default_factory=list)
     usage: RunUsage
 
 
@@ -125,6 +220,8 @@ class RunResultResponse(BaseModel):
     run_id: str
     status: Literal["completed", "no_evidence", "interrupted", "failed"]
     answer: dict[str, Any]
+    textual_facts: list[TextualFactResponse] = Field(default_factory=list)
+    partial_textual_facts: list[TextualFactResponse] = Field(default_factory=list)
     steps: list[dict[str, Any]]
     events: list[dict[str, Any]]
     last_event_seq: int

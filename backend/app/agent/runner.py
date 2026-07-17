@@ -70,7 +70,12 @@ from app.llm.factory import (
     LLMProviderError,
     get_structured_chat_model,
 )
-from app.schemas import ErrorDetail, ErrorEnvelope
+from app.schemas import (
+    ErrorDetail,
+    ErrorEnvelope,
+    TextualFactResponse,
+    materialize_textual_fact_fields,
+)
 from app.tools.buscar_catalogo import buscar_catalogo
 from app.tools.ejecutar_soql import ejecutar_soql
 from app.tools.explorar_valores import explorar_valores
@@ -445,20 +450,33 @@ async def execute_deterministic_agent_run_async(
             )
         if cancel_event.is_set():
             raise DeterministicRunCancelled("corrida cancelada antes del terminal")
-        public_completed = result.status == "completed"
+        quantitative_completed = result.status == "completed"
         prepared_textual_count = (
             len(result.execution.textual_facts) if result.execution is not None else 0
         )
-        if (
-            public_completed
+        persisted_textual_facts = (
+            persisted.textual_facts
+            if settings.deterministic_textual_facts_enabled
+            and persisted is not None
             and prepared_textual_count
-            and (persisted is None or len(persisted.textual_facts) != prepared_textual_count)
-        ):
-            public_completed = False
+            and len(persisted.textual_facts) == prepared_textual_count
+            else ()
+        )
+        textual_persistence_complete = (
+            prepared_textual_count == 0 or len(persisted_textual_facts) == prepared_textual_count
+        )
+        textual_facts = [
+            TextualFactResponse.model_validate(fact.model_dump()).model_dump(mode="json")
+            for fact in persisted_textual_facts
+        ]
+        public_completed = (
+            quantitative_completed or bool(textual_facts)
+        ) and textual_persistence_complete
         if public_completed:
             assert persisted is not None
             evidence = [persisted.evidence]
-            claims = list(persisted.claims)
+            if quantitative_completed:
+                claims = list(persisted.claims)
 
         final_answer = {
             "run_id": str(run_id),
@@ -466,16 +484,22 @@ async def execute_deterministic_agent_run_async(
             "intention": result.intent.model_dump(mode="json"),
             "summary": (
                 result.synthesis.answer
-                if public_completed and result.synthesis is not None
-                else "No encontré evidencia elegible suficiente para responder."
+                if public_completed and quantitative_completed and result.synthesis is not None
+                else (
+                    "Se encontraron hechos textuales verificables."
+                    if textual_facts
+                    else "No encontré evidencia elegible suficiente para responder."
+                )
             ),
             "narrative": (
                 result.synthesis.answer
-                if public_completed and result.synthesis is not None
+                if public_completed and quantitative_completed and result.synthesis is not None
                 else None
             ),
             "evidence": evidence,
             "claims": claims,
+            "textual_facts": textual_facts,
+            "partial_textual_facts": [],
             "no_evidence_report": (
                 None
                 if public_completed
@@ -672,7 +696,8 @@ async def execute_legacy_agent_run_async(
                 payload=error,
             )
             return state
-        final_answer = state["final_answer"]
+        final_answer = materialize_textual_fact_fields(state["final_answer"])
+        state["final_answer"] = final_answer
         input_tokens, output_tokens, estimated_cost = _usage_totals(state)
         final_answer["usage"]["latency_ms"] = latency_ms
         final_answer["usage"]["estimated_cost_usd"] = estimated_cost

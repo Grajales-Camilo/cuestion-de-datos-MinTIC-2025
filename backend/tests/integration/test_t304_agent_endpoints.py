@@ -101,10 +101,14 @@ async def test_t304_real_postgres_stream_status_and_delete() -> None:
         assert stream.status_code == 200
         assert "id: 2\nevent: answer" in stream.text
         assert "id: 1" not in stream.text
+        assert '"textual_facts": []' in stream.text
+        assert '"partial_textual_facts": []' in stream.text
 
         status_response = client.get(f"/v2/agent/runs/{run_id}", headers=headers)
         assert status_response.status_code == 200
         assert status_response.json()["answer"]["status"] == "completed"
+        assert status_response.json()["textual_facts"] == []
+        assert status_response.json()["partial_textual_facts"] == []
 
         deleted = client.delete(f"/v2/agent/runs/{run_id}", headers=headers)
         assert deleted.status_code == 204
@@ -113,15 +117,19 @@ async def test_t304_real_postgres_stream_status_and_delete() -> None:
         source_run_hash = hashlib.sha256(f"{run_id}{RETENTION_HASH_SALT}".encode()).hexdigest()
         async with engine.begin() as connection:
             metric_row = (
-                await connection.execute(
-                    text(
-                        "SELECT retention_class_origin, status_final, llm_provider, llm_model, "
-                        "steps_used, latency_ms, estimated_cost_usd, deletion_reason "
-                        "FROM technical_metrics WHERE source_run_hash = :hash"
-                    ),
-                    {"hash": source_run_hash},
+                (
+                    await connection.execute(
+                        text(
+                            "SELECT retention_class_origin, status_final, llm_provider, llm_model, "
+                            "steps_used, latency_ms, estimated_cost_usd, deletion_reason "
+                            "FROM technical_metrics WHERE source_run_hash = :hash"
+                        ),
+                        {"hash": source_run_hash},
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
         assert metric_row["retention_class_origin"] == "user"
         assert metric_row["status_final"] == "completed"
         assert metric_row["llm_provider"] == "google"

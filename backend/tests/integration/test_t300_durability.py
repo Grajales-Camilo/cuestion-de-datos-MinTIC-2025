@@ -215,7 +215,11 @@ async def test_write_terminal_event_once_is_idempotent_on_retry(engine) -> None:
 
     events = await durability.list_events_since(engine, run_id, 0)
     assert len(events) == 1
-    assert events[0].payload == {"try": 1}
+    assert events[0].payload == {
+        "try": 1,
+        "textual_facts": [],
+        "partial_textual_facts": [],
+    }
 
 
 # --- 5. Rollback tras reservar seq no deja hueco observable -----------------

@@ -604,6 +604,8 @@ async def test_h1_positive_path_completes_with_evidence_quality_claims_and_singl
     assert final_answer["status"] == "completed"
     assert len(final_answer["evidence"]) == 1
     assert len(final_answer["claims"]) == 1
+    assert final_answer["textual_facts"] == []
+    assert final_answer["partial_textual_facts"] == []
     assert calls, "el executor SoQL falso debe haberse invocado exactamente una vez"
     assert len(calls) == 1
 
@@ -633,7 +635,7 @@ async def test_h1_positive_path_completes_with_evidence_quality_claims_and_singl
     _assert_budgets_respected([event for event in events if event.event_type == "step"])
 
 
-async def test_t615f_text_is_persisted_internally_without_public_api_or_legacy(
+async def test_t615g_text_only_is_completed_and_exposed_without_synthesis_or_legacy(
     engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
 ) -> None:
     dataset_id = _fresh_dataset_id()
@@ -715,11 +717,17 @@ async def test_t615f_text_is_persisted_internally_without_public_api_or_legacy(
 
     assert len(calls) == 1
     final_answer = result["final_answer"]
-    assert final_answer["status"] == "no_evidence"
-    assert final_answer["evidence"] == []
+    assert final_answer["status"] == "completed"
+    assert final_answer["summary"] == "Se encontraron hechos textuales verificables."
+    assert final_answer["narrative"] is None
+    assert len(final_answer["evidence"]) == 1
     assert final_answer["claims"] == []
-    assert "textual_facts" not in final_answer
-    assert "Medellín" not in json.dumps(final_answer, ensure_ascii=False)
+    assert final_answer["no_evidence_report"] is None
+    assert final_answer["partial_textual_facts"] == []
+    assert len(final_answer["textual_facts"]) == 1
+    assert final_answer["textual_facts"][0]["raw_values"] == ["  Medellín  "]
+    assert final_answer["textual_facts"][0]["display_value"] == "Medellín"
+    assert "Medellín" in json.dumps(final_answer, ensure_ascii=False)
 
     facts = await _load_textual_facts(engine, run_id)
     assert len(facts) == 1
@@ -738,8 +746,12 @@ async def test_t615f_text_is_persisted_internally_without_public_api_or_legacy(
     _assert_budgets_respected([event for event in events if event.event_type == "step"])
 
 
-async def test_t615f_textual_persistence_failure_downgrades_public_success_without_losing_claims(
-    engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
+@pytest.mark.parametrize("fail_textual_persistence", [False, True])
+async def test_t615g_mixed_response_and_textual_persistence_failure_are_isolated(
+    engine,
+    monkeypatch: pytest.MonkeyPatch,
+    created: _CreatedIds,
+    fail_textual_persistence: bool,
 ) -> None:
     dataset_id = _fresh_dataset_id()
     columns = _CATEGORIA_MONTO_COLUMNS
@@ -821,10 +833,11 @@ async def test_t615f_textual_persistence_failure_downgrades_public_success_witho
             synthesize=synthesize,
         ),
     )
-    monkeypatch.setattr(
-        "app.agent.deterministic_pipeline.build_verify_persist_textual_facts",
-        fail_textual_batch,
-    )
+    if fail_textual_persistence:
+        monkeypatch.setattr(
+            "app.agent.deterministic_pipeline.build_verify_persist_textual_facts",
+            fail_textual_batch,
+        )
     monkeypatch.setattr(
         "app.agent.runner.execute_legacy_agent_run_async",
         lambda *_args, **_kwargs: pytest.fail("el runtime legacy no debe invocarse"),
@@ -835,13 +848,24 @@ async def test_t615f_textual_persistence_failure_downgrades_public_success_witho
         run_id,
     )
     final_answer = result["final_answer"]
-    assert final_answer["status"] == "no_evidence"
-    assert final_answer["narrative"] is None
-    assert final_answer["claims"] == []
-    assert final_answer["evidence"] == []
-    assert await _count_evidence(engine, run_id) == 1
-    assert await _count_claims(engine, run_id) == 2
-    assert await _load_textual_facts(engine, run_id) == []
+    if fail_textual_persistence:
+        assert final_answer["status"] == "no_evidence"
+        assert final_answer["narrative"] is None
+        assert final_answer["claims"] == []
+        assert final_answer["textual_facts"] == []
+        assert final_answer["evidence"] == []
+        assert await _count_evidence(engine, run_id) == 1
+        assert await _count_claims(engine, run_id) == 2
+        assert await _load_textual_facts(engine, run_id) == []
+    else:
+        assert final_answer["status"] == "completed"
+        assert len(final_answer["claims"]) == 2
+        assert len(final_answer["textual_facts"]) == 1
+        assert final_answer["textual_facts"][0]["display_value"] == "Bogotá"
+        assert final_answer["partial_textual_facts"] == []
+        assert final_answer["narrative"] == "El monto observado fue 20."
+        assert "Bogotá" not in final_answer["narrative"]
+        assert len(final_answer["evidence"]) == 1
 
 
 # --- Historia 2: cambio de candidato -----------------------------------------
