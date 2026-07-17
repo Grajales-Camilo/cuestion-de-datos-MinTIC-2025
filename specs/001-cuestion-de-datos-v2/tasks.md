@@ -267,15 +267,16 @@ bloqueadas.
 
 - [ ] **T-615 Diseñar e implementar hechos textuales de primera clase
   (RF-210/RNF-013 propuestos; RF-208/RNF-003 preservados).**
-  - **Estado:** `PROPUESTA PARA REVISIÓN`; cero código o migraciones
-    autorizados. Diseño: `research.md` §27 y
-    `proposals/textual-claims.md`.
+  - **Estado:** T-615A aprobada el 2026-07-17 sobre el HEAD normativo
+    `f7725eeced8afc93ccd7fcc250e248a05f2db616`. Se autoriza exclusivamente
+    T-615B; T-615C y posteriores continúan bloqueadas. Diseño:
+    `research.md` §27 y `proposals/textual-claims.md`.
   - **Regla global:** no representar texto mediante `raw_value=1`, conteos
     ficticios ni claims cuantitativos; no editar `golden-v1`; no iniciar
     T-616/T-617; no retirar el legado; cada incremento requiere autorización
     explícita y rollback propio.
 
-  - [ ] **T-615A Aprobar la enmienda SDD y congelar decisiones.**
+  - [x] **T-615A Aprobar la enmienda SDD y congelar decisiones.**
     - **Requisitos:** RF-210/RNF-013 propuestos; Constitución Art. I/II/IV;
       RF-208/RNF-003 no se alteran.
     - **Archivos:** `spec.md`, `research.md`, `plan.md`,
@@ -290,6 +291,15 @@ bloqueadas.
     - **Rollback:** revertir solo el commit documental.
     - **Gate:** aprobación o devolución humana. Sin aprobación no empieza
       T-615B. El commit documental por sí solo no cierra T-615A.
+    - **Cierre:** aprobación humana registrada el 2026-07-17 sobre
+      `f7725eeced8afc93ccd7fcc250e248a05f2db616`. Quedan congeladas la API
+      textual aditiva; `claims` y `partial_claims` cuantitativos; los futuros
+      campos raíz separados `textual_facts` y `partial_textual_facts`;
+      `grounded-synthesis-plan-v1`; las operaciones cerradas, incluida
+      `canonical_text_set`; `text-es-v1`; `tie_policy=reject`;
+      `sha256-jcs-v1`; la persistencia textual separada; y la retención y los
+      fingerprints no identificables. Se autoriza exclusivamente T-615B;
+      T-615C y posteriores continúan bloqueadas.
 
   - [ ] **T-615B Cerrar modelos de dominio y contrato tipado.**
     - **Requisitos:** RF-210; unión `GroundedFact`; enums cerrados;
