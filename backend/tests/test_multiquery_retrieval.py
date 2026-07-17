@@ -94,6 +94,27 @@ async def test_multiquery_deduplicates_and_rewards_cross_query_coverage() -> Non
 
 
 @pytest.mark.asyncio
+async def test_default_window_keeps_deep_cross_query_consensus_with_final_limit() -> None:
+    calls: list[int] = []
+
+    async def searcher(query: str, k: int) -> CatalogSearchSummary:
+        calls.append(k)
+        call_index = len(calls)
+        generic = [
+            _item(f"generic-{call_index}-{index:02d}", 0.68 - index / 1000)
+            for index in range(13)
+        ]
+        shared = _item("shared-deep", 0.72)
+        return CatalogSearchSummary(query=query, results=[*generic, shared])
+
+    result = await retrieve_candidates_multiquery(_intent(), searcher=searcher)
+
+    assert calls == [25, 25, 25, 25]
+    assert len(result.candidates) == 10
+    assert result.candidates[0].item.dataset_id == "shared-deep"
+
+
+@pytest.mark.asyncio
 async def test_multiquery_demotes_ineligible_candidate() -> None:
     async def searcher(query: str, k: int) -> CatalogSearchSummary:
         del k

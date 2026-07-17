@@ -228,6 +228,8 @@ def test_select_cases_rejects_unknown_case_id() -> None:
 def test_report_renders_stage_reason_and_retrieval_tables(tmp_path: Path) -> None:
     assessment = run_module.CaseAssessment(False, False, False, (), (), "sin dataset")
     diagnostics = {
+        "agent_run_id": "run-1",
+        "last_successful_stage": None,
         "failure_stage": "retrieval",
         "failure_code": "expected_dataset_not_retrieved",
         "failure_owner": "agent",
@@ -239,12 +241,26 @@ def test_report_renders_stage_reason_and_retrieval_tables(tmp_path: Path) -> Non
         "query_count": 0,
         "exploration_count": 0,
         "llm_call_count": 1,
+        "stop_reason": None,
+        "evidence_count": 0,
+        "claim_count": 0,
+        "facts_verified": False,
+        "latency_ms": 10,
+        "estimated_cost_usd": 0,
     }
     target = tmp_path / "report.md"
 
     run_module._write_report(
         target,
-        record=SimpleNamespace(id="eval-1", llm_provider="google", llm_model="model"),
+        record=SimpleNamespace(
+            id="eval-1",
+            llm_provider="google",
+            llm_model="model",
+            embedding_model="embedding-model",
+            eval_seed=614010,
+            git_commit="abc123",
+            config_snapshot={"runtime": "deterministic"},
+        ),
         results=[("case-1", assessment, diagnostics)],
     )
 

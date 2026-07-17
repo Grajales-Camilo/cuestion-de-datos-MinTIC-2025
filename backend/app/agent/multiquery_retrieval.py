@@ -115,7 +115,7 @@ async def retrieve_candidates_multiquery(
     intent: IntentExtraction,
     *,
     searcher: CatalogSearcher,
-    per_query: int = 10,
+    per_query: int = 25,
     limit: int = 10,
 ) -> MultiQueryRetrievalResult:
     if not 1 <= per_query <= 25:

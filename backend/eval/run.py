@@ -21,7 +21,7 @@ from app.agent.runner import create_eval_run, execute_agent_run_async
 from app.agent.worker_lease import mark_worker_shutdown, register_worker_instance
 from app.config import get_settings
 from app.db.engine import create_app_async_engine
-from app.db.models import AgentStep, EvalCaseResult, EvalRun
+from app.db.models import AgentRunEvent, AgentStep, EvalCaseResult, EvalRun
 from eval.diagnostics import StageObservation, build_stage_diagnostics
 from eval.loader import default_suite_path, load_golden_suite
 from eval.metrics import CaseAssessment, assess_case, recall_hit_at_10
@@ -56,10 +56,16 @@ def _git_commit() -> str:
     return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
-def _config_snapshot(settings) -> dict[str, object]:
+def _config_snapshot(settings, seed: int) -> dict[str, object]:
+    commit = _git_commit()
     return {
+        "runtime": settings.agent_runtime,
+        "llm_provider": settings.llm_provider,
+        "llm_model": settings.llm_model,
         "agent_max_steps": settings.agent_max_steps,
         "embedding_model": settings.embedding_model,
+        "eval_seed": seed,
+        "git_commit": commit,
         "placeholder_min_ratio": settings.placeholder_min_ratio,
         "run_max_duration_s": settings.run_max_duration_s,
     }
@@ -78,14 +84,32 @@ async def _planner_search_dataset_ids(engine, agent_run_id: uuid.UUID) -> list[s
             .order_by(AgentStep.step_number)
             .limit(1)
         )
-    if step is None or not isinstance(step.tool_output_summary, dict):
-        return []
-    results = step.tool_output_summary.get("results")
-    if not isinstance(results, list):
-        return []
-    return [
-        item["dataset_id"] for item in results if isinstance(item, dict) and item.get("dataset_id")
-    ]
+    if step is not None and isinstance(step.tool_output_summary, dict):
+        results = step.tool_output_summary.get("results")
+        if isinstance(results, list):
+            return [
+                item["dataset_id"]
+                for item in results
+                if isinstance(item, dict) and item.get("dataset_id")
+            ]
+    async with session_factory() as session:
+        events = (
+            await session.scalars(
+                select(AgentRunEvent)
+                .where(
+                    AgentRunEvent.run_id == agent_run_id,
+                    AgentRunEvent.event_type == "step",
+                )
+                .order_by(AgentRunEvent.seq)
+            )
+        ).all()
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        detail = payload.get("detail") if isinstance(payload.get("detail"), dict) else {}
+        retrieved = detail.get("retrieved_dataset_ids")
+        if isinstance(retrieved, list) and retrieved:
+            return [str(dataset_id) for dataset_id in retrieved if dataset_id]
+    return []
 
 
 async def _stage_observations(
@@ -102,10 +126,29 @@ async def _stage_observations(
                 .order_by(AgentStep.step_number)
             )
         ).all()
+        step_events = (
+            await session.scalars(
+                select(AgentRunEvent)
+                .where(
+                    AgentRunEvent.run_id == agent_run_id,
+                    AgentRunEvent.event_type == "step",
+                )
+                .order_by(AgentRunEvent.seq)
+            )
+        ).all()
+    details_by_step = {
+        event.payload.get("step_number"): event.payload.get("detail", {})
+        for event in step_events
+        if isinstance(event.payload, dict)
+    }
     return tuple(
         StageObservation(
             node=step.node,
-            detail=step.detail if isinstance(step.detail, dict) else {},
+            detail=(
+                details_by_step.get(step.step_number, {})
+                if isinstance(details_by_step.get(step.step_number, {}), dict)
+                else {}
+            ),
             output=step.tool_output_summary if isinstance(step.tool_output_summary, dict) else {},
             message=step.display_message,
         )
@@ -186,7 +229,7 @@ async def _create_eval_record(
         llm_model=settings.llm_model,
         embedding_model=settings.embedding_model,
         eval_seed=seed,
-        config_snapshot=_config_snapshot(settings),
+        config_snapshot=_config_snapshot(settings, seed),
         started_at=datetime.now(UTC),
     )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -233,19 +276,25 @@ def _write_report(
         f"# Evaluación {record.id}",
         "",
         "- Suite: golden-v1",
+        f"- Runtime: {_md(record.config_snapshot.get('runtime'))}",
         f"- Modelo: {record.llm_provider}/{record.llm_model}",
+        f"- Embeddings: {_md(record.embedding_model)}",
+        f"- Semilla: {record.eval_seed}",
+        f"- Commit: {_md(record.git_commit)}",
         f"- Casos ejecutados: {len(results)}",
         f"- Casos aprobados: {passed}",
         f"- Éxito: {passed / len(results):.1%}" if results else "- Éxito: no aplica",
         "",
         "## Resultado por caso",
         "",
-        "| Caso | Aprobó | Etapa de fallo | Código | Responsable | Motivo |",
-        "|---|---:|---|---|---|---|",
+        "| Caso | Agent run | Aprobó | Última etapa | Etapa de fallo | Código | "
+        "Responsable | Motivo humano |",
+        "|---|---|---:|---|---|---|---|---|",
     ]
     lines.extend(
-        f"| {_md(case_id)} | {'sí' if item.passed else 'no'} | "
-        f"{_md(diag['failure_stage'])} | {_md(diag['failure_code'])} | "
+        f"| {_md(case_id)} | {_md(diag.get('agent_run_id'))} | {'sí' if item.passed else 'no'} | "
+        f"{_md(diag['last_successful_stage'])} | {_md(diag['failure_stage'])} | "
+        f"{_md(diag['failure_code'])} | "
         f"{_md(diag['failure_owner'])} | {_md(item.failure_reason)} |"
         for case_id, item, diag in results
     )
@@ -278,6 +327,22 @@ def _write_report(
         f"{_md(diag['expected_dataset_rank'])} | {diag['candidate_count']} | "
         f"{diag['query_count']} | "
         f"{diag['exploration_count']} | {diag['llm_call_count']} |"
+        for case_id, _item, diag in results
+    )
+    lines.extend(
+        [
+            "",
+            "## Consumo y salida",
+            "",
+            "| Caso | Stop reason | Evidencias | Claims | Hechos verificados | "
+            "Latencia ms | Costo USD |",
+            "|---|---|---:|---:|---|---:|---:|",
+        ]
+    )
+    lines.extend(
+        f"| {_md(case_id)} | {_md(diag['stop_reason'])} | {diag['evidence_count']} | "
+        f"{diag['claim_count']} | {_md(diag['facts_verified'])} | {_md(diag['latency_ms'])} | "
+        f"{_md(diag['estimated_cost_usd'])} |"
         for case_id, _item, diag in results
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -352,6 +417,9 @@ async def run_suite(
                 assessment,
                 observations,
                 infrastructure_error=error_code,
+            )
+            stage_diagnostics["agent_run_id"] = (
+                str(agent_run_id) if agent_run_id is not None else None
             )
             try:
                 await _persist_case_result(
