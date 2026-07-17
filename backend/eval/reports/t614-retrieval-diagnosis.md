@@ -13,11 +13,13 @@
 |---|---|---|---:|---:|---:|
 | Línea base reproducible, antes de recuperación | `c40191ef-a095-448a-a357-e6b88c7ec784` | `c40191ef-a095-448a-a357-e6b88c7ec784.md` | 6/10 | 7/8 | 2/2 |
 | Tras ampliar la ventana por variante | `6b53a592-f87f-4740-825e-dc534cdfd93d` | `6b53a592-f87f-4740-825e-dc534cdfd93d.md` | 6/10 | 8/8 | 2/2 |
+| Final sobre commit `4df5c98` | `807c3127-9967-4c1c-afe2-714923cb0776` | `807c3127-9967-4c1c-afe2-714923cb0776.md` | 7/10 | 8/8 | 2/2 |
 
-La tasa de utilidad no cambió porque recuperar el dataset no garantiza que el
-planificador lo resuelva. La mejora medida se limita a recuperación: recall@10
-subió de 87,5 % a 100 % sin regresiones en los cuatro positivos sólidos ni en
-los dos negativos.
+La primera repetición posterior mantuvo 6/10 y la corrida final subió a 7/10;
+la variación de utilidad confirma que recuperar el dataset no garantiza que el
+planificador lo resuelva. La mejora estable y atribuible al incremento es de
+recuperación: recall@10 subió de 87,5 % a 100 % sin regresiones en los cuatro
+positivos sólidos ni en los dos negativos.
 
 ## Comparación por caso
 
@@ -29,7 +31,7 @@ los dos negativos.
 | pilot-013-app-dnp | pasa | pasa | 1 / 1 | sin regresión |
 | pilot-012-control-fiscal | falla | falla | fuera de top 10 / 1 | recuperación corregida; ahora falla después, por presupuesto de candidatos |
 | pilot-021-sensibilizacion-valle | falla | falla | 1 / 1 | fallo posterior a recuperación; planificación/proveedor en la corrida final |
-| pilot-022-red-vial | falla | falla | 1 / 1 | fallo posterior: `expected_fact_not_found`, propietario golden |
+| pilot-022-red-vial | falla | pasa | 1 / 1 | caso recuperado y resuelto en la corrida final |
 | pilot-038-precipitacion | falla | falla | 1 / 1 | fallo posterior: `expected_fact_not_found`, propietario golden |
 | pilot-045-negativo-dato-personal | pasa | pasa | no aplica | abstención segura, cero evidencia/claims |
 | pilot-046-negativo-tiempo-real | pasa | pasa | no aplica | abstención segura, cero evidencia/claims |
@@ -71,8 +73,8 @@ salida final sigue limitada a 10.
 - `pilot-021`: el esperado se recupera en rango 1; la corrida posterior terminó
   antes de evidencia por un fallo de planificación asociado a la ejecución
   real del proveedor.
-- `pilot-022` y `pilot-038`: producen evidencia y claims, pero no satisfacen los
-  `expected_facts`; el clasificador los asigna al contrato golden. No se cambió
+- `pilot-038`: produce evidencia y claims, pero no satisface los
+  `expected_facts`; el clasificador lo asigna al contrato golden. No se cambió
   `golden-v1` ni `eval/metrics.py`.
 
 T-615 no fue iniciada. No se diseñaron claims textuales ni se creó

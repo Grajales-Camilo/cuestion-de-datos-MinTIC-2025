@@ -247,13 +247,14 @@ Seguimiento (revisión de código post-merge, dos huecos detectados y cerrados e
   - **Puerta:** todo caso fallido responde automáticamente etapa, causa, datasets, presupuesto y clasificación agente-versus-golden.
   - ✅ Cierre 2026-07-16: `eval/diagnostics.py` define etapas/códigos canónicos y genera `stage_diagnostics` v1.0 dentro de `eval_case_results.metrics` (JSONB existente). El runner conserva IDs recuperados/intentados y errores tipados de validación como metadatos de traza, sin cambiar decisiones ni presupuestos. El reporte Markdown agrega resultado por caso, fallos por etapa, motivos y recuperación. Pruebas dirigidas: 29 casos diagnósticos/persistencia/error; regresión no integración: 643; aceptación determinista: 14 passed/1 xfailed; aceptación legacy: 7; Ruff verde. Informe: `backend/eval/reports/t613-stage-diagnostics.md`.
 
-- [ ] **T-614 Ejecutar smoke determinista de 10 casos y corregir primero recuperación (RNF-004).**
+- [x] **T-614 Ejecutar smoke determinista de 10 casos y corregir primero recuperación (RNF-004).**
   - Ejecutar la muestra normativa de `pruebas.md` §4.4 y persistir reporte reproducible.
   - Reagrupar los diez fallos de recuperación: no recuperado, fuera de presupuesto, no intentado, perfil fallido, plan incompatible u otro dataset ejecutado.
   - Registrar por variante top-25, scores vectorial/léxico/estructural, metadata y columnas del esperado.
   - Permitir solo mejoras generales demostradas por varios casos: identificadores literales, tokenización, variantes entidad/territorio/periodo, cobertura de columnas, penalización estructural y consenso entre variantes.
   - Prohibido: boost por ID, mapa pregunta→dataset, valores de `expected_facts`, filtros ocultos o aumento de presupuesto sin evidencia.
   - **Puerta:** negativos 2/2; casos sólidos sin regresión; recall@10 de los diez fallos mejora mediblemente; RNF-010 se conserva; repetir smoke tras cada incremento.
+  - ✅ Cierre 2026-07-16: smoke inicial reproducible `c40191ef-a095-448a-a357-e6b88c7ec784` (6/10, recall@10 7/8, negativos 2/2) y final `807c3127-9967-4c1c-afe2-714923cb0776` sobre commit `4df5c98` (7/10, recall@10 8/8, negativos 2/2). Se amplió de 10 a 25 la ventana por variante conservando 10 candidatos combinados; `pilot-012` pasó de fuera de top 10 a rango 1. Los cuatro sólidos no retrocedieron. Diagnóstico: `backend/eval/reports/t614-retrieval-diagnosis.md`.
 
 - [ ] **T-615 Diseñar hechos textuales de primera clase (RF-208; BLOQUEADA para código hasta enmienda contractual).**
   - Elaborar propuesta `TextualFact` separada de `QuantitativeClaim`: evidencia, dataset, descripción, valor, columna, filas, hash y versión de algoritmo.
