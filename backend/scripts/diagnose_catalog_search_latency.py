@@ -18,7 +18,11 @@ from app.catalog.search import embed_search_query, search_catalog
 from app.catalog.search_benchmark import percentile
 from app.config import get_settings
 from app.db.engine import create_app_async_engine
-from app.main import _catalog_search_async, catalog_search_with_platform_loop
+from app.main import (
+    CatalogSearchResources,
+    _catalog_search_async,
+    catalog_search_with_platform_loop,
+)
 
 
 def summary(values: list[float]) -> dict[str, float | int]:
@@ -120,11 +124,11 @@ async def main(samples: int) -> None:
                 for n in nodes(root)
             ]
         vals = []
+        reused_resources = CatalogSearchResources(engine, reused)
         for _ in range(samples):
             _, ms = await timed(
                 _catalog_search_async(
-                    database_url=settings.sqlalchemy_database_url,
-                    google_api_key=settings.google_api_key,
+                    resources=reused_resources,
                     embedding_model=settings.embedding_model,
                     query=query,
                     k=10,
@@ -132,13 +136,12 @@ async def main(samples: int) -> None:
                 )
             )
             vals.append(ms)
-        results["direct_full_new_client_engine_ms"] = summary(vals)
+        results["direct_full_reused_resources_ms"] = summary(vals)
         vals = []
         for _ in range(samples):
             _, ms = await timed(
                 catalog_search_with_platform_loop(
-                    database_url=settings.sqlalchemy_database_url,
-                    google_api_key=settings.google_api_key,
+                    resources=reused_resources,
                     embedding_model=settings.embedding_model,
                     query=query,
                     k=10,
@@ -146,7 +149,7 @@ async def main(samples: int) -> None:
                 )
             )
             vals.append(ms)
-        results["windows_bridge_full_ms"] = summary(vals)
+        results["platform_route_reused_resources_ms"] = summary(vals)
     finally:
         await engine.dispose()
     print(json.dumps(results, indent=2))

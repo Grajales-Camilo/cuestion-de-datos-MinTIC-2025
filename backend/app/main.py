@@ -5,7 +5,7 @@ import hmac
 import json
 import sys
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated
@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.agent import durability, heartbeat_sweep, retention_sweep, runner, worker_lease
 from app.catalog.search import CatalogSearchSummary, search_catalog
@@ -59,15 +59,83 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
+class CatalogSearchResources:
+    """Recursos RNF-010 propiedad del loop principal de este worker."""
+
+    def __init__(self, engine: AsyncEngine, embedding_client: object) -> None:
+        self.engine = engine
+        self.embedding_client = embedding_client
+        self.closed = False
+
+    async def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        await self.engine.dispose()
+
+
+async def create_catalog_search_resources(
+    settings,
+    *,
+    engine_factory: Callable[..., AsyncEngine] = create_app_async_engine,
+    client_factory: Callable[..., object] = GoogleGenerativeAIEmbeddings,
+) -> CatalogSearchResources:
+    engine = engine_factory(settings.sqlalchemy_database_url, pool_pre_ping=True)
+    try:
+        client = client_factory(
+            model=settings.embedding_model,
+            google_api_key=settings.google_api_key,
+        )
+    except BaseException:
+        await engine.dispose()
+        raise
+    return CatalogSearchResources(engine, client)
+
+
+async def get_catalog_search_resources(app: FastAPI, settings) -> CatalogSearchResources:
+    resources = getattr(app.state, "catalog_search_resources", None)
+    if resources is not None:
+        if resources.closed:
+            raise RuntimeError("Los recursos de búsqueda de catálogo ya fueron cerrados.")
+        return resources
+    lock = getattr(app.state, "catalog_search_resources_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        app.state.catalog_search_resources_lock = lock
+    async with lock:
+        resources = getattr(app.state, "catalog_search_resources", None)
+        if resources is None:
+            resources = await create_catalog_search_resources(settings)
+            app.state.catalog_search_resources = resources
+        if resources.closed:
+            raise RuntimeError("Los recursos de búsqueda de catálogo ya fueron cerrados.")
+        return resources
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     app.state.settings = settings
     await setup_checkpointer(settings)
 
-    worker_instance_id, _closed_on_startup = await _startup_worker_lifecycle_with_platform_loop(
-        settings.sqlalchemy_database_url, settings.worker_lease_ttl_s
-    )
+    catalog_resources = None
+    if (
+        settings.google_api_key is not None
+        and settings.google_api_key.get_secret_value()
+        and settings.embedding_model is not None
+    ):
+        catalog_resources = await create_catalog_search_resources(settings)
+    app.state.catalog_search_resources = catalog_resources
+    app.state.catalog_search_resources_lock = asyncio.Lock()
+
+    try:
+        worker_instance_id, _closed_on_startup = await _startup_worker_lifecycle_with_platform_loop(
+            settings.sqlalchemy_database_url, settings.worker_lease_ttl_s
+        )
+    except BaseException:
+        if catalog_resources is not None:
+            await catalog_resources.close()
+        raise
     app.state.worker_instance_id = worker_instance_id
     app.state.run_creation_lock = asyncio.Lock()
 
@@ -88,16 +156,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ]
     app.state.background_tasks = background_tasks
 
-    yield
-
-    for task in background_tasks:
-        task.cancel()
-    for task in background_tasks:
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    await _mark_worker_shutdown_with_platform_loop(
-        settings.sqlalchemy_database_url, worker_instance_id
-    )
+    try:
+        yield
+    finally:
+        for task in background_tasks:
+            task.cancel()
+        for task in background_tasks:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        try:
+            await _mark_worker_shutdown_with_platform_loop(
+                settings.sqlalchemy_database_url, worker_instance_id
+            )
+        finally:
+            if catalog_resources is not None:
+                await catalog_resources.close()
 
 
 async def _startup_worker_lifecycle_with_platform_loop(
@@ -561,9 +634,9 @@ async def catalog_search(
         )
 
     try:
+        resources = await get_catalog_search_resources(request.app, settings)
         summary = await catalog_search_with_platform_loop(
-            database_url=settings.sqlalchemy_database_url,
-            google_api_key=settings.google_api_key,
+            resources=resources,
             embedding_model=settings.embedding_model,
             query=query,
             k=k,
@@ -582,26 +655,14 @@ async def catalog_search(
 
 async def catalog_search_with_platform_loop(
     *,
-    database_url: str,
-    google_api_key,
+    resources: CatalogSearchResources,
     embedding_model: str,
     query: str,
     k: int,
     stale_after_days: int,
 ) -> CatalogSearchSummary:
-    if sys.platform == "win32":
-        return await asyncio.to_thread(
-            _run_catalog_search_with_selector,
-            database_url,
-            google_api_key,
-            embedding_model,
-            query,
-            k,
-            stale_after_days,
-        )
     return await _catalog_search_async(
-        database_url=database_url,
-        google_api_key=google_api_key,
+        resources=resources,
         embedding_model=embedding_model,
         query=query,
         k=k,
@@ -609,52 +670,22 @@ async def catalog_search_with_platform_loop(
     )
 
 
-def _run_catalog_search_with_selector(
-    database_url: str,
-    google_api_key,
-    embedding_model: str,
-    query: str,
-    k: int,
-    stale_after_days: int,
-) -> CatalogSearchSummary:
-    return asyncio.run(
-        _catalog_search_async(
-            database_url=database_url,
-            google_api_key=google_api_key,
-            embedding_model=embedding_model,
-            query=query,
-            k=k,
-            stale_after_days=stale_after_days,
-        ),
-        loop_factory=asyncio.SelectorEventLoop,
-    )
-
-
 async def _catalog_search_async(
     *,
-    database_url: str,
-    google_api_key,
+    resources: CatalogSearchResources,
     embedding_model: str,
     query: str,
     k: int,
     stale_after_days: int,
 ) -> CatalogSearchSummary:
-    embedding_client = GoogleGenerativeAIEmbeddings(
+    return await search_catalog(
+        resources.engine,
+        embedding_client=resources.embedding_client,
+        query=query,
+        k=k,
+        stale_after_days=stale_after_days,
         model=embedding_model,
-        google_api_key=google_api_key,
     )
-    engine = create_app_async_engine(database_url, pool_pre_ping=True)
-    try:
-        return await search_catalog(
-            engine,
-            embedding_client=embedding_client,
-            query=query,
-            k=k,
-            stale_after_days=stale_after_days,
-            model=embedding_model,
-        )
-    finally:
-        await engine.dispose()
 
 
 def catalog_search_response_from_summary(summary: CatalogSearchSummary) -> CatalogSearchResponse:
