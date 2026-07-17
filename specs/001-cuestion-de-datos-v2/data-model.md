@@ -57,6 +57,7 @@ Espejo de metadatos de un dataset de datos.gov.co. Fuente: Discovery API.
 | `eligibility_reasons` | jsonb NOT NULL default `[]` | Códigos deterministas: `publisher_unknown`, `publisher_private`, `pii_unknown`, `pii_high`, `pii_medium_requires_aggregation`, `api_inactive`, etc. |
 | `embedding_text` | text | Texto compuesto usado para el embedding (auditable). |
 | `lexical_search_vector` | tsvector NOT NULL | Representación lexical `spanish` materializada e indexada con GIN. Contiene `name`, `description`, `publisher`, `category`, `embedding_text` y `catalog_columns.field_name`, `display_name`, `description`. |
+| `lexical_rank_vector` | tsvector NOT NULL | Representación sin índice que conserva exactamente el ranking previo: `name`, `publisher`, `category`, `description` y texto ordenado de columnas. |
 
 **Reglas de negocio:**
 - Upsert por `id` (idempotencia, RF-304). Nunca se borra físicamente: si desaparece del portal, `api_active = false`.
@@ -67,6 +68,8 @@ Espejo de metadatos de un dataset de datos.gov.co. Fuente: Discovery API.
   dataset para INSERT/UPDATE de metadatos y triggers a nivel de sentencia para
   INSERT/UPDATE/DELETE de `catalog_columns`. El backfill es idempotente. No es
   generated column porque depende de filas de otra tabla.
+- `lexical_rank_vector` se mantiene por los mismos triggers y permite ordenar
+  antes de enriquecer `columns_preview`/`columns_all` para el top-10.
 
 ### `official_publishers`
 Registro canónico y versionado de publicadores oficiales elegibles (RF-401). Se carga desde fixture del repositorio; no se embebe en código.

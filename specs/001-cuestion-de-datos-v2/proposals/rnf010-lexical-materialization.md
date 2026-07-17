@@ -40,6 +40,12 @@ al menos 300 ms de p95 sin cambiar ranking, cobertura, modelo o contrato.
 6. Backfill idempotente en una sola sentencia sobre el catálogo existente
    (~3,2 s medidos), sin tocar embeddings. Rollback: retirar triggers, función,
    índice y columna; el downgrade de aplicación vuelve al SQL anterior.
+7. Materializar además `lexical_rank_vector`, sin índice, con exactamente la
+   expresión histórica de ranking: `name`, `publisher`, `category`,
+   `description` y texto ordenado de columnas. Esto permite calcular el orden
+   antes del top-10 sin agregar columnas por candidato y conserva igualdad
+   exacta contra la expresión previa. `columns_preview` y `columns_all` se
+   calculan después del top-10.
 
 ## Invariantes y compatibilidad
 
@@ -52,8 +58,9 @@ al menos 300 ms de p95 sin cambiar ranking, cobertura, modelo o contrato.
   vector dentro de la misma transacción.
 - La ingesta existente no necesita una segunda operación de aplicación: sus
   escrituras activan los triggers; reejecutarla conserva idempotencia.
-- `columns_preview` y `columns_all` permanecen en R2. Mover enriquecimiento
-  después del top-10 queda reservado para T-614R3 solo si aún fuera necesario.
+- `columns_preview` y `columns_all` se movieron después del top-10 sin alterar
+  orden ni respuesta. Las agregaciones laterales bajan de 384 a 20 para la
+  consulta diagnóstica (128 candidatos).
 
 ## Enriquecimiento de columnas
 

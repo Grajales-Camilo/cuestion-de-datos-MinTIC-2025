@@ -497,6 +497,14 @@ dimensión, percentiles, muestras, golden ni fórmula híbrida. La evidencia
 completa vive en `proposals/rnf010-lexical-materialization.md` y
 `backend/eval/reports/rnf010-lexical-optimization.md`.
 
+**Extensión medida de la misma decisión.** Se materializa un segundo
+`lexical_rank_vector`, sin índice, con la expresión histórica exacta de ranking
+(`name`, `publisher`, `category`, `description`, columnas ordenadas). Así se
+preserva el rank byte a byte y se evita agregar texto de columnas para todos
+los candidatos. `columns_preview`/`columns_all` se enriquecen solo para el
+top-10. SQL+Python p95 diagnóstico bajó a 144,4 ms y las agregaciones laterales
+de 384 a 20.
+
 ---
 
 *Para añadir una nueva decisión: sección numerada, estado, problema, alternativas, criterios, decisión y consecuencias. Las decisiones `PENDIENTE` bloquean las tareas que dependan de ellas (ver tasks.md).*
