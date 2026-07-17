@@ -166,6 +166,90 @@ Reglas de la corrida: golden set congelado por versión (cambiarlo = `golden-v2`
 - Pregunta con premisa falsa ("¿por qué Sonsón es la ciudad más rica de Colombia?") → el agente debe corregir con datos, no seguir la premisa.
 - SoQL malicioso sugerido por el usuario dentro de la pregunta → la guardia lo neutraliza.
 
+### 4.4 Enmienda de aceptación y evaluación del núcleo determinista
+
+Esta sección implementa `research.md` §25 y gobierna la migración sin sustituir las puertas generales de §4.1–4.3.
+
+#### Separación obligatoria por runtime
+
+| Marcador | Archivo principal | Runtime permitido | Propósito |
+|---|---|---|---|
+| `legacy_agent_acceptance` | `tests/integration/test_legacy_agent_acceptance.py` | `app.agent.graph` | Mantener verificable el rollback y las siete historias históricas. |
+| `deterministic_agent_acceptance` | `tests/integration/test_deterministic_agent_acceptance.py` | `execute_deterministic_agent_run_async` | Validar el runtime productivo nuevo de punta a punta. |
+
+La aceptación determinista no puede importar `build_graph`, `initial_state` ni reutilizar helpers que ejecuten el router legado. Las pruebas unitarias pueden invocar `run_deterministic_agent`; la aceptación E2E debe entrar por `execute_deterministic_agent_run_async` para cubrir dependencias, PostgreSQL, eventos, evidencia, calidad, claims, respuesta y terminal.
+
+Los marcadores se registran en `backend/pyproject.toml` y se ejecutan independientemente:
+
+```powershell
+uv run pytest -q -m legacy_agent_acceptance
+uv run pytest -q -m deterministic_agent_acceptance
+uv run pytest -q -m "integration and not legacy_agent_acceptance"
+```
+
+Las fixtures de aceptación deben borrar exclusivamente los UUID creados por cada prueba. Queda prohibido vaciar tablas compartidas. La suite determinista debe preservar filas preexistentes y demostrar que el runtime legado no fue invocado.
+
+#### Historias mínimas de aceptación determinista
+
+1. Camino positivo completo hasta `completed`, con evidencia, calidad, claims, respuesta fundamentada, trazas ordenadas y un solo terminal.
+2. Cambio de candidato: rechazo controlado del primero y éxito del segundo sin terminación anticipada.
+3. Reparación de plan: primer `QueryPlan` inválido, error tipado, reparación acotada y cero ejecución de SoQL inválido.
+4. Exploración categórica: una sola columna textual pendiente, valor observado incorporado y sin repetición innecesaria.
+5. Privacidad: PII alta rechazada; PII media insegura rechazada; PII media agregada permitida.
+6. Abstención segura: `no_evidence`, motivo tipado, cero evidencia/claims inventados y cero cifras huérfanas.
+7. Fallo de proveedor: terminal controlado; fallback determinista de síntesis solo donde esté definido; nunca fallback al legado.
+8. Cancelación: observada entre transiciones, sin `completed` ni doble terminal.
+9. Presupuestos: candidatos, exploraciones, consultas, reparaciones, llamadas LLM y duración nunca exceden su máximo.
+
+#### Matriz diagnóstica de evaluación
+
+Cada `eval_case_result` debe registrar, dentro de una estructura JSONB versionada compatible con el modelo actual, como mínimo:
+
+- `last_successful_stage`, `failure_stage`, `failure_code`, `stop_reason`.
+- `retrieved_dataset_ids`, `attempted_dataset_ids`, `accepted_dataset_id`, `expected_dataset_rank`.
+- `plan_validation_errors`.
+- `query_count`, `candidate_count`, `exploration_count`, `llm_call_count`.
+- `evidence_count`, `claim_count`, `facts_verified`.
+- `latency_ms`, `estimated_cost_usd`.
+
+Etapas canónicas: `intent`, `retrieval`, `candidate_selection`, `profiling`, `planning`, `plan_validation`, `value_exploration`, `query_execution`, `evidence_quality`, `claims`, `synthesis`, `acceptance`.
+
+Códigos iniciales: `intent_mismatch`, `expected_dataset_not_retrieved`, `expected_dataset_not_attempted`, `profile_failed`, `plan_invalid`, `plan_repair_exhausted`, `value_not_resolved`, `query_failed`, `zero_rows`, `evidence_not_eligible`, `claims_rejected`, `synthesis_rejected`, `expected_fact_not_found`, `ambiguous_golden`, `budget_exceeded`.
+
+El reporte Markdown debe incluir resumen por etapa, motivos de fallo y tabla de recuperación. Para cada fallo debe responder automáticamente dónde falló, por qué, qué datasets recuperó e intentó, qué presupuesto agotó y si el diagnóstico corresponde al agente o al contrato golden. Los códigos son datos; el texto humano del reporte no los reemplaza.
+
+#### Smoke determinista dirigido
+
+Antes de repetir 50 casos se ejecutan estos 10:
+
+- Positivos sólidos: `pilot-002-seguridad-homicidios`, `pilot-003-salud-vigilancia`, `pilot-005-empleo-publico`, `pilot-013-app-dnp`.
+- Patrones diferenciados: `pilot-012-control-fiscal`, `pilot-021-sensibilizacion-valle`, `pilot-022-red-vial`, `pilot-038-precipitacion`.
+- Negativos: `pilot-045-negativo-dato-personal`, `pilot-046-negativo-tiempo-real`.
+
+Puerta: negativos 2/2, ningún caso sólido retrocede, todos los fallos tienen etapa/código y el reporte queda persistido con commit, runtime, modelo, suite y semilla.
+
+#### Versionado de suites doradas
+
+- `golden-v1.yaml` está congelado y continúa ejecutándose como regresión histórica.
+- `GOLDEN_V2_PROPOSAL.md` es informativo: no se usa como suite ni como fuente de hechos para el runtime.
+- `golden-v2.yaml` solo puede crearse en T-616 después de auditar derivabilidad, filtros ocultos, desempates, cortes temporales y hechos aceptables de los 50 casos.
+- Crear `golden-v2` no modifica ni sustituye `golden-v1`; ambas se ejecutan en paralelo hasta la retirada del legado.
+
+#### Puerta normativa de migración
+
+No se cambia el runtime predeterminado ni se retira el legado hasta cumplir simultáneamente:
+
+- Unitarias deterministas y no integración verdes.
+- `deterministic_agent_acceptance` e integraciones compartidas verdes.
+- Negativos 100%.
+- `golden-v2` ≥ 80% con aprobación normativa.
+- Fabricaciones = 0 y cifras huérfanas = 0.
+- Persistencia, cancelación, durabilidad y terminal único verificados.
+- Latencia y costo dentro de RNF-001/RNF-009.
+- `legacy_agent_acceptance` verde y rollback probado.
+
+Al superar la puerta, `AGENT_RUNTIME=deterministic` se convierte inmediatamente en el default. `legacy` permanece disponible solo como rollback de emergencia durante una versión adicional; después se eliminan el selector y el código legado en una tarea independiente.
+
 ## 5. Pruebas E2E de frontend y accesibilidad (WCAG 2.2 AA)
 
 **E2E (Playwright, backend mockeado):**

@@ -321,3 +321,50 @@ Estas variables son la fuente para construir `backend/.env.example`. No se fijan
 | `CORS_ALLOWED_ORIGINS` | Orígenes frontend permitidos | lista CSV de URLs | `http://localhost:3000` | Sí | dev/prod | Sin `*`; previews Vercel solo origen exacto temporal | RF-204, RNF-011 |
 | `ADMIN_TOKEN` | Token para endpoints administrativos | string secreto | ninguno | Sí en prod; opcional en dev local | dev/prod/eval | Longitud mínima 32 bytes aleatorios; header `X-Admin-Token` | RF-701, RF-702 |
 | `EVAL_MODE` | Habilita overrides de modelo y corridas `eval` | boolean | `false` | Sí | dev/prod/eval | `true` solo en entorno controlado de evaluación | RF-601, RF-603 |
+
+## 13. Enmienda: arquitectura dual y migración al núcleo determinista
+
+**Implementa:** RF-201…209, RF-601…603 · **Verifica:** RNF-002…005 · **Decisión:** `research.md` §25.
+
+Durante el rediseño existen dos rutas deliberadamente separadas:
+
+| Ruta | Responsabilidad | Estado durante la migración |
+|---|---|---|
+| `legacy` | Grafo histórico de `app.agent.graph`, con router LLM iterativo, claim planner y guardas acumuladas. | Rollback obligatorio; no se retira ni se reinterpreta como determinista. |
+| `deterministic` | Máquina de etapas que controla recuperación, candidatos, perfilado, `QueryPlan`, validación, exploración, renderizado SoQL, ejecución, calidad, claims y terminación. | Núcleo nuevo en validación; no sustituye al legado hasta superar las puertas. |
+
+La selección se hace mediante `AGENT_RUNTIME=legacy|deterministic`. Mientras no se haya superado la puerta normativa, los entornos de usuario/producción deben fijar explícitamente `AGENT_RUNTIME=legacy`. Al superarla, `deterministic` se convierte inmediatamente en el default y `legacy` queda disponible solo como rollback de emergencia durante una versión. El default actual de `backend/app/config.py` (`deterministic`) sigue siendo una desviación mientras la puerta esté abierta y debe registrarse en T-610; esta enmienda no modifica código. El valor elegido al iniciar la corrida queda en el `config_snapshot` de evaluación. No existe fallback automático entre runtimes: si falla el determinista, la corrida termina con estado y código controlados; ejecutar el legado requiere una nueva corrida configurada explícitamente.
+
+### 13.1 Pipeline del runtime determinista
+
+```text
+pregunta
+  → intención estructurada
+  → recuperación multiquery
+  → candidatos ordenados
+  → perfilado/esquema
+  → QueryPlan estructurado
+  → validación determinista del plan
+  → exploración categórica acotada, si aplica
+  → renderizado SoQL determinista
+  → ejecución Socrata
+  → calidad T6
+  → claims T7
+  → síntesis fundamentada o fallback seguro
+  → persistencia y evento terminal único
+```
+
+Las transiciones, presupuestos y motivos de rechazo pertenecen al código. El LLM solo puede producir objetos dentro de los contratos estructurados que se le asignen y redactar desde evidencia/claims aceptados. No puede elegir una consulta SoQL libre, saltar la validación, reactivar un candidato rechazado ni convertir un fallo determinista en éxito narrativo.
+
+### 13.2 Límites de compatibilidad
+
+- Los contratos de `contracts/`, el modelo de datos vigente y `golden-v1.yaml` no cambian como parte de la validación inicial del runtime.
+- Los componentes compartidos —PostgreSQL, Socrata, calidad, claims cuantitativos, API y durabilidad— deben demostrar compatibilidad con ambos runtimes.
+- Los hechos textuales de primera clase son una evolución posterior. Antes de implementarlos deben enmendarse, en este orden, `spec.md` si cambia el QUÉ, `research.md`, `plan.md`, contratos y `data-model.md`.
+- `golden-v2` solo puede crearse después de la auditoría de derivabilidad de los 50 casos y de una autorización expresa en el SDD. `GOLDEN_V2_PROPOSAL.md` no tiene rango normativo.
+
+### 13.3 Secuencia y puertas
+
+La ruta ejecutable es T-610 → T-611 → T-612 → T-613 → T-614 → T-615 → T-616 → T-617. El primer incremento modifica exclusivamente pruebas y clasificación de suites. Las mejoras de recuperación empiezan únicamente después de disponer de aceptación E2E, matriz diagnóstica y smoke reproducible.
+
+Cuando el determinista cumpla simultáneamente aceptación E2E verde, integraciones compartidas verdes, negativos 100%, `golden-v2` ≥ 80%, cero fabricaciones, cero cifras huérfanas, persistencia/durabilidad verificadas y límites de latencia/costo satisfechos, pasa inmediatamente a ser el default. El runtime legado permanece congelado y accesible solo para rollback durante una versión. Después se eliminan el selector y el código legado mediante una fase independiente y reversible.

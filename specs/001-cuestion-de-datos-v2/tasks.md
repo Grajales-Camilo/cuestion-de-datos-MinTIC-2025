@@ -215,6 +215,64 @@ Seguimiento (revisión de código post-merge, dos huecos detectados y cerrados e
 - [ ] **T-604 Puertas RNF-002.** Configurar tres niveles: cada PR corre pruebas deterministas con LLM guionado y smoke reducido sin LLM real; semanalmente corre golden set con LLM real y abre issue/alerta si hay regresión o `success_rate < 80%`; antes de release corre golden completo y bloquea el release si `success_rate < 80%`.
   - ✅ Workflows visibles en Actions: PR determinista bloqueante, semanal con issue/alerta, y pre-release bloqueante.
 
+### Línea de trabajo del núcleo determinista (enmienda `research.md` §25)
+
+**Objetivo:** construir una ruta de validación independiente para el runtime determinista, diagnosticar fallos por etapa y mejorar utilidad sin sobreajustar `golden-v1`. El legado permanece como rollback. La secuencia es estricta: T-610 → T-611 → T-612 → T-613 → T-614 → T-615 → T-616 → T-617.
+
+**Estado para el siguiente agente (2026-07-16):** T-610…T-613 están cerradas. La aceptación E2E está separada entre `legacy_agent_acceptance` y `deterministic_agent_acceptance`; el evaluador persiste `stage_diagnostics` v1.0 y renderiza etapas, códigos y recuperación. `GOLDEN_V2_PROPOSAL.md` continúa sin rango normativo. La siguiente implementación autorizada es **T-614**, empezando por el smoke determinista de 10 casos y sin iniciar todavía hechos textuales ni `golden-v2`.
+
+**Desviación conocida:** `backend/app/config.py` usa actualmente `deterministic` como default, aunque la política aprobada mantiene `legacy` como runtime operativo durante la validación. T-610 debe registrarlo; los entornos de usuario/producción deben fijar `AGENT_RUNTIME=legacy`. La corrección del default requiere una tarea explícita posterior al incremento solo-pruebas, no un cambio silencioso dentro de T-611/T-612.
+
+- [x] **T-610 Congelar la línea base del rediseño (RF-603, Art. II.3/IV).** Crear `backend/eval/reports/deterministic-development-baseline.md` con commit, fecha, rama, runtime, modelo, suite, número de pruebas recolectadas, resultado no integración, subconjunto determinista, integraciones disponibles, última corrida de 50 casos, distribución conocida de fallos y limitaciones ambientales.
+  - **Evidencia ya conocida que debe verificarse y registrar, no copiar a ciegas:** 628 pruebas no integración verdes; subconjunto determinista verde; última línea completa 25/50. Si los números cambiaron, prevalece la corrida actual.
+  - **Puerta:** `pytest --collect-only`, no integración y subconjunto determinista reproducibles; cero cambios de comportamiento; el reporte distingue “runner ejecutó” de “agente resolvió”.
+
+- [x] **T-611 Crear aceptación E2E del runtime determinista (RF-201…209, RF-703).**
+  - Crear `backend/tests/integration/test_deterministic_agent_acceptance.py`.
+  - Entrar exclusivamente por `execute_deterministic_agent_run_async`; cubrir construcción de dependencias, selección de runtime, PostgreSQL, pasos/eventos, evidencia, calidad, claims, respuesta y terminal.
+  - Crear fixtures aisladas equivalentes a `deterministic_engine`, `deterministic_settings`, `deterministic_run`, `seed_deterministic_catalog`, clientes falsos de embeddings/LLM, Socrata mockeado y preservación de estado existente.
+  - Implementar las nueve historias de `pruebas.md` §4.4: positivo, cambio de candidato, reparación, exploración, privacidad, abstención, proveedor, cancelación y presupuestos.
+  - **Puerta:** todas pasan con PostgreSQL real; no se invoca el legado; sobreviven filas preexistentes; suite ejecutable aisladamente; sin cambios de comportamiento productivo.
+
+- [x] **T-612 Separar aceptación legacy y determinista (Art. IV, RNF-002).**
+  - Renombrar `test_agent_redesign_acceptance.py` a `test_legacy_agent_acceptance.py`.
+  - Registrar marcadores `legacy_agent_acceptance` y `deterministic_agent_acceptance` en `backend/pyproject.toml`; marcar cada suite correctamente.
+  - Añadir guardia que impida imports de `app.agent.graph` en la aceptación determinista.
+  - **Puerta:** ambos grupos corren de forma independiente; las siete historias existentes siguen verdes como rollback; ninguna prueba está atribuida al runtime equivocado.
+
+- [x] **T-613 Añadir matriz de etapas y motivos de fallo al evaluador (RF-602/603).**
+  - Implementar enums/valores canónicos y `stage_diagnostics` JSONB versionado sin cambiar todavía el esquema relacional ni mezclar códigos con texto humano.
+  - Persistir los campos definidos en `pruebas.md` §4.4 y renderizar tablas de etapas, motivos y recuperación.
+  - Ampliar `test_eval_metrics.py`, `test_eval_persistence.py` y `test_eval_run_error_handling.py` con recuperación fallida, recuperado-no-intentado, plan inválido, cero filas, evidencia/claim rechazados, golden ambiguo y aprobado.
+  - **Puerta:** todo caso fallido responde automáticamente etapa, causa, datasets, presupuesto y clasificación agente-versus-golden.
+  - ✅ Cierre 2026-07-16: `eval/diagnostics.py` define etapas/códigos canónicos y genera `stage_diagnostics` v1.0 dentro de `eval_case_results.metrics` (JSONB existente). El runner conserva IDs recuperados/intentados y errores tipados de validación como metadatos de traza, sin cambiar decisiones ni presupuestos. El reporte Markdown agrega resultado por caso, fallos por etapa, motivos y recuperación. Pruebas dirigidas: 29 casos diagnósticos/persistencia/error; regresión no integración: 643; aceptación determinista: 14 passed/1 xfailed; aceptación legacy: 7; Ruff verde. Informe: `backend/eval/reports/t613-stage-diagnostics.md`.
+
+- [ ] **T-614 Ejecutar smoke determinista de 10 casos y corregir primero recuperación (RNF-004).**
+  - Ejecutar la muestra normativa de `pruebas.md` §4.4 y persistir reporte reproducible.
+  - Reagrupar los diez fallos de recuperación: no recuperado, fuera de presupuesto, no intentado, perfil fallido, plan incompatible u otro dataset ejecutado.
+  - Registrar por variante top-25, scores vectorial/léxico/estructural, metadata y columnas del esperado.
+  - Permitir solo mejoras generales demostradas por varios casos: identificadores literales, tokenización, variantes entidad/territorio/periodo, cobertura de columnas, penalización estructural y consenso entre variantes.
+  - Prohibido: boost por ID, mapa pregunta→dataset, valores de `expected_facts`, filtros ocultos o aumento de presupuesto sin evidencia.
+  - **Puerta:** negativos 2/2; casos sólidos sin regresión; recall@10 de los diez fallos mejora mediblemente; RNF-010 se conserva; repetir smoke tras cada incremento.
+
+- [ ] **T-615 Diseñar hechos textuales de primera clase (RF-208; BLOQUEADA para código hasta enmienda contractual).**
+  - Elaborar propuesta `TextualFact` separada de `QuantitativeClaim`: evidencia, dataset, descripción, valor, columna, filas, hash y versión de algoritmo.
+  - Verificar invariantes: valor literal en fila fuente, columna existente, hash reproducible, ambigüedad no colapsada y síntesis limitada a hechos persistidos.
+  - Antes de migración/código, actualizar los documentos superiores y contratos afectados según la jerarquía. No representar texto con `raw_value=1`.
+  - **Puerta:** diseño aprobado y compatibilidad API definida; claims cuantitativos conservan su semántica.
+
+- [ ] **T-616 Auditar los 50 casos y construir `golden-v2` (RF-601/602).**
+  - No modificar `backend/eval/golden/golden-v1.yaml`.
+  - Auditar por caso restricciones de la pregunta, filtros ocultos de URL, respuestas válidas, desempate, corte, fuente, elegibilidad y tipo de hecho.
+  - Clasificar: determinado, multi-respuesta, agregado, abstención o incompatible. Proponer esquema con `input_constraints`, `selection_rule`, `acceptable_facts`, `source_urls`, `observed_at` y `data_cutoff_at`.
+  - Solo después de aprobación normativa crear `backend/eval/golden/golden-v2.yaml` y sus validaciones.
+  - **Puerta:** 50 auditados, positivos derivables, sin filtros ocultos injustificados, suite versionada y autorizada explícitamente. `golden-v1` permanece byte a byte intacto.
+
+- [ ] **T-617 Ejecutar puerta completa y mantener rollback (RNF-001…005/009).**
+  - Orden: unitarias deterministas → no integración → aceptación determinista → integraciones compartidas → smoke 10 → golden-v1 50 → golden-v2 50 → aceptación legacy.
+  - Comparar con T-610 y archivar commit/configuración/reportes.
+  - **Puerta:** condiciones completas de `pruebas.md` §4.4. Al superarla, cambiar inmediatamente el default a `deterministic`, medir tráfico y probar rollback; conservar `legacy` solo como emergencia durante una versión. Después, una tarea independiente elimina `AGENT_RUNTIME`, la ruta y el código legado.
+
 ## FASE 7 — Endurecimiento y despliegue
 
 - [ ] **T-701 🧑 Desplegar el backend.** Railway/Render: servicio desde `backend/` con las variables de `.env.example` como secrets (usa los valores reales de la Fase 0). Conectar dominio `api.cuestiondedatos.com` (añadir CNAME en tu DNS). Crear el cron externo de retención cada 6 horas, registrar `ADMIN_TOKEN` y `RETENTION_HASH_SALT` como secretos, verificar la primera ejecución de `POST /v2/admin/retention/run` y revisar fallos.
@@ -238,6 +296,8 @@ F0 ──▶ F1 ──▶ F2 ──▶ F3 ──▶ F4 ──▶ F5 ──▶ F7
 ```
 
 **Ruta backend ejecutable hasta T-403:** T-105 → T-102 → T-103 → T-104A → T-106 → T-201 → T-201A → T-202 → T-205 → T-104B → T-203 → T-204 → T-300 → T-301 → T-302 → T-401 → T-403. Para cerrar los endpoints y la retención después de T-403: T-303 → T-304 → T-306 → T-305. T-102 y T-104A dependen de la base local de T-105; T-205 depende de T-202 para consultas territoriales; T-104B depende de la decisión humana de T-205.
+
+**Ruta de migración del núcleo determinista:** T-610 → T-611 → T-612 → T-613 → T-614 → T-615 → T-616 → T-617. T-611/T-612 son un incremento exclusivamente de pruebas; T-614 no empieza antes de disponer de diagnósticos T-613; T-615 está bloqueada para código hasta enmienda contractual; T-616 no puede mutar `golden-v1`; T-617 bloquea cualquier retirada del legado.
 
 ## Resumen de acciones humanas (🧑) para planear tu agenda
 

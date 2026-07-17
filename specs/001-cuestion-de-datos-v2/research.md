@@ -420,4 +420,52 @@ Pero incluso con el filtro correcto, `app/quality/claims.py::_to_decimal` (`Deci
 
 ---
 
+## 25. Enmienda de arquitectura: coexistencia del runtime legado y el núcleo determinista — `DECIDIDA; MIGRACIÓN EN CURSO`
+
+**Problema.** La arquitectura implementada evolucionó más allá del grafo descrito originalmente en `plan.md` §1. El runtime legado (`app.agent.graph`) conserva un enrutador LLM iterativo y continúa siendo necesario como rollback, mientras que el nuevo núcleo desplaza al código determinista las decisiones estructurales de recuperación, selección de candidato, perfilado, construcción y validación de `QueryPlan`, renderizado SoQL, exploración acotada, presupuestos y transición entre etapas. El LLM queda restringido a contratos estructurados y síntesis, sin autoridad para saltar validaciones ni ejecutar consultas libres. Sin esta enmienda, el código y las pruebas pueden parecer alineados aunque una suite etiquetada como “rediseño” siga ejecutando realmente el agente legado.
+
+**Evidencia vigente al aprobar esta enmienda (2026-07-16).**
+
+- La rama de trabajo es `feat/deterministic-agent-core`.
+- Existen módulos separados para el núcleo: `deterministic_graph.py`, `deterministic_runtime.py`, `deterministic_dependencies.py`, `deterministic_pipeline.py`, `query_plan.py`, `plan_validator.py`, `soql_renderer.py`, `llm_contracts.py` y `multiquery_retrieval.py`.
+- Existe integración de persistencia del pipeline determinista, pero no una aceptación E2E que ejecute su entrada productiva completa.
+- `backend/tests/integration/test_agent_redesign_acceptance.py` importa `app.agent.graph.build_graph`; por tanto, sus siete historias pertenecen al runtime legado aunque su nombre sugiera lo contrario.
+- `backend/app/config.py` declara actualmente `AGENT_RUNTIME=deterministic` como default. Esto contradice la política de migración conservadora aprobada aquí; no se corrige en esta enmienda documental porque el siguiente incremento está limitado a pruebas. Hasta resolver la desviación en una tarea explícita, los entornos de usuario/producción deben fijar `AGENT_RUNTIME=legacy` de forma explícita.
+- La última línea base completa registrada es 25/50. Ese resultado demuestra que el runner funciona, no que el núcleo nuevo haya superado RNF-002.
+- `backend/eval/golden/GOLDEN_V2_PROPOSAL.md` es una propuesta de trabajo. No es una suite normativa y no autoriza crear o modificar `golden-v2.yaml`.
+
+**Decisión de arquitectura.**
+
+1. Durante la migración coexistirán dos runtimes explícitos: `legacy`, el grafo histórico basado en router LLM; y `deterministic`, la máquina de etapas con transiciones, validaciones y presupuestos gobernados por código.
+2. La selección se realiza mediante `AGENT_RUNTIME`; durante la validación el valor operativo es `legacy`. Al superar la puerta normativa, `deterministic` se convierte inmediatamente en el default. No se permite fallback automático de `deterministic` a `legacy` dentro de una corrida. Un fallo del runtime seleccionado debe quedar tipado y observable.
+3. Los contratos existentes de herramientas, API, calidad y claims cuantitativos permanecen vigentes. Esta enmienda no los cambia para acomodar el runtime.
+4. `golden-v1.yaml` permanece congelado. El runtime no puede incorporar IDs, cifras, filtros, estaciones, horas ni respuestas específicas de sus casos.
+5. El agente legado se conserva congelado como rollback. Al superar el determinista todas las puertas de `pruebas.md` §4.4 deja de ser el default y permanece disponible solo como rollback de emergencia durante una versión adicional; después se eliminan el selector `AGENT_RUNTIME` y el código legado en una tarea independiente.
+6. La aceptación de cada runtime debe estar separada y nombrada inequívocamente: `legacy_agent_acceptance` y `deterministic_agent_acceptance`.
+7. La evaluación debe registrar etapa y motivo de fallo tipados; el porcentaje agregado no basta para dirigir el desarrollo.
+
+**Secuencia aprobada de desarrollo.**
+
+1. Congelar y documentar la línea base sin cambiar comportamiento.
+2. Crear aceptación E2E determinista desde `execute_deterministic_agent_run_async`.
+3. Reclasificar la aceptación existente como legacy y registrar marcadores pytest independientes.
+4. Añadir matriz de etapas y motivos de fallo al evaluador.
+5. Ejecutar un smoke determinista representativo de 8–10 casos.
+6. Atacar primero los diez fallos de recuperación con reglas generales y evidencia comparativa.
+7. Diseñar hechos textuales de primera clase; cualquier cambio de contrato o modelo exige enmienda separada antes de código.
+8. Auditar los 50 casos y construir `golden-v2` sin modificar `golden-v1`.
+9. Ejecutar ambas suites y mantener el rollback hasta superar la puerta normativa.
+
+**Límites contra sobreajuste.**
+
+- No relajar `backend/eval/metrics.py` para hacer pasar resultados observados.
+- No crear mapas pregunta→dataset ni boosts por IDs del golden.
+- No introducir en prompts o runtime restricciones ocultas tomadas de `expected_facts` o `source_url`.
+- No aumentar presupuestos sin diagnóstico por etapa que demuestre que el presupuesto es la causa.
+- No atribuir al runtime determinista una prueba que importe o ejecute `app.agent.graph`.
+
+**Consecuencias.** `plan.md` documenta desde esta enmienda la arquitectura dual; `pruebas.md` define suites, diagnósticos y puertas; `tasks.md` contiene la secuencia ejecutable T-610…T-617. La siguiente implementación autorizada es T-611, precedida únicamente por el cierre reproducible de la línea base T-610. No se autorizan todavía cambios de comportamiento para mejorar recuperación, claims o síntesis.
+
+---
+
 *Para añadir una nueva decisión: sección numerada, estado, problema, alternativas, criterios, decisión y consecuencias. Las decisiones `PENDIENTE` bloquean las tareas que dependan de ellas (ver tasks.md).*
