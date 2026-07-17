@@ -69,6 +69,23 @@ def test_completes_only_verified_synthesis_with_claims_and_evidence() -> None:
     assert decide_next_transition(snapshot).node is SupervisorNode.COMPLETE
 
 
+def test_textual_rejection_abstains_even_when_quantitative_claims_exist() -> None:
+    transition = decide_next_transition(
+        state(
+            schema_available=True,
+            plan_available=True,
+            plan_valid=True,
+            query_executed=True,
+            evidence_eligible=True,
+            claims_available=True,
+            textual_result_available=True,
+            textual_rejected=True,
+        )
+    )
+    assert transition.node is SupervisorNode.ABSTAIN
+    assert transition.stop_reason is StopReason.CLAIMS_NOT_AVAILABLE
+
+
 def test_blocked_evidence_builds_safe_aggregate_when_possible() -> None:
     snapshot = state(
         schema_available=True,

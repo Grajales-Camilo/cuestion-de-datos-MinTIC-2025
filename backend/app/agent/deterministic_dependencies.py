@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +28,7 @@ from app.agent.llm_contracts import (
     EnumeratedPlanSelection,
     GroundedSynthesis,
     IntentExtraction,
+    QuantitativePlanSelection,
 )
 from app.agent.multiquery_retrieval import retrieve_candidates_multiquery
 from app.agent.persistence import load_dataset_evidence_metadata
@@ -147,11 +149,17 @@ def build_real_runtime_dependencies(
     http_client: httpx.AsyncClient,
     embedding_client: QueryEmbeddingClient,
     usage: RuntimeLLMUsage,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> DeterministicRuntimeDependencies:
     """Construye dependencias productivas sin ninguna ruta de fallback legado."""
 
     intent_model = _model(settings, IntentExtraction)
-    planner_model = _model(settings, EnumeratedPlanSelection)
+    planner_schema = (
+        EnumeratedPlanSelection
+        if settings.deterministic_textual_facts_enabled
+        else QuantitativePlanSelection
+    )
+    planner_model = _model(settings, planner_schema)
     synthesis_model = _model(settings, GroundedSynthesis)
     app_token = _secret(settings.socrata_app_token)
 
@@ -243,9 +251,9 @@ def build_real_runtime_dependencies(
             if validation_error is not None
             else None
         )
-        return await _invoke(
+        selection = await _invoke(
             planner_model,
-            EnumeratedPlanSelection,
+            planner_schema,
             [
                 SystemMessage(
                     content=(
@@ -263,6 +271,16 @@ def build_real_runtime_dependencies(
                         "snapshots acumulados. Aplica los calificadores categóricos presentes en "
                         "la intención y, para totales sectoriales, la categoría total o de "
                         "funcionamiento que describa el registro agregado."
+                        + (
+                            " Puedes proponer textual_requests usando solo índices, filas, "
+                            "operaciones y parámetros cerrados. Esa propuesta no certifica "
+                            "existencia, elegibilidad, privacidad, orden total, ausencia de "
+                            "empates, resultado ni persistencia: el código lo comprobará. "
+                            "Para first_by_validated_order solicita limit>=2 y ordena por "
+                            "todas las salidas para permitir comprobar un ganador único."
+                            if settings.deterministic_textual_facts_enabled
+                            else ""
+                        )
                     )
                 ),
                 HumanMessage(
@@ -287,6 +305,9 @@ def build_real_runtime_dependencies(
             settings=settings,
             usage=usage,
         )
+        if isinstance(selection, EnumeratedPlanSelection):
+            return selection
+        return EnumeratedPlanSelection.model_validate(selection.model_dump())
 
     async def explore(profile, selection, explored):
         explored_indexes = {item.column_index for item in explored}
@@ -311,9 +332,7 @@ def build_real_runtime_dependencies(
             if not unicodedata.combining(character)
         )
         terms = tuple(
-            dict.fromkeys(
-                (proposed, plain, *(part for part in plain.split() if len(part) >= 4))
-            )
+            dict.fromkeys((proposed, plain, *(part for part in plain.split() if len(part) >= 4)))
         )[:3]
         output: dict[str, Any] = {"ok": True, "values": ()}
         search_term = proposed
@@ -362,6 +381,8 @@ def build_real_runtime_dependencies(
                 data_updated_at=metadata.data_updated_at,
                 official_publisher_id=metadata.official_publisher_id,
             ),
+            textual_facts_enabled=settings.deterministic_textual_facts_enabled,
+            is_cancelled=is_cancelled,
         )
 
     async def synthesize(intent, claims):

@@ -72,13 +72,17 @@ from app.agent.llm_contracts import (
     GroundedSynthesis,
     IntentExtraction,
     MetricChoice,
+    QuantitativePlanSelection,
 )
 from app.agent.multiquery_retrieval import MultiQueryRetrievalResult, RetrievedCandidate
 from app.agent.plan_validator import ObservedColumn, ObservedDatasetSchema
 from app.agent.query_plan import (
+    ArgmaxLabelSelection,
     ColumnDataType,
     ColumnOption,
+    ColumnReference,
     DatasetOption,
+    DirectTextSelection,
     EligibilityStatus,
     FilterOperator,
     PiiRiskLevel,
@@ -100,7 +104,11 @@ from app.db.models import (
     QualityReport,
     QuantitativeClaim,
 )
+from app.db.models import (
+    TextualFact as TextualFactRecord,
+)
 from app.llm.factory import LLMProviderError
+from app.quality.textual_fact_builder import TextualFactError
 
 pytestmark = [pytest.mark.integration, pytest.mark.deterministic_agent_acceptance]
 
@@ -390,10 +398,16 @@ async def _load_steps(engine, run_id: uuid.UUID) -> list[AgentStep]:
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         rows = (
-            await session.execute(
-                select(AgentStep).where(AgentStep.run_id == run_id).order_by(AgentStep.step_number)
+            (
+                await session.execute(
+                    select(AgentStep)
+                    .where(AgentStep.run_id == run_id)
+                    .order_by(AgentStep.step_number)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return list(rows)
 
 
@@ -401,12 +415,16 @@ async def _load_events(engine, run_id: uuid.UUID) -> list[AgentRunEvent]:
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         rows = (
-            await session.execute(
-                select(AgentRunEvent)
-                .where(AgentRunEvent.run_id == run_id)
-                .order_by(AgentRunEvent.seq)
+            (
+                await session.execute(
+                    select(AgentRunEvent)
+                    .where(AgentRunEvent.run_id == run_id)
+                    .order_by(AgentRunEvent.seq)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return list(rows)
 
 
@@ -414,8 +432,10 @@ async def _count_evidence(engine, run_id: uuid.UUID) -> int:
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         rows = (
-            await session.execute(select(EvidenceResult).where(EvidenceResult.run_id == run_id))
-        ).scalars().all()
+            (await session.execute(select(EvidenceResult).where(EvidenceResult.run_id == run_id)))
+            .scalars()
+            .all()
+        )
         return len(rows)
 
 
@@ -423,12 +443,16 @@ async def _count_quality_reports(engine, run_id: uuid.UUID) -> int:
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         rows = (
-            await session.execute(
-                select(QualityReport)
-                .join(EvidenceResult, EvidenceResult.id == QualityReport.evidence_id)
-                .where(EvidenceResult.run_id == run_id)
+            (
+                await session.execute(
+                    select(QualityReport)
+                    .join(EvidenceResult, EvidenceResult.id == QualityReport.evidence_id)
+                    .where(EvidenceResult.run_id == run_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return len(rows)
 
 
@@ -436,11 +460,30 @@ async def _count_claims(engine, run_id: uuid.UUID) -> int:
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         rows = (
-            await session.execute(
-                select(QuantitativeClaim).where(QuantitativeClaim.run_id == run_id)
+            (
+                await session.execute(
+                    select(QuantitativeClaim).where(QuantitativeClaim.run_id == run_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return len(rows)
+
+
+async def _load_textual_facts(engine, run_id: uuid.UUID) -> list[TextualFactRecord]:
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(TextualFactRecord).where(TextualFactRecord.run_id == run_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return list(rows)
 
 
 def _assert_budgets_respected(step_events: list[AgentRunEvent]) -> None:
@@ -578,7 +621,6 @@ async def test_h1_positive_path_completes_with_evidence_quality_claims_and_singl
         "synthesize",
         "complete",
     ]
-
     events = await _load_events(engine, run_id)
     terminal_events = [event for event in events if event.event_type in ("answer", "error")]
     assert len(terminal_events) == 1
@@ -589,6 +631,217 @@ async def test_h1_positive_path_completes_with_evidence_quality_claims_and_singl
     assert await _count_claims(engine, run_id) == 1
 
     _assert_budgets_respected([event for event in events if event.event_type == "step"])
+
+
+async def test_t615f_text_is_persisted_internally_without_public_api_or_legacy(
+    engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
+) -> None:
+    dataset_id = _fresh_dataset_id()
+    columns = (("municipio", ColumnDataType.TEXT, PiiRiskLevel.LOW),)
+    await _seed_dataset(
+        engine,
+        created,
+        dataset_id=dataset_id,
+        columns=(("municipio", "Text"),),
+    )
+    run_id = await _seed_run(
+        engine,
+        created,
+        question=f"{QUESTION_PREFIX}hecho textual interno verificable",
+    )
+    executor, calls = _executor([{"dim_1": "  Medellín  "}])
+
+    async def extract_intent(_question: str) -> IntentExtraction:
+        return IntentExtraction(topic="municipio observado", operation=QueryOperation.LOOKUP)
+
+    async def retrieve(_intent: IntentExtraction) -> MultiQueryRetrievalResult:
+        return MultiQueryRetrievalResult(
+            queries=("municipio",),
+            candidates=(_candidate(dataset_id),),
+        )
+
+    async def profile(_dataset: str) -> ProfiledCandidate:
+        return _profile(dataset_id, columns)
+
+    async def plan(_intent, _context, _explored, _error) -> EnumeratedPlanSelection:
+        return EnumeratedPlanSelection(
+            dataset_index=0,
+            operation=QueryOperation.LOOKUP,
+            dimension_column_indexes=(0,),
+            textual_requests=(
+                DirectTextSelection(
+                    source_row_indexes=(0,),
+                    column=ColumnReference(column_index=0),
+                ),
+            ),
+            limit=2,
+        )
+
+    async def explore(*_args):
+        raise AssertionError("el caso textual no requiere exploración")
+
+    async def execute(validated):
+        return await execute_validated_plan(
+            validated,
+            executor=executor,
+            metadata=_metadata(),
+            textual_facts_enabled=True,
+        )
+
+    async def synthesize(*_args):
+        raise AssertionError("T-615F no debe sintetizar hechos textuales")
+
+    _patch_runtime(
+        monkeypatch,
+        DeterministicRuntimeDependencies(
+            extract_intent=extract_intent,
+            retrieve=retrieve,
+            profile=profile,
+            plan=plan,
+            explore=explore,
+            execute=execute,
+            synthesize=synthesize,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.agent.runner.execute_legacy_agent_run_async",
+        lambda *_args, **_kwargs: pytest.fail("el runtime legacy no debe invocarse"),
+    )
+
+    result = await execute_deterministic_agent_run_async(
+        settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=True),
+        run_id,
+    )
+
+    assert len(calls) == 1
+    final_answer = result["final_answer"]
+    assert final_answer["status"] == "no_evidence"
+    assert final_answer["evidence"] == []
+    assert final_answer["claims"] == []
+    assert "textual_facts" not in final_answer
+    assert "Medellín" not in json.dumps(final_answer, ensure_ascii=False)
+
+    facts = await _load_textual_facts(engine, run_id)
+    assert len(facts) == 1
+    assert facts[0].operation == "direct_text"
+    assert facts[0].raw_values == ["  Medellín  "]
+    assert facts[0].display_value == "Medellín"
+    assert await _count_evidence(engine, run_id) == 1
+    assert await _count_quality_reports(engine, run_id) == 1
+    assert await _count_claims(engine, run_id) == 0
+
+    nodes = [step.node for step in await _load_steps(engine, run_id)]
+    assert nodes[-1] == "abstain"
+    assert "synthesize" not in nodes
+    events = await _load_events(engine, run_id)
+    assert len([event for event in events if event.event_type in ("answer", "error")]) == 1
+    _assert_budgets_respected([event for event in events if event.event_type == "step"])
+
+
+async def test_t615f_textual_persistence_failure_downgrades_public_success_without_losing_claims(
+    engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
+) -> None:
+    dataset_id = _fresh_dataset_id()
+    columns = _CATEGORIA_MONTO_COLUMNS
+    await _seed_dataset(
+        engine,
+        created,
+        dataset_id=dataset_id,
+        columns=(("categoria", "Text"), ("monto", "Number")),
+    )
+    run_id = await _seed_run(
+        engine,
+        created,
+        question=f"{QUESTION_PREFIX}fallo textual no es éxito narrativo",
+    )
+    executor, _calls = _executor(
+        [
+            {"dim_1": "Bogotá", "metric_sum_1": "20"},
+            {"dim_1": "Medellín", "metric_sum_1": "10"},
+        ]
+    )
+
+    async def extract_intent(_question: str) -> IntentExtraction:
+        return IntentExtraction(topic="mayor monto por categoría", operation=QueryOperation.SUM)
+
+    async def retrieve(_intent: IntentExtraction) -> MultiQueryRetrievalResult:
+        return MultiQueryRetrievalResult(
+            queries=("monto",),
+            candidates=(_candidate(dataset_id),),
+        )
+
+    async def profile(_dataset: str) -> ProfiledCandidate:
+        return _profile(dataset_id, columns)
+
+    async def plan(_intent, _context, _explored, _error) -> EnumeratedPlanSelection:
+        return EnumeratedPlanSelection(
+            dataset_index=0,
+            operation=QueryOperation.SUM,
+            dimension_column_indexes=(0,),
+            metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=1),),
+            textual_requests=(
+                ArgmaxLabelSelection(
+                    source_row_indexes=(0, 1),
+                    label_column=ColumnReference(column_index=0),
+                    metric_column=ColumnReference(column_index=1),
+                ),
+            ),
+            limit=2,
+        )
+
+    async def explore(*_args):
+        raise AssertionError("el caso mixto no requiere exploración")
+
+    async def execute(validated):
+        return await execute_validated_plan(
+            validated,
+            executor=executor,
+            metadata=_metadata(),
+            textual_facts_enabled=True,
+        )
+
+    async def synthesize(_intent, claims) -> GroundedSynthesis:
+        return GroundedSynthesis(
+            answer=f"El monto observado fue {claims.claims[0].display_value}.",
+            cited_claim_indexes=(0,),
+        )
+
+    async def fail_textual_batch(*_args, **_kwargs):
+        raise TextualFactError("textual_persistence_failed", "rollback del lote")
+
+    _patch_runtime(
+        monkeypatch,
+        DeterministicRuntimeDependencies(
+            extract_intent=extract_intent,
+            retrieve=retrieve,
+            profile=profile,
+            plan=plan,
+            explore=explore,
+            execute=execute,
+            synthesize=synthesize,
+        ),
+    )
+    monkeypatch.setattr(
+        "app.agent.deterministic_pipeline.build_verify_persist_textual_facts",
+        fail_textual_batch,
+    )
+    monkeypatch.setattr(
+        "app.agent.runner.execute_legacy_agent_run_async",
+        lambda *_args, **_kwargs: pytest.fail("el runtime legacy no debe invocarse"),
+    )
+
+    result = await execute_deterministic_agent_run_async(
+        settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=True),
+        run_id,
+    )
+    final_answer = result["final_answer"]
+    assert final_answer["status"] == "no_evidence"
+    assert final_answer["narrative"] is None
+    assert final_answer["claims"] == []
+    assert final_answer["evidence"] == []
+    assert await _count_evidence(engine, run_id) == 1
+    assert await _count_claims(engine, run_id) == 2
+    assert await _load_textual_facts(engine, run_id) == []
 
 
 # --- Historia 2: cambio de candidato -----------------------------------------
@@ -1519,9 +1772,9 @@ def _fake_get_structured_chat_model(_provider: str, _model_name: str, schema, **
                 operation=QueryOperation.COUNT,
             )
         )
-    if schema is EnumeratedPlanSelection:
+    if schema in {EnumeratedPlanSelection, QuantitativePlanSelection}:
         return _FakeStructuredModel(
-            lambda _messages: EnumeratedPlanSelection(
+            lambda _messages: schema(
                 dataset_index=0,
                 operation=QueryOperation.COUNT,
                 dimension_column_indexes=(),

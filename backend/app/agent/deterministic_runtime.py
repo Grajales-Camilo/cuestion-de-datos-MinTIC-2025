@@ -25,6 +25,7 @@ from app.agent.deterministic_graph import (
 from app.agent.deterministic_pipeline import (
     DeterministicExecutionError,
     DeterministicExecutionResult,
+    DeterministicPersistenceCancelled,
 )
 from app.agent.llm_contracts import (
     EnumeratedPlanSelection,
@@ -337,6 +338,13 @@ async def run_deterministic_agent(
                 execution is not None and execution.quality.eligibility_status == "eligible"
             ),
             claims_available=execution is not None and bool(execution.claims.claims),
+            textual_result_available=execution is not None
+            and bool(
+                getattr(execution, "textual_facts", ())
+                or getattr(execution, "textual_rejections", ())
+            ),
+            textual_rejected=execution is not None
+            and bool(getattr(execution, "textual_rejections", ())),
             synthesis_valid=synthesis is not None,
             budgets=limits,
             usage=SupervisorUsage(
@@ -357,6 +365,11 @@ async def run_deterministic_agent(
             if transition.node is SupervisorNode.BUILD_PLAN and validation_error is not None
             else None
         )
+        textual_rejections = (
+            getattr(execution, "textual_rejections", ()) if execution is not None else ()
+        )
+        if transition.node is SupervisorNode.ABSTAIN and textual_rejections:
+            diagnostic_code = textual_rejections[0].code
         trace_entry = RuntimeTraceEntry(transition.node, trace_reason, current, diagnostic_code)
         trace.append(trace_entry)
         if observe_transition is not None:
@@ -535,6 +548,8 @@ async def run_deterministic_agent(
                 queries += 1
                 assert current is not None
                 _replace_status(candidates, current, CandidateStatus.QUERIED)
+            except DeterministicPersistenceCancelled as exc:
+                raise DeterministicRunCancelled(str(exc)) from exc
             except DeterministicExecutionError:
                 queries += 1
                 assert current is not None

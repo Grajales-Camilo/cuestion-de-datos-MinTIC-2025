@@ -383,7 +383,7 @@ bloqueadas.
       inactivos y OpenAPI productivo sin cambios verificados. T-615F permanece
       bloqueada y requiere autorización separada.
 
-  - [ ] **T-615F Integrar planificación y pipeline determinista.**
+  - [x] **T-615F Integrar planificación y pipeline determinista.**
     - **Requisitos:** RF-201…209/RF-210; presupuestos y terminal único;
       selección textual estructurada.
     - **Archivos previstos:** `backend/app/agent/deterministic_pipeline.py`,
@@ -397,6 +397,15 @@ bloqueadas.
       anterior mediante revert; no hacer fallback automático entre runtimes.
     - **Gate:** aceptación determinista dirigida verde, sin activar API
       textual todavía.
+    - **Cierre (2026-07-17):** `DETERMINISTIC_TEXTUAL_FACTS_ENABLED=false`
+      conserva el contrato LLM cuantitativo y el fallback histórico; al
+      activarlo, solicitudes cerradas por operación se resuelven contra
+      esquema/renderer, T-615D prueba filas, orden y empates, y T-615E
+      construye/verifica/persiste el lote. Rechazos no producen `count=1`,
+      síntesis ni fallback legacy. PostgreSQL real, aceptación determinista y
+      legacy verdes; OpenAPI conserva
+      `4d607fd6e59d908c8f96e633a1d092f55fc4379394aec8100ad14ba21db44dae`.
+      T-615G permanece bloqueada.
 
   - [ ] **T-615G Habilitar API textual aditiva y lectura histórica.**
     - **Requisitos:** contrato REST §4b; SSE/parciales; compatibilidad.

@@ -26,6 +26,7 @@ from app.agent.query_plan import (
     SortDirection,
     SortSelection,
     SortTargetKind,
+    TextualSelection,
 )
 from app.quality.claims import BuiltClaim, find_orphan_figures
 
@@ -96,7 +97,9 @@ class SortChoice(_LLMOutput):
     direction: SortDirection = SortDirection.ASC
 
 
-class EnumeratedPlanSelection(_LLMOutput):
+class QuantitativePlanSelection(_LLMOutput):
+    """Contrato histórico exacto usado cuando la capacidad textual está apagada."""
+
     dataset_index: int = Field(ge=0)
     operation: QueryOperation
     dimension_column_indexes: tuple[int, ...] = Field(default_factory=tuple, max_length=8)
@@ -105,6 +108,12 @@ class EnumeratedPlanSelection(_LLMOutput):
     order_by: tuple[SortChoice, ...] = Field(default_factory=tuple, max_length=8)
     limit: int = Field(default=100, ge=1, le=5000)
     needs_value_exploration: bool = False
+
+
+class EnumeratedPlanSelection(QuantitativePlanSelection):
+    """Extensión interna opcional; el LLM solo propone solicitudes no confiables."""
+
+    textual_requests: tuple[TextualSelection, ...] = Field(default_factory=tuple, max_length=8)
 
 
 class GroundedSynthesis(_LLMOutput):
@@ -231,9 +240,7 @@ def normalize_explicit_date_filter(
         if column.data_type in {ColumnDataType.DATE, ColumnDataType.DATETIME}
     ]
     temporal_indexes = {column.index for column in temporal}
-    if not temporal or any(
-        item.column_index in temporal_indexes for item in selection.filters
-    ):
+    if not temporal or any(item.column_index in temporal_indexes for item in selection.filters):
         return selection
     question_words = _semantic_tokens(question)
 
@@ -247,11 +254,7 @@ def normalize_explicit_date_filter(
 
     column = max(temporal, key=score)
     next_day = (date.fromisoformat(day_iso) + timedelta(days=1)).isoformat()
-    value_type = (
-        ScalarType.DATE
-        if column.data_type is ColumnDataType.DATE
-        else ScalarType.DATETIME
-    )
+    value_type = ScalarType.DATE if column.data_type is ColumnDataType.DATE else ScalarType.DATETIME
     suffix = "" if value_type is ScalarType.DATE else "T00:00:00"
     date_filters = (
         FilterChoice(
@@ -287,9 +290,7 @@ def normalize_system_owned_operation(
         metric_columns = tuple(
             item.column_index for item in selection.metrics if item.column_index is not None
         )
-        dimensions = tuple(
-            dict.fromkeys((*selection.dimension_column_indexes, *metric_columns))
-        )
+        dimensions = tuple(dict.fromkeys((*selection.dimension_column_indexes, *metric_columns)))
         return selection.model_copy(
             update={
                 "operation": QueryOperation.LOOKUP,
@@ -314,17 +315,12 @@ def normalize_sort_references(
                 normalized.append(item)
             elif item.target_index in dimensions:
                 normalized.append(
-                    item.model_copy(
-                        update={
-                            "target_index": dimensions.index(item.target_index)
-                        }
-                    )
+                    item.model_copy(update={"target_index": dimensions.index(item.target_index)})
                 )
             elif (
                 selection.operation is QueryOperation.LOOKUP
                 and selection.dataset_index < len(context.candidates)
-                and item.target_index
-                < len(context.candidates[selection.dataset_index].columns)
+                and item.target_index < len(context.candidates[selection.dataset_index].columns)
             ):
                 dimensions = (*dimensions, item.target_index)
                 normalized.append(item.model_copy(update={"target_index": len(dimensions) - 1}))
@@ -364,10 +360,7 @@ def _semantic_tokens(value: str) -> set[str]:
 
 def _normalized_phrase(value: str) -> str:
     return " ".join(
-        unicodedata.normalize("NFKD", value.casefold())
-        .encode("ascii", "ignore")
-        .decode()
-        .split()
+        unicodedata.normalize("NFKD", value.casefold()).encode("ascii", "ignore").decode().split()
     )
 
 
@@ -417,9 +410,7 @@ def normalize_budget_snapshot(
     )
     month = by_name.get("mes")
     required_outputs = tuple(
-        index
-        for name, index in by_name.items()
-        if name in {"apropiaci_n_vigente", "pagos"}
+        index for name, index in by_name.items() if name in {"apropiaci_n_vigente", "pagos"}
     )
     filters = [
         item
@@ -446,12 +437,16 @@ def normalize_budget_snapshot(
         )
     )
     order = (
-        SortChoice(
-            target_kind=SortTargetKind.DIMENSION,
-            target_index=dimensions.index(month),
-            direction=SortDirection.ASC,
-        ),
-    ) if month is not None else selection.order_by
+        (
+            SortChoice(
+                target_kind=SortTargetKind.DIMENSION,
+                target_index=dimensions.index(month),
+                direction=SortDirection.ASC,
+            ),
+        )
+        if month is not None
+        else selection.order_by
+    )
     return selection.model_copy(
         update={
             "operation": QueryOperation.LOOKUP,
@@ -576,10 +571,13 @@ def normalize_intent_for_observed_schema(
         "total" in tokens and len((tokens - {"total", "no"}).intersection(words)) > 0
         for tokens in column_tokens.values()
     )
-    has_gender_breakdown = sum(
-        bool(tokens.intersection({"genero", "sexo", "hombre", "mujer"}))
-        for tokens in column_tokens.values()
-    ) >= 2
+    has_gender_breakdown = (
+        sum(
+            bool(tokens.intersection({"genero", "sexo", "hombre", "mujer"}))
+            for tokens in column_tokens.values()
+        )
+        >= 2
+    )
     has_rate_columns = any(
         tokens.intersection({"tasa", "desercion", "porcentaje"})
         for tokens in column_tokens.values()
@@ -816,6 +814,7 @@ def materialize_query_plan(
             )
             for item in selection.order_by
         ),
+        textual_requests=selection.textual_requests,
         limit=selection.limit,
         needs_value_exploration=selection.needs_value_exploration,
         purpose=f"{intent.operation.value}: {intent.topic}",

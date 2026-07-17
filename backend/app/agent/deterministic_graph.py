@@ -94,6 +94,8 @@ class SupervisorSnapshot(BaseModel):
     evidence_eligible: bool = False
     safe_aggregate_possible: bool = False
     claims_available: bool = False
+    textual_result_available: bool = False
+    textual_rejected: bool = False
     synthesis_valid: bool = False
     budgets: SupervisorBudgets = SupervisorBudgets()
     usage: SupervisorUsage = SupervisorUsage()
@@ -189,7 +191,19 @@ def decide_next_transition(state: SupervisorSnapshot) -> Transition:
             reason="no se obtuvo evidencia elegible",
             stop_reason=StopReason.EVIDENCE_NOT_ELIGIBLE,
         )
+    if state.textual_rejected:
+        return Transition(
+            node=SupervisorNode.ABSTAIN,
+            reason="la selección textual fue rechazada por código determinista",
+            stop_reason=StopReason.CLAIMS_NOT_AVAILABLE,
+        )
     if not state.claims_available:
+        if state.textual_result_available:
+            return Transition(
+                node=SupervisorNode.ABSTAIN,
+                reason="resultado textual interno no expuesto por T-615F",
+                stop_reason=StopReason.CLAIMS_NOT_AVAILABLE,
+            )
         return Transition(node=SupervisorNode.DERIVE_CLAIMS, reason="evidencia elegible sin claims")
     if not state.synthesis_valid:
         return Transition(node=SupervisorNode.SYNTHESIZE, reason="claims aceptados listos")

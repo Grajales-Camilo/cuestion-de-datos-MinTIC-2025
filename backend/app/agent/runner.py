@@ -38,7 +38,10 @@ from app.agent.deterministic_dependencies import (
     build_real_runtime_dependencies,
 )
 from app.agent.deterministic_graph import SupervisorBudgets
-from app.agent.deterministic_pipeline import persist_deterministic_execution
+from app.agent.deterministic_pipeline import (
+    DeterministicPersistenceCancelled,
+    persist_deterministic_execution,
+)
 from app.agent.deterministic_runtime import (
     DeterministicRunCancelled,
     run_deterministic_agent,
@@ -386,6 +389,7 @@ async def execute_deterministic_agent_run_async(
                 http_client=http_client,
                 embedding_client=embedding_client,
                 usage=llm_usage,
+                is_cancelled=cancel_event.is_set,
             )
             original_retrieve = dependencies.retrieve
 
@@ -415,9 +419,17 @@ async def execute_deterministic_agent_run_async(
         latency_ms = round((time.monotonic() - started) * 1000)
         evidence: list[dict] = []
         claims: list[dict] = []
-        if result.status == "completed":
+        persisted = None
+        has_internal_textual_result = result.execution is not None and bool(
+            getattr(result.execution, "textual_facts", ())
+            or getattr(result.execution, "textual_rejections", ())
+        )
+        if result.status == "completed" or has_internal_textual_result:
             assert result.execution is not None
-            assert result.synthesis is not None
+            if result.status == "completed":
+                assert result.synthesis is not None
+            if cancel_event.is_set():
+                raise DeterministicRunCancelled("corrida cancelada antes de persistir")
             metadata = await load_dataset_evidence_metadata(
                 engine,
                 result.execution.rendered_query.dataset_id,
@@ -429,25 +441,44 @@ async def execute_deterministic_agent_run_async(
                 engine=engine,
                 run_id=run_id,
                 official_publisher_id=metadata.official_publisher_id,
+                is_cancelled=cancel_event.is_set,
             )
+        if cancel_event.is_set():
+            raise DeterministicRunCancelled("corrida cancelada antes del terminal")
+        public_completed = result.status == "completed"
+        prepared_textual_count = (
+            len(result.execution.textual_facts) if result.execution is not None else 0
+        )
+        if (
+            public_completed
+            and prepared_textual_count
+            and (persisted is None or len(persisted.textual_facts) != prepared_textual_count)
+        ):
+            public_completed = False
+        if public_completed:
+            assert persisted is not None
             evidence = [persisted.evidence]
             claims = list(persisted.claims)
 
         final_answer = {
             "run_id": str(run_id),
-            "status": "completed" if result.status == "completed" else "no_evidence",
+            "status": "completed" if public_completed else "no_evidence",
             "intention": result.intent.model_dump(mode="json"),
             "summary": (
                 result.synthesis.answer
-                if result.synthesis is not None
+                if public_completed and result.synthesis is not None
                 else "No encontré evidencia elegible suficiente para responder."
             ),
-            "narrative": result.synthesis.answer if result.synthesis is not None else None,
+            "narrative": (
+                result.synthesis.answer
+                if public_completed and result.synthesis is not None
+                else None
+            ),
             "evidence": evidence,
             "claims": claims,
             "no_evidence_report": (
                 None
-                if result.status == "completed"
+                if public_completed
                 else {
                     "reason": result.stop_reason.value if result.stop_reason else "NO_EVIDENCE",
                     "suggestions": [
@@ -487,7 +518,7 @@ async def execute_deterministic_agent_run_async(
             payload=final_answer,
         )
         return {"final_answer": final_answer, "runtime": "deterministic"}
-    except DeterministicRunCancelled:
+    except (DeterministicRunCancelled, DeterministicPersistenceCancelled):
         return {}
     except (LLMProviderError, LLMConfigurationError) as exc:
         payload = ErrorEnvelope(

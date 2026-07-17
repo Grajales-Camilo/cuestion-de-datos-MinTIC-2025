@@ -14,7 +14,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from app.agent.query_plan import (
+    ArgmaxLabelSelection,
+    ArgminLabelSelection,
+    CanonicalTextSetSelection,
+    CategorySelection,
     ColumnDataType,
+    DirectTextSelection,
     EligibilityStatus,
     EnumeratedPlanningContext,
     FilterOperator,
@@ -24,7 +29,17 @@ from app.agent.query_plan import (
     ScalarType,
     SortDirection,
     SortTargetKind,
+    ValuePresenceSelection,
 )
+from app.quality.grounded_facts import (
+    CategorySelectionParams,
+    EmptyTextualFactOperationParams,
+    ExtremumLabelParams,
+    TextualFactOperation,
+    TextualFactOperationParams,
+    ValuePresenceParams,
+)
+from app.quality.textual_facts import TextualOperationError, normalize_text_es_v1
 
 
 class _ValidatedModel(BaseModel):
@@ -39,6 +54,7 @@ class PlanValidationCode(StrEnum):
     INVALID_LITERAL = "INVALID_LITERAL"
     PII_BLOCKED = "PII_BLOCKED"
     PII_REQUIRES_AGGREGATION = "PII_REQUIRES_AGGREGATION"
+    TEXTUAL_REQUEST_INVALID = "TEXTUAL_REQUEST_INVALID"
 
 
 class PlanValidationError(ValueError):
@@ -89,6 +105,20 @@ class ValidatedSort(_ValidatedModel):
     direction: SortDirection
 
 
+class ValidatedTextualColumn(_ValidatedModel):
+    field_name: str
+    data_type: ColumnDataType
+    target_kind: SortTargetKind
+    target_index: int
+
+
+class ValidatedTextualRequest(_ValidatedModel):
+    operation: TextualFactOperation
+    source_row_indexes: tuple[int, ...]
+    columns: tuple[ValidatedTextualColumn, ...]
+    operation_params: TextualFactOperationParams
+
+
 class ValidatedQueryPlan(_ValidatedModel):
     version: Literal["validated-query-plan.v1"] = "validated-query-plan.v1"
     source_plan_hash: str
@@ -98,6 +128,7 @@ class ValidatedQueryPlan(_ValidatedModel):
     metrics: tuple[ValidatedMetric, ...]
     filters: tuple[ValidatedFilter, ...]
     order_by: tuple[ValidatedSort, ...]
+    textual_requests: tuple[ValidatedTextualRequest, ...] = ()
     limit: int
     include_group_count: bool
     purpose: str
@@ -131,9 +162,7 @@ def _validate_metric_type(operation: QueryOperation, column: ObservedColumn | No
         return
     assert column is not None
     allowed = (
-        _NUMERIC_TYPES
-        if operation in {QueryOperation.SUM, QueryOperation.AVG}
-        else _ORDERED_TYPES
+        _NUMERIC_TYPES if operation in {QueryOperation.SUM, QueryOperation.AVG} else _ORDERED_TYPES
     )
     if column.data_type not in allowed:
         _raise(
@@ -173,6 +202,119 @@ def _validate_scalar_literal(value_type: ScalarType, value: str) -> None:
             f"literal {labels[value_type]} inválido: {value!r}",
         )
         raise AssertionError("_raise siempre lanza") from exc
+
+
+def _selected_dimension(
+    plan: QueryPlan,
+    schema: ObservedDatasetSchema,
+    column_index: int,
+) -> ValidatedTextualColumn:
+    for target_index, item in enumerate(plan.dimensions):
+        if item.column.column_index == column_index:
+            column = _column(schema, column_index)
+            return ValidatedTextualColumn(
+                field_name=column.field_name,
+                data_type=column.data_type,
+                target_kind=SortTargetKind.DIMENSION,
+                target_index=target_index,
+            )
+    _raise(
+        PlanValidationCode.TEXTUAL_REQUEST_INVALID,
+        f"la columna textual {column_index} no forma parte de dimensions",
+    )
+
+
+def _selected_metric(
+    plan: QueryPlan,
+    schema: ObservedDatasetSchema,
+    column_index: int,
+) -> ValidatedTextualColumn:
+    for target_index, item in enumerate(plan.metrics):
+        if item.column is not None and item.column.column_index == column_index:
+            column = _column(schema, column_index)
+            return ValidatedTextualColumn(
+                field_name=column.field_name,
+                data_type=column.data_type,
+                target_kind=SortTargetKind.METRIC,
+                target_index=target_index,
+            )
+    _raise(
+        PlanValidationCode.TEXTUAL_REQUEST_INVALID,
+        f"la métrica textual {column_index} no forma parte de metrics",
+    )
+
+
+def _require_text_column(column: ValidatedTextualColumn) -> None:
+    if column.data_type is not ColumnDataType.TEXT:
+        _raise(
+            PlanValidationCode.TYPE_MISMATCH,
+            f"la operación textual requiere una columna text, no {column.data_type.value}",
+        )
+
+
+def _validated_textual_requests(
+    plan: QueryPlan,
+    schema: ObservedDatasetSchema,
+) -> tuple[ValidatedTextualRequest, ...]:
+    validated: list[ValidatedTextualRequest] = []
+    for request in plan.textual_requests:
+        if isinstance(request, (ArgmaxLabelSelection, ArgminLabelSelection)):
+            label = _selected_dimension(
+                plan,
+                schema,
+                request.label_column.column_index,
+            )
+            metric = _selected_metric(
+                plan,
+                schema,
+                request.metric_column.column_index,
+            )
+            _require_text_column(label)
+            if metric.data_type not in _NUMERIC_TYPES:
+                _raise(
+                    PlanValidationCode.TYPE_MISMATCH,
+                    "argmax_label/argmin_label requiere una métrica numérica",
+                )
+            params: TextualFactOperationParams = ExtremumLabelParams(
+                label_column=label.field_name,
+                metric_column=metric.field_name,
+                tie_policy=request.tie_policy,
+            )
+            columns = (label, metric)
+        else:
+            column = _selected_dimension(plan, schema, request.column.column_index)
+            _require_text_column(column)
+            columns = (column,)
+            if isinstance(request, ValuePresenceSelection):
+                try:
+                    normalized = normalize_text_es_v1(request.target_raw)
+                except TextualOperationError as exc:
+                    _raise(PlanValidationCode.INVALID_LITERAL, f"{exc.code}: {exc}")
+                params = ValuePresenceParams(
+                    target_raw=request.target_raw,
+                    target_normalized=normalized.comparison,
+                )
+            elif isinstance(request, CategorySelection):
+                params = CategorySelectionParams(rule=request.rule)
+            elif isinstance(
+                request,
+                (DirectTextSelection, CanonicalTextSetSelection),
+            ):
+                params = EmptyTextualFactOperationParams()
+            else:
+                _raise(
+                    PlanValidationCode.TEXTUAL_REQUEST_INVALID,
+                    "operación textual no reconocida",
+                )
+        validated.append(
+            ValidatedTextualRequest(
+                operation=request.operation,
+                source_row_indexes=request.source_row_indexes,
+                columns=columns,
+                operation_params=params,
+            )
+        )
+    return tuple(validated)
 
 
 def validate_query_plan(
@@ -283,6 +425,7 @@ def validate_query_plan(
             )
             for item in plan.order_by
         ),
+        textual_requests=_validated_textual_requests(plan, schema),
         limit=plan.limit,
         include_group_count=medium_pii,
         purpose=plan.purpose,

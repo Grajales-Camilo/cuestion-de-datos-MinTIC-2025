@@ -13,9 +13,15 @@ from __future__ import annotations
 import hashlib
 import json
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.quality.grounded_facts import (
+    CategorySelectionRule,
+    TextualFactOperation,
+    TextualFactTiePolicy,
+)
 
 PLAN_SCHEMA_VERSION = "query-plan.v1"
 PLAN_HASH_ALGORITHM = "sha256"
@@ -26,6 +32,8 @@ MAX_METRICS = 8
 MAX_FILTERS = 16
 MAX_ORDER_ITEMS = 8
 MAX_QUERY_LIMIT = 5000
+MAX_TEXTUAL_REQUESTS = 8
+MAX_TEXTUAL_SOURCE_ROWS = 100
 
 
 class _ClosedModel(BaseModel):
@@ -119,9 +127,7 @@ class DatasetOption(_ClosedModel):
     dataset_id: str = Field(pattern=r"^[a-z0-9]{4}-[a-z0-9]{4}$")
     title: str = Field(min_length=1, max_length=1000)
     publisher: str = Field(min_length=1, max_length=1000)
-    columns: tuple[ColumnOption, ...] = Field(
-        min_length=1, max_length=MAX_COLUMNS_PER_CANDIDATE
-    )
+    columns: tuple[ColumnOption, ...] = Field(min_length=1, max_length=MAX_COLUMNS_PER_CANDIDATE)
 
     @model_validator(mode="after")
     def _column_indexes_are_contiguous(self) -> Self:
@@ -183,12 +189,16 @@ class MetricSelection(_ClosedModel):
     def _operation_has_the_expected_column_shape(self) -> Self:
         if self.operation is QueryOperation.COUNT and self.column is not None:
             raise ValueError("count representa exclusivamente count(*) y no acepta columna")
-        if self.operation in {
-            QueryOperation.SUM,
-            QueryOperation.AVG,
-            QueryOperation.MIN,
-            QueryOperation.MAX,
-        } and self.column is None:
+        if (
+            self.operation
+            in {
+                QueryOperation.SUM,
+                QueryOperation.AVG,
+                QueryOperation.MIN,
+                QueryOperation.MAX,
+            }
+            and self.column is None
+        ):
             raise ValueError(f"{self.operation.value} requiere una referencia de columna")
         if self.operation is QueryOperation.LOOKUP:
             raise ValueError("lookup es una operación del plan, no una métrica")
@@ -232,6 +242,82 @@ class SortSelection(_ClosedModel):
     direction: SortDirection = SortDirection.ASC
 
 
+class _TextualSelection(_ClosedModel):
+    source_row_indexes: tuple[Annotated[int, Field(ge=0)], ...] = Field(
+        min_length=1,
+        max_length=MAX_TEXTUAL_SOURCE_ROWS,
+    )
+
+    @model_validator(mode="after")
+    def _source_rows_are_unique(self) -> Self:
+        if len(set(self.source_row_indexes)) != len(self.source_row_indexes):
+            raise ValueError("source_row_indexes no admite duplicados")
+        return self
+
+
+class DirectTextSelection(_TextualSelection):
+    operation: Literal[TextualFactOperation.DIRECT_TEXT] = TextualFactOperation.DIRECT_TEXT
+    column: ColumnReference
+
+
+class ValuePresenceSelection(_TextualSelection):
+    operation: Literal[TextualFactOperation.VALUE_PRESENCE] = TextualFactOperation.VALUE_PRESENCE
+    column: ColumnReference
+    target_raw: str = Field(min_length=1, max_length=2000)
+
+
+class CategorySelection(_TextualSelection):
+    operation: Literal[TextualFactOperation.CATEGORY_SELECTION] = (
+        TextualFactOperation.CATEGORY_SELECTION
+    )
+    column: ColumnReference
+    rule: CategorySelectionRule
+
+
+class ArgmaxLabelSelection(_TextualSelection):
+    operation: Literal[TextualFactOperation.ARGMAX_LABEL] = TextualFactOperation.ARGMAX_LABEL
+    label_column: ColumnReference
+    metric_column: ColumnReference
+    tie_policy: Literal[TextualFactTiePolicy.REJECT] = TextualFactTiePolicy.REJECT
+
+    @model_validator(mode="after")
+    def _columns_are_distinct(self) -> Self:
+        if self.label_column == self.metric_column:
+            raise ValueError("label_column y metric_column deben ser diferentes")
+        return self
+
+
+class ArgminLabelSelection(_TextualSelection):
+    operation: Literal[TextualFactOperation.ARGMIN_LABEL] = TextualFactOperation.ARGMIN_LABEL
+    label_column: ColumnReference
+    metric_column: ColumnReference
+    tie_policy: Literal[TextualFactTiePolicy.REJECT] = TextualFactTiePolicy.REJECT
+
+    @model_validator(mode="after")
+    def _columns_are_distinct(self) -> Self:
+        if self.label_column == self.metric_column:
+            raise ValueError("label_column y metric_column deben ser diferentes")
+        return self
+
+
+class CanonicalTextSetSelection(_TextualSelection):
+    operation: Literal[TextualFactOperation.CANONICAL_TEXT_SET] = (
+        TextualFactOperation.CANONICAL_TEXT_SET
+    )
+    column: ColumnReference
+
+
+TextualSelection = Annotated[
+    DirectTextSelection
+    | ValuePresenceSelection
+    | CategorySelection
+    | ArgmaxLabelSelection
+    | ArgminLabelSelection
+    | CanonicalTextSetSelection,
+    Field(discriminator="operation"),
+]
+
+
 class QueryPlan(_ClosedModel):
     """Selección estructurada independiente de SoQL y de IDs inventables."""
 
@@ -244,6 +330,10 @@ class QueryPlan(_ClosedModel):
     metrics: tuple[MetricSelection, ...] = Field(default_factory=tuple, max_length=MAX_METRICS)
     filters: tuple[FilterSelection, ...] = Field(default_factory=tuple, max_length=MAX_FILTERS)
     order_by: tuple[SortSelection, ...] = Field(default_factory=tuple, max_length=MAX_ORDER_ITEMS)
+    textual_requests: tuple[TextualSelection, ...] = Field(
+        default_factory=tuple,
+        max_length=MAX_TEXTUAL_REQUESTS,
+    )
     limit: int = Field(default=100, ge=1, le=MAX_QUERY_LIMIT)
     needs_value_exploration: bool = False
     purpose: str = Field(min_length=1, max_length=1000)
@@ -264,8 +354,10 @@ class QueryPlan(_ClosedModel):
                 )
 
         for item in self.order_by:
-            size = len(self.dimensions) if item.target_kind is SortTargetKind.DIMENSION else len(
-                self.metrics
+            size = (
+                len(self.dimensions)
+                if item.target_kind is SortTargetKind.DIMENSION
+                else len(self.metrics)
             )
             if item.target_index >= size:
                 raise ValueError(
@@ -277,10 +369,17 @@ class QueryPlan(_ClosedModel):
         references = [dimension.column for dimension in self.dimensions]
         references.extend(metric.column for metric in self.metrics if metric.column is not None)
         references.extend(item.column for item in self.filters)
+        for request in self.textual_requests:
+            if isinstance(request, (ArgmaxLabelSelection, ArgminLabelSelection)):
+                references.extend((request.label_column, request.metric_column))
+            else:
+                references.append(request.column)
         return tuple(references)
 
     def canonical_json(self) -> str:
         payload = self.model_dump(mode="json", exclude_none=False)
+        if not self.textual_requests:
+            payload.pop("textual_requests")
         return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
     def plan_hash(self) -> str:
