@@ -21,7 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -136,6 +136,7 @@ class CatalogDataset(Base):
         server_default=text("'[]'::jsonb"),
     )
     embedding_text: Mapped[str | None] = mapped_column(Text)
+    lexical_search_vector: Mapped[str] = mapped_column(TSVECTOR, nullable=False)
 
 
 class CatalogColumn(Base):
