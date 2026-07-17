@@ -310,6 +310,25 @@ OpenAPI y snapshots que demuestren que `claims.items` no cambia.
   `orphan_factual_segments_count=0`.
 - Se mantiene una prueba adversaria que intenta introducir una entidad,
   categoría, lugar, fecha o estado desde prosa libre; debe rechazarse.
+- Snapshots literales cubren las tres plantillas, los cuatro conectores y los
+  tres cierres de `grounded-synthesis-renderer-v1`, incluida puntuación y
+  espacios.
+- `comparison_pair` acepta pares cuantitativos, textuales y mixtos cuando
+  comparten corrida y evidencia elegible; rechaza ID repetido, corrida o
+  evidencia diferente y cualquier intento de atribuirle semántica matemática.
+- El fallback ordena canónicamente, selecciona máximo ocho, usa solo
+  `fact_statement`, elige el cierre normativo y pasa por el mismo validador.
+- Una prueba de frontera demuestra que preparados/no persistidos nunca entran
+  al conjunto permitido y que la síntesis ocurre después de la persistencia y
+  reverificación.
+
+Ejemplos snapshot obligatorios:
+
+```text
+Total de registros: 25.
+La categoría seleccionada es Salud.
+Resultados relacionados: Total de registros: 25. La categoría seleccionada es Salud.
+```
 
 #### Aceptación determinista
 

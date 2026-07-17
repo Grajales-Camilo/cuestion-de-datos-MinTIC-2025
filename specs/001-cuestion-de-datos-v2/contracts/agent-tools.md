@@ -311,7 +311,7 @@ factual.
   producir un hecho entregable automáticamente; aplica la misma puerta de
   elegibilidad que a T7.
 
-**Contrato propuesto de síntesis factual (`grounded-synthesis-plan-v1`)**
+**Contrato aprobado de síntesis factual (`grounded-synthesis-plan-v1`)**
 
 El LLM solo puede devolver `schema_version`, `segments` y `closing`. Cada
 segmento contiene `segment_id`, `connector`, `template` y `fact_refs` tipadas
@@ -326,9 +326,73 @@ elegible de la misma corrida. `comparison_pair` exige dos referencias
 compatibles; las otras plantillas exigen una. El renderer produce toda cláusula
 factual e inserta `display_value` literalmente. ID desconocido, duplicado,
 incompatible, evidencia ausente/no elegible, enum/campo extra o JSON inválido
-rechazan el plan completo. Sin hechos elegibles, o agotada la reparación
-presupuestada, se usa la plantilla de abstención `no_evidence` o
-`insufficient_evidence`; nunca se entrega contenido factual parcial.
+rechazan el plan completo. Agotada la reparación presupuestada se usa
+`grounded-synthesis-fallback-v1`. Sin hechos elegibles se usa la abstención
+`no_evidence`; `insufficient_evidence` queda reservada para una falla
+operacional que impida certificar el conjunto permitido. Nunca se entrega
+contenido factual parcial.
+
+**Renderer literal `grounded-synthesis-renderer-v1`.** Para esta versión,
+`atomic_clause` se obtiene únicamente del objeto persistido:
+
+- claim cuantitativo: `"{claim}: {display_value}."`;
+- hecho textual: `"{fact}"`, sin modificar ni volver a insertar su valor.
+
+Las plantillas de segmento son literales:
+
+- `fact_statement`: `"{atomic_clause}"`;
+- `subject_fact`: `"Resultado verificado: {atomic_clause}"`;
+- `comparison_pair`:
+  `"Resultados relacionados: {atomic_clause_1} {atomic_clause_2}"`.
+
+`comparison_pair` es presentación conjunta, no resta, cociente, orden ni
+afirmación de superioridad. Sus dos referencias son compatibles si y solo si:
+
+1. son distintas;
+2. están persistidas y aceptadas en la misma corrida;
+3. apuntan al mismo `evidence_id`;
+4. esa evidencia es elegible.
+
+Puede combinar dos claims, dos hechos textuales o uno de cada tipo. Unidad,
+operación y tipo no son condiciones porque la plantilla no compara magnitudes.
+Cualquier comparación matemática futura exige otra plantilla y contrato.
+
+El conector se antepone literalmente al segmento ya renderizado:
+
+- `sin_conector`: `""`;
+- `ademas`: `"Además, "`;
+- `por_otra_parte`: `"Por otra parte, "`;
+- `en_conjunto`: `"En conjunto, "`.
+
+El primer segmento exige `sin_conector`; los demás no pueden usarlo. Los
+segmentos se unen con un espacio. El cierre se añade al final:
+
+- `sin_cierre`: `""`;
+- `limitacion_disponibilidad`:
+  `" La respuesta se limita a la evidencia disponible."`;
+- `advertencia_calidad`:
+  `" La evidencia utilizada presenta una advertencia de calidad."`.
+
+No se corrigen caja, puntuación ni espacios dentro de `claim`, `display_value`
+o `fact`; si un objeto persistido no satisface su contrato, se rechaza antes de
+renderizar.
+
+**Fallback determinista `grounded-synthesis-fallback-v1`.** Ante error del
+proveedor, plan inválido o reparación agotada, el código:
+
+1. reúne solo claims y hechos persistidos, reverificados y elegibles;
+2. ordena por `fact_kind` (`quantitative` antes de `textual`), `dataset_id`,
+   `source_row_indexes`, `columns` y `source_hash`;
+3. toma como máximo ocho objetos;
+4. crea un `fact_statement` por objeto, con `sin_conector` para el primero y
+   `ademas` para los siguientes;
+5. usa `limitacion_disponibilidad` si había más de ocho objetos;
+   en otro caso usa `advertencia_calidad` si alguna evidencia seleccionada
+   tiene clasificación `baja`, y `sin_cierre` en los demás casos.
+
+El fallback nunca genera `comparison_pair`, nunca recibe texto libre y pasa por
+el mismo validador y renderer. Sin objetos elegibles termina `no_evidence`; no
+fabrica un plan vacío.
 
 ## T8 — `comparabilidad_territorial`
 Advierte cuando dos o más territorios resueltos por T3 en la misma corrida no son comparables entre sí (Cap. 9 del Handbook de CSS para Política, `docs/capitulos-css-politicas-publicas.md`). Nodo determinista: no usa LLM, no acepta invocación libre del enrutador. El grafo lo ejecuta automáticamente cuando T3 devuelve `divipola_code` de ≥2 territorios distintos en el mismo run. Implementado por `app/quality/territorial.py` sobre la tabla `territorio_tipologia` (tarea T-404).

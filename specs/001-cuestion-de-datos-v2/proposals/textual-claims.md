@@ -370,9 +370,10 @@ y cierres son plantillas fijas no factuales y no admiten argumentos libres.
 ID desconocido/no elegible, referencia repetida, incompatibilidad de plantilla,
 segmento duplicado, enum/campo extra, JSON inválido o valor alterado rechazan
 todo el plan y permiten como máximo la reparación presupuestada vigente. Si
-no hay hechos elegibles, o se agota la reparación, se renderiza una plantilla
-de abstención (`no_evidence` o `insufficient_evidence`) sin afirmaciones
-factuales. Nunca se entrega un plan parcial.
+se agota la reparación se usa `grounded-synthesis-fallback-v1`. Si no hay
+hechos elegibles se termina `no_evidence`; `insufficient_evidence` se reserva
+para una falla operacional que impida certificar el conjunto permitido. Nunca
+se entrega un plan parcial.
 
 Ejemplo válido: un `fact_statement` con un ID textual aceptado; el renderer
 inserta exactamente su `display_value`. Ejemplos inválidos: incluir
@@ -384,6 +385,57 @@ alcance, advertencia de calidad, limitación y ausencia de evidencia. Los
 campos libres del modelo no pueden introducir entidades, categorías,
 lugares, fechas o estados como hechos. Ampliar esa libertad exigiría una
 nueva decisión y una métrica que pruebe el límite.
+
+### 9.1 Renderer y compatibilidad versionados
+
+`grounded-synthesis-renderer-v1` define una cláusula atómica por objeto
+persistido:
+
+| Tipo | Cláusula literal |
+|---|---|
+| cuantitativo | `"{claim}: {display_value}."` |
+| textual | `"{fact}"` |
+
+Sobre esa cláusula se aplican exactamente:
+
+| Plantilla | Texto literal |
+|---|---|
+| `fact_statement` | `"{atomic_clause}"` |
+| `subject_fact` | `"Resultado verificado: {atomic_clause}"` |
+| `comparison_pair` | `"Resultados relacionados: {atomic_clause_1} {atomic_clause_2}"` |
+
+Los conectores son `""`, `"Además, "`, `"Por otra parte, "` y
+`"En conjunto, "`, respectivamente. El primer segmento solo admite
+`sin_conector`; los siguientes deben declarar otro conector. Los cierres son
+`""`, `" La respuesta se limita a la evidencia disponible."` y
+`" La evidencia utilizada presenta una advertencia de calidad."`.
+
+`comparison_pair` no afirma una relación matemática. Admite una pareja
+cuantitativa, textual o mixta solo cuando las referencias son distintas,
+persistidas y aceptadas en la misma corrida, comparten `evidence_id` y la
+evidencia es elegible. No exige igual unidad u operación porque no compara
+magnitudes. Otra semántica exige una plantilla versionada nueva.
+
+Ejemplos normativos, antes de aplicar conector o cierre:
+
+- cuantitativo: claim `Total de registros`, `display_value="25"` →
+  `Total de registros: 25.`;
+- textual: `fact="La categoría seleccionada es Salud."` →
+  `La categoría seleccionada es Salud.`;
+- mixto compatible:
+  `Resultados relacionados: Total de registros: 25. La categoría seleccionada es Salud.`;
+- mixto inválido: los mismos objetos con distinto `evidence_id`.
+
+### 9.2 Fallback determinista
+
+`grounded-synthesis-fallback-v1` ordena objetos elegibles persistidos por
+`fact_kind` —cuantitativos primero—, `dataset_id`, `source_row_indexes`,
+`columns` y `source_hash`; selecciona como máximo ocho y genera únicamente
+`fact_statement`. El primero usa `sin_conector` y los restantes `ademas`.
+Usa `limitacion_disponibilidad` si omite objetos por el límite; en caso
+contrario, `advertencia_calidad` si alguna evidencia seleccionada es `baja`, o
+`sin_cierre`. El plan resultante pasa por el mismo validador y renderer. Sin
+objetos elegibles termina `no_evidence`.
 
 No se convierten en hechos: títulos y botones de interfaz, nombres de campos
 mostrados como encabezados, conectores, instrucciones de uso, mensajes

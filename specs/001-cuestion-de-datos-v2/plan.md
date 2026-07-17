@@ -447,6 +447,30 @@ Nunca sustituye texto con `count=1`.
 La secuencia exacta T-615A…T-615J, con archivos, dependencias, pruebas,
 aceptación, rollback y gate por incremento, está en `tasks.md`.
 
+### 14.2a Orden obligatorio de T-615H
+
+La síntesis no puede consumir objetos preparados ni confiar en persistencia
+futura. El orden productivo es:
+
+```text
+ejecución y calidad
+  → persistencia y reverificación de evidencia, claims y hechos
+  → conjunto permitido de IDs de la corrida
+  → grounded-synthesis-plan-v1 o grounded-synthesis-fallback-v1
+  → validación completa
+  → grounded-synthesis-renderer-v1
+  → persistencia de final_answer
+  → evento terminal
+```
+
+El renderer aplica exclusivamente las cadenas literales de
+`contracts/agent-tools.md`. `comparison_pair` solo agrupa dos objetos distintos
+de la misma evidencia elegible y no expresa aritmética. El fallback usa como
+máximo ocho objetos en orden canónico, nunca `comparison_pair` y atraviesa las
+mismas guardas. Una falla posterior a persistir objetos operacionales no los
+convierte en contenido público: sin plan validado y renderizado, no hay
+`narrative` factual entregable.
+
 ### 14.3 Compatibilidad
 
 - `quantitative_claims`, RF-208 y RNF-003 no cambian de significado.

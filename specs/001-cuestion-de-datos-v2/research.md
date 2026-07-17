@@ -582,16 +582,28 @@ demuestran integridad textual.
   desde la tabla. Los payloads terminales históricos no se reescriben; campos
   ausentes se materializan como listas vacías al leer.
 
+**Decisión T-615H: renderer, compatibilidad y fallback.** Se aprueba
+`grounded-synthesis-renderer-v1`: claims se renderizan como
+`"{claim}: {display_value}."`, hechos textuales mediante su `fact` persistido,
+y las tres plantillas, cuatro conectores y tres cierres usan las cadenas
+literales de `contracts/agent-tools.md`. `comparison_pair` es presentación
+conjunta, no comparación matemática; acepta dos objetos de cualquier variante
+solo si son distintos, pertenecen a la misma corrida, comparten evidencia
+elegible y ya fueron persistidos y aceptados. El fallback
+`grounded-synthesis-fallback-v1` selecciona hasta ocho objetos mediante orden
+canónico, usa únicamente `fact_statement` y pasa por el mismo validador y
+renderer. Sin objetos elegibles termina `no_evidence`.
+
 **Atribución de fallos.** T-615 no absorbe problemas de otras capas:
 `pilot-012` falla después de recuperación por presupuesto/selección;
 `pilot-021` ejecutó `count(*)` en vez de `cantidad`; `pilot-022` pasó el smoke
 final; `pilot-038` es ambiguo porque la hora esperada no está en la pregunta.
 Los desacuerdos restantes se mantienen `undetermined` hasta T-616.
 
-**Dependencias y gate.** T-615A…T-615J se detallan en `tasks.md`. La matriz
-terminal anterior desbloquea únicamente la implementación T-615G. T-615H
-depende de su cierre verificado; T-616 y T-617 continúan bloqueadas. Esta
-decisión no autoriza cambios de golden, métricas, runtime por defecto ni legado.
+**Dependencias y gate.** T-615A…T-615J se detallan en `tasks.md`. T-615G y su
+corrección T-615G-R están cerradas. La decisión anterior reautoriza únicamente
+T-615H; T-615I, T-616 y T-617 continúan bloqueadas. No autoriza cambios de
+golden, métricas, runtime por defecto ni legado.
 
 ---
 

@@ -226,8 +226,9 @@ La aceptación E2E está separada entre `legacy_agent_acceptance` y
 v1.0; las dos corridas normativas RNF-010 están verdes.
 `GOLDEN_V2_PROPOSAL.md` continúa sin rango normativo. La enmienda T-615 fue
 aprobada y se ejecuta por incrementos con autorización independiente. La
-matriz terminal ya definida reautoriza T-615G; T-615H, T-616 y T-617
-permanecen bloqueadas.
+matriz terminal ya definida reautorizó T-615G, que cerró junto con T-615G-R.
+La corrección documental de síntesis reautoriza T-615H; T-615I, T-616 y
+T-617 permanecen bloqueadas.
 
 **Desviación conocida:** `backend/app/config.py` usa actualmente `deterministic` como default, aunque la política aprobada mantiene `legacy` como runtime operativo durante la validación. T-610 debe registrarlo; los entornos de usuario/producción deben fijar `AGENT_RUNTIME=legacy`. La corrección del default requiere una tarea explícita posterior al incremento solo-pruebas, no un cambio silencioso dentro de T-611/T-612.
 
@@ -431,7 +432,8 @@ permanecen bloqueadas.
       de síntesis pública.
     - **Corrección documental (2026-07-17):** la matriz terminal aprobada en
       `research.md` §27 y contrato REST §4b resuelve el bloqueo semántico y
-      reautoriza exclusivamente T-615G. T-615H sigue bloqueada.
+      reautorizó exclusivamente T-615G. T-615H permaneció bloqueada hasta la
+      corrección documental específica registrada en su propia entrada.
     - **Cierre (2026-07-17):** modelo público cerrado, payload terminal
       persistido y fronteras REST/SSE/replay exponen las dos listas aditivas;
       históricos se materializan sin reescritura ni inferencia. Casos
@@ -458,6 +460,14 @@ permanecen bloqueadas.
       porque esa prosa no se admite.
     - **Rollback:** desactivar emisión textual y conservar síntesis
       cuantitativa vigente.
+    - **Corrección documental (2026-07-17):**
+      `grounded-synthesis-renderer-v1` fija texto literal de cláusulas,
+      plantillas, conectores y cierres; `comparison_pair` admite pares
+      cuantitativos, textuales o mixtos solo si son distintos y comparten
+      corrida y evidencia elegible; `grounded-synthesis-fallback-v1` fija orden,
+      límite ocho, plantillas y cierre. La secuencia exige persistir y
+      reverificar antes de sintetizar. Se reautoriza exclusivamente T-615H;
+      T-615I no se inicia.
     - **Gate:** guardas runtime bloqueantes y pruebas adversarias verdes.
 
   - [ ] **T-615I Añadir métricas y snapshots no identificables.**
