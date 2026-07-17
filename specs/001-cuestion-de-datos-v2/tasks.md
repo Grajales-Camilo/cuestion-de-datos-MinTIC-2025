@@ -267,9 +267,10 @@ bloqueadas.
 
 - [ ] **T-615 Diseñar e implementar hechos textuales de primera clase
   (RF-210/RNF-013 propuestos; RF-208/RNF-003 preservados).**
-  - **Estado:** T-615A aprobada y T-615B/T-615C cerradas el 2026-07-17 sobre
-    el HEAD normativo `f7725eeced8afc93ccd7fcc250e248a05f2db616`. T-615D y
-    posteriores continúan bloqueadas. Diseño: `research.md` §27 y
+  - **Estado:** T-615A aprobada y T-615B/T-615C/T-615D cerradas el
+    2026-07-17 sobre el HEAD normativo
+    `f7725eeced8afc93ccd7fcc250e248a05f2db616`. T-615E y posteriores
+    continúan bloqueadas. Diseño: `research.md` §27 y
     `proposals/textual-claims.md`.
   - **Regla global:** no representar texto mediante `raw_value=1`, conteos
     ficticios ni claims cuantitativos; no editar `golden-v1`; no iniciar
@@ -334,9 +335,9 @@ bloqueadas.
       verificados el 2026-07-17 contra PostgreSQL real: upgrade/downgrade,
       checks, FK, índices, round-trip, cascades, retención idempotente y OE3
       sin contenido textual. `quantitative_claims` conservó su firma completa.
-      T-615D permanece bloqueada y requiere autorización específica.
+      T-615D fue autorizada y cerrada posteriormente el mismo día.
 
-  - [ ] **T-615D Implementar normalización, operaciones y hash puros.**
+  - [x] **T-615D Implementar normalización, operaciones y hash puros.**
     - **Requisitos:** RF-210; `direct_text`, `value_presence`,
       `category_selection`, `argmax_label`, `argmin_label`,
       `canonical_text_set`; `text-es-v1`; `tie_policy=reject`.
@@ -349,6 +350,12 @@ bloqueadas.
     - **Rollback:** retirar implementación conservando contrato aún inactivo.
     - **Gate:** cobertura de ramas de operación y regresión cuantitativa
       verdes.
+    - **Cierre:** funciones puras `text-es-v1`, seis operaciones cerradas,
+      extremos con `tie_policy=reject` y hash `sha256-jcs-v1` verificados el
+      2026-07-17. JCS usa `rfc8785==0.1.4` y pasa vectores oficiales de
+      serialización/primitivos y orden UTF-16. Suite sin PostgreSQL, sin
+      persistencia ni integración; T-615E permanece bloqueada y requiere
+      autorización específica.
 
   - [ ] **T-615E Implementar constructor/verificador textual.**
     - **Requisitos:** RF-401/RF-404/RF-210; solo evidencia elegible; plantillas
