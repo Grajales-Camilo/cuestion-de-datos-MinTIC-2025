@@ -363,6 +363,23 @@ pregunta
 
 Las transiciones, presupuestos y motivos de rechazo pertenecen al código. El LLM solo puede producir objetos dentro de los contratos estructurados que se le asignen y redactar desde evidencia/claims aceptados. No puede elegir una consulta SoQL libre, saltar la validación, reactivar un candidato rechazado ni convertir un fallo determinista en éxito narrativo.
 
+### 13.1a Frontera terminal textual antes de T-615H
+
+T-615G expone hechos textuales verificados sin anticipar la síntesis de T-615H:
+
+- `completed` exige al menos un claim cuantitativo o hecho textual persistido y
+  reverificado.
+- Si la corrida es solo textual, usa el resumen fijo
+  `Se encontraron hechos textuales verificables.`, `narrative=null`,
+  `claims=[]`, `textual_facts` poblado y `no_evidence_report=null`.
+- En resultados mixtos, la narrativa vigente solo cubre claims cuantitativos;
+  los hechos textuales viajan en su campo raíz separado.
+- `no_evidence` nunca contiene hechos textuales ni evidencia.
+- `interrupted` puede entregar como parciales únicamente hechos ya persistidos
+  y reverificados; `failed` no entrega hechos textuales.
+- Apagar el flag detiene nuevas emisiones y lecturas dinámicas de la tabla, sin
+  reescribir payloads históricos. Un campo histórico ausente se lee como `[]`.
+
 ### 13.2 Límites de compatibilidad
 
 - Los contratos de `contracts/`, el modelo de datos vigente y `golden-v1.yaml` no cambian como parte de la validación inicial del runtime.
@@ -376,11 +393,12 @@ La ruta ejecutable es T-610 → T-611 → T-612 → T-613 → T-614 → T-615 �
 
 Cuando el determinista cumpla simultáneamente aceptación E2E verde, integraciones compartidas verdes, negativos 100%, `golden-v2` ≥ 80%, cero fabricaciones, cero cifras huérfanas, persistencia/durabilidad verificadas y límites de latencia/costo satisfechos, pasa inmediatamente a ser el default. El runtime legado permanece congelado y accesible solo para rollback durante una versión. Después se eliminan el selector y el código legado mediante una fase independiente y reversible.
 
-## 14. Enmienda T-615 propuesta: arquitectura de hechos fundamentados
+## 14. Enmienda T-615 aprobada: arquitectura de hechos fundamentados
 
-> **PROPUESTA PARA REVISIÓN — NO IMPLEMENTADA.** Depende de aprobación
-> explícita. Ver decisión y alternativas en `research.md` §27 y diseño
-> completo en `proposals/textual-claims.md`.
+> **IMPLEMENTACIÓN INCREMENTAL.** T-615A fue aprobada y T-615B…T-615F están
+> cerradas. T-615G queda reautorizada por la matriz terminal de §13.1a; cada
+> tarea posterior conserva su propia puerta. Ver decisión y alternativas en
+> `research.md` §27 y diseño completo en `proposals/textual-claims.md`.
 
 ### 14.1 Pipeline objetivo
 

@@ -1,15 +1,14 @@
-# Propuesta T-615 — Hechos textuales de primera clase
+# T-615 — Hechos textuales de primera clase
 
-> **Estado: PROPUESTA PARA REVISIÓN — SIN VIGENCIA NORMATIVA NI
-> IMPLEMENTACIÓN.**
+> **Estado: APROBADA — IMPLEMENTACIÓN INCREMENTAL.**
 >
 > Fecha de auditoría: 2026-07-16. Rama auditada: `v2`. Commit auditado:
 > `f7cc283e5fd3a7b1247d7dbd04a9d0a661766142`.
 >
-> Esta propuesta no autoriza código, migraciones, cambios de base de datos,
-> `golden-v2`, cambios de métricas, retiro del legado ni modificación de
-> `golden-v1`. Solo adquiere vigencia si la coordinación aprueba la enmienda
-> T-615 y autoriza por separado el primer incremento de implementación.
+> La coordinación aprobó la enmienda T-615 y autorizó por separado los
+> incrementos T-615B…T-615F. Cada incremento restante conserva su propia
+> puerta; este documento no autoriza `golden-v2`, cambios de métricas, retiro
+> del legado ni modificación de `golden-v1`.
 
 ## 1. Problema comprobado
 
@@ -309,6 +308,23 @@ Los históricos sin campos textuales se interpretan como
 `claims`, sin inferencia estructural ni reescritura. Unificar tipos dentro de
 `claims` requeriría una nueva versión pública y no pertenece a T-615.
 
+### 8.1 Matriz terminal aprobada para T-615G
+
+- `completed` exige al menos un claim cuantitativo o hecho textual persistido y
+  reverificado.
+- Un resultado solo textual usa exactamente
+  `summary="Se encontraron hechos textuales verificables."`,
+  `narrative=null`, `claims=[]`, `textual_facts` poblado y
+  `no_evidence_report=null`.
+- Un resultado mixto no incorpora todavía hechos textuales a la narrativa; los
+  entrega por separado.
+- `no_evidence` tiene evidencia y listas textuales vacías, más su reporte
+  obligatorio.
+- `interrupted` solo expone hechos persistidos y reverificados como parciales;
+  `failed` no expone hechos textuales.
+- El flag apagado produce listas vacías sin cargar la tabla ni reescribir
+  históricos. Campos ausentes en un payload histórico se leen como `[]`.
+
 No encontrar un consumidor no demuestra compatibilidad. Antes de activar
 texto deben pasar snapshots byte/forma de respuestas cuantitativas actuales,
 OpenAPI diff sin cambios dentro de `claims.items`, históricos sin campos
@@ -496,10 +512,12 @@ La coordinación debe aprobar o devolver explícitamente:
 3. perfil `text-es-v1`;
 4. empate `reject` en extremos;
 5. hash y procedencia;
-6. unión discriminada en `claims`;
+6. dominio interno discriminado y API aditiva con `claims` cuantitativos y
+   `textual_facts` separados;
 7. síntesis factual por plantillas e identificadores;
 8. métricas sin promediar fallos;
 9. esquema conceptual de `acceptable_facts` para T-616;
 10. secuencia T-615A…T-615J.
 
-Hasta esa decisión, todo lo anterior permanece como propuesta.
+La aprobación se ejecuta por incrementos; cerrar una tarea no autoriza la
+siguiente ni modifica `golden-v1`.

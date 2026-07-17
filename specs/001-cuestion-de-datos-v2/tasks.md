@@ -219,14 +219,15 @@ Seguimiento (revisión de código post-merge, dos huecos detectados y cerrados e
 
 **Objetivo:** construir una ruta de validación independiente para el runtime determinista, diagnosticar fallos por etapa y mejorar utilidad sin sobreajustar `golden-v1`. El legado permanece como rollback. La secuencia es estricta: T-610 → T-611 → T-612 → T-613 → T-614 → T-615 → T-616 → T-617.
 
-**Estado para el siguiente agente (2026-07-16):** T-610…T-614 están cerradas.
+**Estado para el siguiente agente (2026-07-17):** T-610…T-614 y
+T-615A…T-615F están cerradas.
 La aceptación E2E está separada entre `legacy_agent_acceptance` y
 `deterministic_agent_acceptance`; el evaluador persiste `stage_diagnostics`
 v1.0; las dos corridas normativas RNF-010 están verdes.
-`GOLDEN_V2_PROPOSAL.md` continúa sin rango normativo. T-615 tiene una
-**PROPUESTA PARA REVISIÓN**, no una implementación autorizada. La siguiente
-acción humana es aprobar o devolver la enmienda; T-616/T-617 permanecen
-bloqueadas.
+`GOLDEN_V2_PROPOSAL.md` continúa sin rango normativo. La enmienda T-615 fue
+aprobada y se ejecuta por incrementos con autorización independiente. La
+matriz terminal ya definida reautoriza T-615G; T-615H, T-616 y T-617
+permanecen bloqueadas.
 
 **Desviación conocida:** `backend/app/config.py` usa actualmente `deterministic` como default, aunque la política aprobada mantiene `legacy` como runtime operativo durante la validación. T-610 debe registrarlo; los entornos de usuario/producción deben fijar `AGENT_RUNTIME=legacy`. La corrección del default requiere una tarea explícita posterior al incremento solo-pruebas, no un cambio silencioso dentro de T-611/T-612.
 
@@ -405,7 +406,8 @@ bloqueadas.
       síntesis ni fallback legacy. PostgreSQL real, aceptación determinista y
       legacy verdes; OpenAPI conserva
       `4d607fd6e59d908c8f96e633a1d092f55fc4379394aec8100ad14ba21db44dae`.
-      T-615G permanece bloqueada.
+      T-615G quedó bloqueada hasta definir la matriz terminal; la corrección
+      documental del 2026-07-17 la reautoriza sin iniciar T-615H.
 
   - [ ] **T-615G Habilitar API textual aditiva y lectura histórica.**
     - **Requisitos:** contrato REST §4b; SSE/parciales; compatibilidad.
@@ -417,9 +419,19 @@ bloqueadas.
       clientes estrictos/tolerantes; `completed`, `interrupted`, `failed`.
     - **Aceptación:** ningún discriminador nuevo en claims cuantitativos;
       históricos equivalen a listas textuales vacías y nunca se infiere texto.
+      Una corrida solo textual termina `completed` con resumen fijo,
+      `narrative=null`, evidencia vinculada, claims vacíos y sin reporte de no
+      evidencia. `no_evidence` mantiene evidencia y listas textuales vacías;
+      `interrupted` expone solo persistidos/reverificados como parciales;
+      `failed` no expone hechos textuales.
     - **Rollback:** detener emisión textual; tabla/datos pueden permanecer
-      inaccesibles hasta reactivar.
-    - **Gate:** contrato y API verdes antes de síntesis pública.
+      inaccesibles hasta reactivar. Con el flag apagado no se cargan hechos
+      desde la tabla ni se reescriben payloads históricos.
+    - **Gate:** contrato, REST, SSE, históricos, aislamiento y API verdes antes
+      de síntesis pública.
+    - **Corrección documental (2026-07-17):** la matriz terminal aprobada en
+      `research.md` §27 y contrato REST §4b resuelve el bloqueo semántico y
+      reautoriza exclusivamente T-615G. T-615H sigue bloqueada.
 
   - [ ] **T-615H Restringir síntesis a hechos persistidos.**
     - **Requisitos:** RF-208/RNF-003 y RF-210/RNF-013; IDs existentes;

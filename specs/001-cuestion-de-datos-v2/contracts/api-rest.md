@@ -131,12 +131,13 @@ Reglas: primer evento ≤ 2 s tras la conexión (RNF-008); heartbeat `: ping` ca
 - `status = "interrupted"`: la corrida fue cortada por reinicio, heartbeat vencido o worker desaparecido (plan.md §11); `summary` es `string | null`, `narrative` es `null`, `evidence` y `claims` contienen solo lo validado hasta ese punto y pueden ser `[]`, `no_evidence_report` es `null`, y `usage` incluye `termination_reason` (`RUN_INTERRUPTED` | `WORKER_LOST` | `HEARTBEAT_EXPIRED`) con `latency_ms`/`estimated_cost_usd` nullable si no se alcanzaron a calcular.
 - `status = "failed"`: `summary` es `string | null`, `narrative` es `null`, `evidence` y `claims` contienen solo parciales validados para diagnóstico y pueden ser `[]`, `no_evidence_report` es `null`, `usage.termination_reason` contiene el código terminal (`RUN_TIMEOUT`, `LLM_PROVIDER_ERROR`, `STRUCTURED_OUTPUT_INVALID`, `SOCRATA_ERROR`, `SOCRATA_TIMEOUT`, `INTERNAL`). `STRUCTURED_OUTPUT_INVALID` (añadido 2026-07-11, hallazgo del agente evaluador) distingue una salida estructurada que sigue sin cumplir el esquema tras agotar el repair loop de una falla real del proveedor (`LLM_PROVIDER_ERROR`: red, cuota, 5xx, timeout) — no es `retryable`, porque el problema es de esquema/prompt, no de red.
 
-### 4b. Unión discriminada de hechos — PROPUESTA T-615
+### 4b. Hechos textuales aditivos — T-615 aprobada
 
-> **PROPUESTA PARA REVISIÓN — NO VIGENTE.** La forma JSON vigente continúa
-> siendo la de §4 hasta que T-615 sea aprobada, implementada y verificada.
+> **ACTIVACIÓN INCREMENTAL.** T-615A fue aprobada y T-615B…T-615F están
+> cerradas. Los campos de esta sección solo se vuelven públicos al cerrar y
+> verificar T-615G.
 
-La propuesta conserva `claims` y `partial_claims` exactamente cuantitativos,
+La extensión conserva `claims` y `partial_claims` exactamente cuantitativos,
 sin discriminador ni campos nuevos dentro de sus elementos. Añade dos
 propiedades raíz optativas:
 
@@ -167,7 +168,7 @@ Ejemplo de la variante textual:
 }
 ```
 
-**Compatibilidad propuesta:**
+**Compatibilidad:**
 
 - Un histórico sin campos textuales equivale a listas vacías. No se reescribe
   ni se infiere tipo por forma, descripción o `raw_value=1`.
@@ -177,11 +178,26 @@ Ejemplo de la variante textual:
   `claims.items` no cambió; también se prueban SSE, históricos, clientes
   estrictos y tolerantes. No encontrar consumidores no prueba compatibilidad.
 
-**Invariante de síntesis propuesto:** cada segmento factual lleva referencias
+**Invariante de síntesis aprobado:** cada segmento factual lleva referencias
 tipadas a `claim_id`/`fact_id` existentes. El LLM solo devuelve el esquema
 `grounded-synthesis-plan-v1` definido en `agent-tools.md`; un renderizador
 determinista inserta literalmente los `display_value`. No se admite prosa factual libre como
 medio de eludir el discriminador. RNF-003 sigue verificando cifras sin cambio.
+
+**Matriz terminal obligatoria para T-615G:**
+
+| Estado | Hechos textuales públicos | `summary` / `narrative` antes de T-615H | Relación con evidencia |
+|---|---|---|---|
+| `completed`, solo textual | `textual_facts` con hechos persistidos y reverificados; `partial_textual_facts=[]` | `summary="Se encontraron hechos textuales verificables."`; `narrative=null` | `evidence` contiene la evidencia de los hechos; `claims=[]`; `no_evidence_report=null` |
+| `completed`, mixto | `textual_facts` separado de `claims` | La síntesis vigente cubre solo claims cuantitativos | Cada hecho conserva su `evidence_id`; `no_evidence_report=null` |
+| `no_evidence` | Ambas listas textuales vacías | Semántica vigente de abstención | `evidence=[]` y reporte de no evidencia obligatorio |
+| `interrupted` | Solo hechos ya persistidos y reverificados en `partial_textual_facts` | `narrative=null` | Evidencia parcial validada; no se construyen hechos al serializar |
+| `failed` | Ambas listas textuales vacías | `narrative=null` | Filas internas, si existen, son solo de diagnóstico/retención |
+
+Con `DETERMINISTIC_TEXTUAL_FACTS_ENABLED=false`, las respuestas nuevas
+materializan ambas listas como vacías y no cargan hechos desde la tabla. Los
+payloads terminales históricos no se reescriben; si sus campos no existen, la
+lectura pública los materializa como `[]`.
 
 ## 5. Objeto `Evidencia`
 ```json

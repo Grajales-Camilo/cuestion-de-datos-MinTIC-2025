@@ -251,11 +251,10 @@ No se cambia el runtime predeterminado ni se retira el legado hasta cumplir simu
 
 Al superar la puerta, `AGENT_RUNTIME=deterministic` se convierte inmediatamente en el default. `legacy` permanece disponible solo como rollback de emergencia durante una versión adicional; después se eliminan el selector y el código legado en una tarea independiente.
 
-### 4.5 Matriz de pruebas propuesta para hechos textuales (T-615)
+### 4.5 Matriz de pruebas para hechos textuales (T-615)
 
-> **PROPUESTA PARA REVISIÓN — NO EJECUTABLE TODAVÍA.** Esta sección define la
-> evidencia mínima de futuros incrementos T-615B…T-615J. No crea pruebas,
-> código, migraciones ni golden en el incremento documental.
+> **EJECUCIÓN INCREMENTAL.** T-615B…T-615F están cerradas. Cada incremento
+> restante debe demostrar su subconjunto y conservar las puertas previas.
 
 #### Unitarias del dominio
 
@@ -284,6 +283,21 @@ Al superar la puerta, `AGENT_RUNTIME=deterministic` se convierte inmediatamente 
   añaden `textual_facts`/`partial_textual_facts`; parciales y errores.
 - Respuesta histórica sin campos textuales equivale a listas vacías; no hay
   inferencia por forma ni reescritura.
+
+#### Matriz terminal T-615G
+
+| Caso | Resultado obligatorio |
+|---|---|
+| `completed` solo textual | Resumen fijo, `narrative=null`, claims vacíos, hechos y evidencia vinculados, sin reporte de no evidencia. |
+| `completed` mixto | Claims cuantitativos intactos; hechos separados; ninguna frase textual nueva en narrativa antes de T-615H. |
+| `no_evidence` | Evidencia y ambas listas textuales vacías; reporte obligatorio. |
+| `interrupted` antes/después de persistir | Solo lo persistido y reverificado aparece en `partial_textual_facts`; nunca se construye al serializar. |
+| `failed` después de persistir | Ningún hecho textual público; datos internos sujetos a retención. |
+| Flag apagado | Respuestas nuevas con listas vacías y cero lecturas dinámicas de `textual_facts`; payload histórico intacto. |
+| Histórico sin campos | Lectura materializa `[]` sin backfill ni inferencia. |
+
+Las pruebas deben cubrir REST, replay SSE terminal, aislamiento por `run_id`,
+OpenAPI y snapshots que demuestren que `claims.items` no cambia.
 
 #### Síntesis fundamentada
 

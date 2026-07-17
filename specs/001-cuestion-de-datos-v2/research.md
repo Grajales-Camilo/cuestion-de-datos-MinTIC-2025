@@ -505,12 +505,13 @@ los candidatos. `columns_preview`/`columns_all` se enriquecen solo para el
 top-10. SQL+Python p95 diagnóstico bajó a 144,4 ms y las agregaciones laterales
 de 384 a 20.
 
-## 27. Propuesta T-615: hechos textuales de primera clase — `PROPUESTA PARA REVISIÓN`
+## 27. T-615: hechos textuales de primera clase — `APROBADA, IMPLEMENTACIÓN INCREMENTAL`
 
-**Estado y límite.** Esta decisión no está aprobada ni implementada. No
-autoriza código, migraciones, `golden-v2`, cambios de métricas, retiro del
-legado ni edición de `golden-v1`. La propuesta completa está en
-`proposals/textual-claims.md`.
+**Estado y límite.** La enmienda fue aprobada y T-615B…T-615F fueron
+implementadas por incrementos revisables. Cada incremento restante requiere
+autorización y validación propias. La aprobación no autoriza `golden-v2`,
+cambios de métricas, retiro del legado ni edición de `golden-v1`. El diseño
+detallado está en `proposals/textual-claims.md`.
 
 **Problema comprobado.** El modelo vigente solo prueba cifras mediante
 `QuantitativeClaim`. El constructor rechaza celdas no numéricas y la ruta de
@@ -527,11 +528,11 @@ demuestran integridad textual.
    porque debilita restricciones numéricas y mezcla semánticas.
 2. Representar texto mediante presencia o conteo igual a uno: rechazada
    porque prueba una cantidad distinta del dato afirmado.
-3. Crear `textual_facts` y exponer ambas variantes como unión discriminada:
-   propuesta por aislamiento, restricciones fuertes, compatibilidad y
-   rollback.
+3. Crear `textual_facts`, mantener la unión discriminada en el dominio interno
+   y exponer campos públicos separados: elegida por aislamiento, restricciones
+   fuertes, compatibilidad y rollback.
 
-**Decisión propuesta.**
+**Decisión aprobada.**
 
 - Concepto común `GroundedFact`, discriminado por
   `fact_kind=quantitative|textual` solo en el dominio interno;
@@ -561,16 +562,36 @@ demuestran integridad textual.
 - RF-602 añade métricas textuales separadas. RNF-003 no se modifica; se
   propone RF-210/RNF-013 para cobertura y reproducibilidad textual.
 
+**Semántica terminal aprobada para T-615G antes de T-615H.**
+
+- Una corrida termina `completed` si persiste y verifica al menos un claim
+  cuantitativo o un hecho textual entregable.
+- En una corrida exclusivamente textual, `summary` es exactamente
+  `Se encontraron hechos textuales verificables.`, `narrative=null`,
+  `claims=[]`, `textual_facts` contiene los hechos verificados y
+  `no_evidence_report=null`. T-615G no narra esos hechos; T-615H habilitará
+  síntesis pública fundamentada.
+- Una corrida mixta conserva la síntesis cuantitativa vigente y expone los
+  hechos textuales por separado, sin incorporarlos aún a la narrativa.
+- `no_evidence` implica `evidence=[]`, `textual_facts=[]`,
+  `partial_textual_facts=[]` y el reporte obligatorio vigente.
+- `interrupted` solo puede exponer hechos ya persistidos y reverificados en
+  `partial_textual_facts`; `failed` no expone hechos textuales, aunque sus filas
+  internas puedan conservarse para auditoría y retención.
+- Con el flag apagado no se emiten hechos textuales nuevos ni se reconstruyen
+  desde la tabla. Los payloads terminales históricos no se reescriben; campos
+  ausentes se materializan como listas vacías al leer.
+
 **Atribución de fallos.** T-615 no absorbe problemas de otras capas:
 `pilot-012` falla después de recuperación por presupuesto/selección;
 `pilot-021` ejecutó `count(*)` en vez de `cantidad`; `pilot-022` pasó el smoke
 final; `pilot-038` es ambiguo porque la hora esperada no está en la pregunta.
 Los desacuerdos restantes se mantienen `undetermined` hasta T-616.
 
-**Dependencias y gate.** T-615A…T-615J se detallan en `tasks.md`. La primera
-implementación depende de aprobación explícita de esta enmienda. T-616 y
-T-617 continúan bloqueadas. Aprobar el documento no autoriza automáticamente
-una migración o cambio de runtime.
+**Dependencias y gate.** T-615A…T-615J se detallan en `tasks.md`. La matriz
+terminal anterior desbloquea únicamente la implementación T-615G. T-615H
+depende de su cierre verificado; T-616 y T-617 continúan bloqueadas. Esta
+decisión no autoriza cambios de golden, métricas, runtime por defecto ni legado.
 
 ---
 
