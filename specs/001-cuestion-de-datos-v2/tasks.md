@@ -267,10 +267,10 @@ bloqueadas.
 
 - [ ] **T-615 Diseñar e implementar hechos textuales de primera clase
   (RF-210/RNF-013 propuestos; RF-208/RNF-003 preservados).**
-  - **Estado:** T-615A aprobada el 2026-07-17 sobre el HEAD normativo
-    `f7725eeced8afc93ccd7fcc250e248a05f2db616`. Se autoriza exclusivamente
-    T-615B; T-615C y posteriores continúan bloqueadas. Diseño:
-    `research.md` §27 y `proposals/textual-claims.md`.
+  - **Estado:** T-615A aprobada y T-615B cerrada el 2026-07-17 sobre el HEAD
+    normativo `f7725eeced8afc93ccd7fcc250e248a05f2db616`. T-615C y posteriores
+    continúan bloqueadas. Diseño: `research.md` §27 y
+    `proposals/textual-claims.md`.
   - **Regla global:** no representar texto mediante `raw_value=1`, conteos
     ficticios ni claims cuantitativos; no editar `golden-v1`; no iniciar
     T-616/T-617; no retirar el legado; cada incremento requiere autorización
@@ -301,7 +301,7 @@ bloqueadas.
       fingerprints no identificables. Se autoriza exclusivamente T-615B;
       T-615C y posteriores continúan bloqueadas.
 
-  - [ ] **T-615B Cerrar modelos de dominio y contrato tipado.**
+  - [x] **T-615B Cerrar modelos de dominio y contrato tipado.**
     - **Requisitos:** RF-210; unión `GroundedFact`; enums cerrados;
       `QuantitativeClaim` compatible.
     - **Archivos previstos:** `backend/app/schemas.py`, nuevo módulo de
@@ -315,6 +315,9 @@ bloqueadas.
     - **Rollback:** retirar solo modelos/enums nuevos.
     - **Gate:** contrato unitario verde y revisión de compatibilidad antes de
       T-615C.
+    - **Cierre:** modelos tipados, unión interna y contrato cuantitativo
+      compatible verificados el 2026-07-17; OpenAPI productivo sin cambios.
+      T-615C permanece bloqueada y requiere autorización específica.
 
   - [ ] **T-615C Añadir persistencia aislada y reversible.**
     - **Requisitos:** RF-703/RF-803/RF-804, modelo `textual_facts` propuesto.

@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.quality.grounded_facts import QuantitativeClaimResponse as QuantitativeClaimResponse
+
 
 class CatalogIndexCheck(BaseModel):
     status: Literal["ok", "degraded"]
