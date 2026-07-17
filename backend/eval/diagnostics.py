@@ -197,7 +197,11 @@ def build_stage_diagnostics(
         elif evidence and not assessment.expected_dataset_hit:
             stage, code = EvalStage.EVIDENCE_QUALITY, FailureCode.EVIDENCE_NOT_ELIGIBLE
         elif assessment.facts_verified is False and assessment.expected_dataset_hit:
-            stage, code, owner = EvalStage.ACCEPTANCE, FailureCode.EXPECTED_FACT_NOT_FOUND, "golden"
+            stage, code, owner = (
+                EvalStage.ACCEPTANCE,
+                FailureCode.EXPECTED_FACT_NOT_FOUND,
+                "undetermined",
+            )
         elif not final.get("claims") and evidence:
             stage, code = EvalStage.CLAIMS, FailureCode.CLAIMS_REJECTED
         elif final.get("status") != "completed" and final.get("claims"):

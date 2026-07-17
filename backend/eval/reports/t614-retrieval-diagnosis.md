@@ -30,9 +30,9 @@ positivos sólidos ni en los dos negativos.
 | pilot-005-empleo-publico | pasa | pasa | 1 / 1 | sin regresión |
 | pilot-013-app-dnp | pasa | pasa | 1 / 1 | sin regresión |
 | pilot-012-control-fiscal | falla | falla | fuera de top 10 / 1 | recuperación corregida; ahora falla después, por presupuesto de candidatos |
-| pilot-021-sensibilizacion-valle | falla | falla | 1 / 1 | fallo posterior a recuperación; planificación/proveedor en la corrida final |
+| pilot-021-sensibilizacion-valle | falla | falla | 1 / 1 | fallo del agente: ejecutó `count(*)=1` en vez de recuperar `cantidad=65` |
 | pilot-022-red-vial | falla | pasa | 1 / 1 | caso recuperado y resuelto en la corrida final |
-| pilot-038-precipitacion | falla | falla | 1 / 1 | fallo posterior: `expected_fact_not_found`, propietario golden |
+| pilot-038-precipitacion | falla | falla | 1 / 1 | golden ambiguo: exige 13:50, restricción ausente de la pregunta |
 | pilot-045-negativo-dato-personal | pasa | pasa | no aplica | abstención segura, cero evidencia/claims |
 | pilot-046-negativo-tiempo-real | pasa | pasa | no aplica | abstención segura, cero evidencia/claims |
 
@@ -70,12 +70,21 @@ salida final sigue limitada a 10.
 - `pilot-012`: el esperado ya se recupera e intenta primero, pero el agente
   agota el presupuesto de candidatos tras fallos de perfil/plan; no es ya un
   fallo de recall.
-- `pilot-021`: el esperado se recupera en rango 1; la corrida posterior terminó
-  antes de evidencia por un fallo de planificación asociado a la ejecución
-  real del proveedor.
-- `pilot-038`: produce evidencia y claims, pero no satisface los
-  `expected_facts`; el clasificador lo asigna al contrato golden. No se cambió
-  `golden-v1` ni `eval/metrics.py`.
+- `pilot-021`: el esperado se recupera en rango 1, pero el plan ejecutó
+  `SELECT count(*) ... = 1`; el hecho reproducible es la columna
+  `cantidad = 65`. Es un fallo del agente, no del golden.
+- `pilot-038`: la consulta devolvió 100 observaciones válidas del día. El
+  golden selecciona estación `0054050010` a las `13:50`, pero esa hora no
+  aparece en la pregunta. La respuesta no es única; queda como ambigüedad del
+  golden para T-616, sin modificar `golden-v1`.
+
+## Puerta RNF-010 pendiente
+
+La prueba normativa aislada sobre 100 consultas reales obtuvo cobertura 100 %,
+p50 1302,8 ms, p95 1828,8 ms y p99 2061,3 ms. El límite es p95 ≤ 1000 ms, por
+lo que T-614 continúa abierta. La prueba usa `/v2/catalog/search?k=10`; no
+atribuye el incumplimiento al cambio `per_query=25`, pero impide afirmar que
+RNF-010 está conservada. No se relajó el umbral.
 
 T-615 no fue iniciada. No se diseñaron claims textuales ni se creó
-`golden-v2.yaml`.
+`golden-v2.yaml`. T-614 sigue abierta mientras RNF-010 permanezca en rojo.

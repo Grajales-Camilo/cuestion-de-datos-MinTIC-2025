@@ -69,6 +69,48 @@ def test_positive_fails_when_expected_facts_do_not_match_tolerance() -> None:
     assert result.passed is False
 
 
+def test_expected_fact_mismatch_does_not_blame_golden_without_audit() -> None:
+    case = _positive_case(
+        expected_facts=(
+            {
+                "description": "x",
+                "expected_value": {"municipio": "Zona Bananera", "tasa": "2.44"},
+                "tolerance": 0.001,
+            },
+        )
+    )
+    final = {
+        "status": "completed",
+        "evidence": [
+            {
+                "dataset_id": "abcd-1234",
+                "rows": [{"municipio": "Zona Bananera", "tasa": "9.99"}],
+            }
+        ],
+        "claims": [{"display_value": "9.99"}],
+        "usage": {},
+    }
+
+    diagnostics = build_stage_diagnostics(
+        case,
+        final,
+        assess_case(case, final),
+        [
+            StageObservation(
+                "synthesize",
+                {
+                    "retrieved_dataset_ids": ["abcd-1234"],
+                    "attempted_dataset_ids": ["abcd-1234"],
+                },
+                {},
+            )
+        ],
+    )
+
+    assert diagnostics["failure_code"] == "expected_fact_not_found"
+    assert diagnostics["failure_owner"] == "undetermined"
+
+
 _RABIES_EVENT = "AGRESIONES POR ANIMALES POTENCIALMENTE TRANSMISORES DE RABIA"
 
 
