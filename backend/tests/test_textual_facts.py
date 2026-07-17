@@ -70,8 +70,10 @@ def assert_rejected(code: str, callback) -> None:
 
 
 def test_text_es_v1_normalizes_unicode_spaces_and_line_endings_without_losing_graphy() -> None:
-    normalized = normalize_text_es_v1(" \u00a0MEDELLI\u0301N\r\nD.C.\t¡Sí, señor!  ")
+    raw = " \u00a0MEDELLI\u0301N\r\nD.C.\t¡Sí, señor!  "
+    normalized = normalize_text_es_v1(raw)
 
+    assert normalized.raw == raw
     assert normalized.display == "MEDELLÍN D.C. ¡Sí, señor!"
     assert normalized.comparison == "medellín d.c. ¡sí, señor!"
     assert "ñ" in normalized.comparison
@@ -100,7 +102,7 @@ def test_direct_text_preserves_display_and_builds_no_numeric_surrogate() -> None
     )
 
     assert fact.display_value == "Medellín"
-    assert fact.raw_values == ("Medellín",)
+    assert fact.raw_values == ("  Medellín  ",)
     assert fact.normalized_values == ("medellín",)
     assert not hasattr(fact, "fact")
     assert not hasattr(fact, "raw_value")
@@ -207,7 +209,7 @@ def test_value_presence_matches_by_casefold_and_ignores_nulls() -> None:
     assert fact.source_row_indexes == (0, 1, 2)
     assert fact.display_value == "Rural"
     assert fact.normalized_values == ("rural",)
-    assert fact.operation_params.target_raw == "rural"
+    assert fact.operation_params.target_raw == " rural "
 
 
 def test_value_presence_rejects_absence_bad_target_and_empty_cell() -> None:
@@ -504,21 +506,54 @@ def test_rfc8785_rejects_non_finite_numbers(value: float) -> None:
     assert_rejected("textual_jcs_invalid", lambda: canonicalize_jcs({"value": value}))
 
 
-def test_hash_canonicalizes_non_semantic_text_variants() -> None:
+def test_hash_changes_when_only_source_graphy_changes() -> None:
     fact_spec = spec(TextualFactOperation.DIRECT_TEXT)
     first = evaluate_textual_operation(
-        evidence=evidence(({"municipio": "Medelli\u0301n"},)),
+        evidence=evidence(({"municipio": "  Medellín  "},)),
+        spec=fact_spec,
+    )
+    second = evaluate_textual_operation(
+        evidence=evidence(({"municipio": "Medellín"},)),
+        spec=fact_spec,
+    )
+
+    assert first.raw_values == ("  Medellín  ",)
+    assert second.raw_values == ("Medellín",)
+    assert first.display_value == second.display_value == "Medellín"
+    assert first.normalized_values == second.normalized_values == ("medellín",)
+    assert first.source_hash != second.source_hash
+
+
+def test_raw_preserves_nfd_while_display_and_comparison_use_nfc() -> None:
+    raw_nfd = "Medelli\u0301n"
+    fact = build(
+        ({"municipio": raw_nfd},),
+        spec(TextualFactOperation.DIRECT_TEXT),
+    )
+
+    assert fact.raw_values == (raw_nfd,)
+    assert fact.display_value == "Medellín"
+    assert fact.normalized_values == ("medellín",)
+
+
+def test_hash_uses_renderer_canonical_soql_verbatim() -> None:
+    fact_spec = spec(TextualFactOperation.DIRECT_TEXT)
+    first = evaluate_textual_operation(
+        evidence=evidence(
+            ({"municipio": "Medellín"},),
+            canonical_soql="SELECT municipio LIMIT 1000 OFFSET 0",
+        ),
         spec=fact_spec,
     )
     second = evaluate_textual_operation(
         evidence=evidence(
             ({"municipio": "Medellín"},),
-            canonical_soql="SELECT  municipio\r\nLIMIT  1000  OFFSET 0",
+            canonical_soql="SELECT  municipio LIMIT 1000 OFFSET 0",
         ),
         spec=fact_spec,
     )
 
-    assert first.source_hash == second.source_hash
+    assert first.source_hash != second.source_hash
 
 
 def test_hash_changes_for_each_semantic_material_change() -> None:

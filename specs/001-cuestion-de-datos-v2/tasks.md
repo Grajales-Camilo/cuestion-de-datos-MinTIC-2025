@@ -355,7 +355,10 @@ bloqueadas.
       2026-07-17. JCS usa `rfc8785==0.1.4` y pasa vectores oficiales de
       serialización/primitivos y orden UTF-16. Suite sin PostgreSQL, sin
       persistencia ni integración; T-615E permanece bloqueada y requiere
-      autorización específica.
+      autorización específica. Corrección contractual posterior: `raw_values`
+      conserva la cadena fuente exacta, `display_value` aplica NFC/espacios,
+      `normalized_values` añade `casefold`, y el hash recibe `canonical_soql`
+      literalmente desde el renderer.
 
   - [ ] **T-615E Implementar constructor/verificador textual.**
     - **Requisitos:** RF-401/RF-404/RF-210; solo evidencia elegible; plantillas

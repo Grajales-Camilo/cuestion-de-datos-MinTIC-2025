@@ -47,6 +47,7 @@ class TextualOperationError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class NormalizedText:
+    raw: str
     display: str
     comparison: str
 
@@ -92,7 +93,7 @@ class TextualOperationResult:
 
 
 def normalize_text_es_v1(value: str | None) -> NormalizedText:
-    """Aplica NFC, espacios canónicos y ``casefold`` solo para comparación."""
+    """Conserva fuente y deriva presentación y comparación por separado."""
 
     if value is None:
         raise TextualOperationError("textual_null_value", "el valor textual es null")
@@ -117,7 +118,7 @@ def normalize_text_es_v1(value: str | None) -> NormalizedText:
             "el valor textual queda vacío después de normalizar",
         )
     comparison = unicodedata.normalize("NFC", display.casefold())
-    return NormalizedText(display=display, comparison=comparison)
+    return NormalizedText(raw=value, display=display, comparison=comparison)
 
 
 def canonicalize_jcs(value: JsonValue) -> bytes:
@@ -312,13 +313,21 @@ def _normalized_non_null_values(
 
 def _representatives(
     values: tuple[NormalizedText, ...],
-) -> Mapping[str, str]:
-    representatives: dict[str, str] = {}
+) -> Mapping[str, NormalizedText]:
+    representatives: dict[str, NormalizedText] = {}
     for value in values:
         current = representatives.get(value.comparison)
-        if current is None or value.display.encode("utf-8") < current.encode("utf-8"):
-            representatives[value.comparison] = value.display
+        if current is None or _raw_representative_key(value.raw) < _raw_representative_key(
+            current.raw
+        ):
+            representatives[value.comparison] = value
     return MappingProxyType(representatives)
+
+
+def _raw_representative_key(value: str) -> tuple[bytes, bytes]:
+    """Ordena por bruto tras NFC y desempata por los bytes fuente exactos."""
+
+    return (unicodedata.normalize("NFC", value).encode("utf-8"), value.encode("utf-8"))
 
 
 def _single_result(
@@ -326,7 +335,7 @@ def _single_result(
     params: TextualFactOperationParams,
 ) -> _EvaluatedValues:
     return _EvaluatedValues(
-        raw_values=(value.display,),
+        raw_values=(value.raw,),
         normalized_values=(value.comparison,),
         display_value=value.display,
         operation_params=params,
@@ -375,13 +384,10 @@ def _value_presence(
             "el valor objetivo no está presente en las filas referenciadas",
         )
     canonical_params = ValuePresenceParams(
-        target_raw=target.display,
+        target_raw=target.raw,
         target_normalized=target.comparison,
     )
-    return _single_result(
-        NormalizedText(display=representative, comparison=target.comparison),
-        canonical_params,
-    )
+    return _single_result(representative, canonical_params)
 
 
 def _category_selection(
@@ -405,11 +411,8 @@ def _category_selection(
                 "textual_ambiguous_category",
                 "unique_normalized_value requiere una única categoría distinta",
             )
-        normalized, display = next(iter(representatives.items()))
-        return _single_result(
-            NormalizedText(display=display, comparison=normalized),
-            params,
-        )
+        _normalized, representative = next(iter(representatives.items()))
+        return _single_result(representative, params)
 
     if len(indexes) != 1:
         raise TextualOperationError(
@@ -498,14 +501,15 @@ def _canonical_text_set(
         )
     ordered = sorted(
         representatives.items(),
-        key=lambda item: (item[0], item[1].encode("utf-8")),
+        key=lambda item: (item[0], _raw_representative_key(item[1].raw)),
     )
-    normalized_values = tuple(normalized for normalized, _display in ordered)
-    raw_values = tuple(display for _normalized, display in ordered)
+    normalized_values = tuple(normalized for normalized, _representative in ordered)
+    raw_values = tuple(representative.raw for _normalized, representative in ordered)
+    display_values = tuple(representative.display for _normalized, representative in ordered)
     return _EvaluatedValues(
         raw_values=raw_values,
         normalized_values=normalized_values,
-        display_value="; ".join(raw_values),
+        display_value="; ".join(display_values),
         operation_params=canonical_params,
     )
 
@@ -518,8 +522,6 @@ def _canonical_rows_subset(
 
 
 def _canonical_json_value(value: JsonValue) -> JsonValue:
-    if isinstance(value, str):
-        return normalize_text_es_v1(value).display
     if isinstance(value, float) and not math.isfinite(value):
         raise TextualOperationError(
             "textual_jcs_invalid",
@@ -528,7 +530,7 @@ def _canonical_json_value(value: JsonValue) -> JsonValue:
     if isinstance(value, list):
         return [_canonical_json_value(item) for item in value]
     if isinstance(value, dict):
-        return {str(key): _canonical_json_value(item) for key, item in value.items()}
+        return {key: _canonical_json_value(item) for key, item in value.items()}
     return value
 
 
@@ -546,7 +548,7 @@ def _compute_source_hash(
         "operation": operation.value,
         "normalization_profile": TextNormalizationProfile.TEXT_ES_V1.value,
         "dataset_id": evidence.dataset_id,
-        "canonical_soql": normalize_text_es_v1(evidence.canonical_soql).display,
+        "canonical_soql": evidence.canonical_soql,
         "source_row_indexes": list(indexes),
         "rows_subset_canonical": rows_subset,
         "columns_used": list(columns),
