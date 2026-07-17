@@ -849,11 +849,13 @@ async def test_t615g_mixed_response_and_textual_persistence_failure_are_isolated
     )
     final_answer = result["final_answer"]
     if fail_textual_persistence:
-        assert final_answer["status"] == "no_evidence"
-        assert final_answer["narrative"] is None
-        assert final_answer["claims"] == []
+        assert final_answer["status"] == "completed"
+        assert final_answer["narrative"] == "El monto observado fue 20."
+        assert len(final_answer["claims"]) == 2
         assert final_answer["textual_facts"] == []
-        assert final_answer["evidence"] == []
+        assert final_answer["partial_textual_facts"] == []
+        assert len(final_answer["evidence"]) == 1
+        assert final_answer["no_evidence_report"] is None
         assert await _count_evidence(engine, run_id) == 1
         assert await _count_claims(engine, run_id) == 2
         assert await _load_textual_facts(engine, run_id) == []

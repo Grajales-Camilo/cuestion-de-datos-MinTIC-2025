@@ -469,9 +469,9 @@ async def execute_deterministic_agent_run_async(
             TextualFactResponse.model_validate(fact.model_dump()).model_dump(mode="json")
             for fact in persisted_textual_facts
         ]
-        public_completed = (
-            quantitative_completed or bool(textual_facts)
-        ) and textual_persistence_complete
+        public_completed = quantitative_completed or (
+            bool(textual_facts) and textual_persistence_complete
+        )
         if public_completed:
             assert persisted is not None
             evidence = [persisted.evidence]

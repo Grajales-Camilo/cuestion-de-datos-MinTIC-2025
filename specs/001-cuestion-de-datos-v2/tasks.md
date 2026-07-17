@@ -440,6 +440,10 @@ permanecen bloqueadas.
       `4d607fd6e59d908c8f96e633a1d092f55fc4379394aec8100ad14ba21db44dae`
       a `d1627ed9394bb729ec98aa4d9d818db054efdd1ff4ce78654c37789ed651d89b`
       únicamente en la superficie textual aprobada. T-615H no iniciada.
+    - **Corrección T-615G-R (2026-07-17):** un fallo exclusivo del lote
+      textual ya no degrada un resultado cuantitativo válido: conserva
+      `completed`, claims, evidencia y narrativa cuantitativa, y entrega ambas
+      listas textuales vacías.
 
   - [ ] **T-615H Restringir síntesis a hechos persistidos.**
     - **Requisitos:** RF-208/RNF-003 y RF-210/RNF-013; IDs existentes;
