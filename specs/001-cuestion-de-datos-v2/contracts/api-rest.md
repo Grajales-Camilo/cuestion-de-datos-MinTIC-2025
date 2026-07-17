@@ -131,6 +131,65 @@ Reglas: primer evento ≤ 2 s tras la conexión (RNF-008); heartbeat `: ping` ca
 - `status = "interrupted"`: la corrida fue cortada por reinicio, heartbeat vencido o worker desaparecido (plan.md §11); `summary` es `string | null`, `narrative` es `null`, `evidence` y `claims` contienen solo lo validado hasta ese punto y pueden ser `[]`, `no_evidence_report` es `null`, y `usage` incluye `termination_reason` (`RUN_INTERRUPTED` | `WORKER_LOST` | `HEARTBEAT_EXPIRED`) con `latency_ms`/`estimated_cost_usd` nullable si no se alcanzaron a calcular.
 - `status = "failed"`: `summary` es `string | null`, `narrative` es `null`, `evidence` y `claims` contienen solo parciales validados para diagnóstico y pueden ser `[]`, `no_evidence_report` es `null`, `usage.termination_reason` contiene el código terminal (`RUN_TIMEOUT`, `LLM_PROVIDER_ERROR`, `STRUCTURED_OUTPUT_INVALID`, `SOCRATA_ERROR`, `SOCRATA_TIMEOUT`, `INTERNAL`). `STRUCTURED_OUTPUT_INVALID` (añadido 2026-07-11, hallazgo del agente evaluador) distingue una salida estructurada que sigue sin cumplir el esquema tras agotar el repair loop de una falla real del proveedor (`LLM_PROVIDER_ERROR`: red, cuota, 5xx, timeout) — no es `retryable`, porque el problema es de esquema/prompt, no de red.
 
+### 4b. Unión discriminada de hechos — PROPUESTA T-615
+
+> **PROPUESTA PARA REVISIÓN — NO VIGENTE.** La forma JSON vigente continúa
+> siendo la de §4 hasta que T-615 sea aprobada, implementada y verificada.
+
+La propuesta conserva una sola propiedad `claims`, pero la tipa como:
+
+```text
+list[QuantitativeClaimResponse | TextualFactResponse]
+discriminator = "claim_kind"
+```
+
+La variante cuantitativa añade el campo
+`"claim_kind": "quantitative"` y conserva sin renombrar `claim_id`, `claim`,
+`claim_type`, `formula`, `raw_value`, `display_value`, `unit`, `rounding`,
+`source_hash` y la procedencia vigente.
+
+Ejemplo de la variante textual:
+
+```json
+{
+  "fact_id": "8d2e...uuid",
+  "claim_kind": "textual",
+  "fact": "El municipio observado es Medellín.",
+  "operation": "direct_text",
+  "evidence_id": "9a2b...",
+  "dataset_id": "abcd-1234",
+  "source_row_indexes": [0],
+  "columns": ["municipio"],
+  "raw_values": ["Medellín"],
+  "normalized_values": ["medellín"],
+  "display_value": "Medellín",
+  "normalization_profile": "text-es-v1",
+  "operation_params": {},
+  "algorithm_version": "textual-fact-v1",
+  "source_hash": "sha256:cd34..."
+}
+```
+
+**Compatibilidad propuesta:**
+
+- `claims` y `partial_claims` usan la misma unión.
+- Una respuesta histórica sin `claim_kind` solo se adapta a
+  `quantitative` si contiene todos los campos cuantitativos obligatorios y
+  `claim_type=direct|derived`. No se reescribe el JSON persistido.
+- Nunca se infiere `textual` desde una descripción o desde `raw_value=1`.
+- Un consumidor debe discriminar por `claim_kind`; no debe asumir que todos
+  los elementos tienen fórmula, unidad o valor numérico.
+- Antes de emitir la primera variante textual, las pruebas deben cubrir
+  serialización mixta, SSE, lectura histórica y clientes cuantitativos
+  tolerantes. La auditoría actual no encontró un consumidor de `claims`
+  implementado en el frontend, pero esa ausencia no elimina la obligación.
+
+**Invariante de síntesis propuesto:** cada segmento factual lleva uno o más
+`claim_id`/`fact_id` existentes. El LLM solo devuelve el orden de IDs y un
+conector de enum cerrado; un renderizador determinista inserta los
+`display_value` y plantillas aceptados. No se admite prosa factual libre como
+medio de eludir el discriminador. RNF-003 sigue verificando cifras sin cambio.
+
 ## 5. Objeto `Evidencia`
 ```json
 {

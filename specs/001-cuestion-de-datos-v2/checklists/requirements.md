@@ -144,4 +144,37 @@ Get-ChildItem . -Recurse -Filter *.md |
 
 ## Pendientes (sin cambios)
 
-- [ ] Decisión de embeddings y dimensión (research.md §1) — se resuelve en T-205; bloquea T-104B/T-203.
+- [x] Decisión de embeddings y dimensión (research.md §1) — resuelta por
+  T-205 con `gemini-embedding-2`, 768 dimensiones; T-104B/T-203 ya no están
+  bloqueadas por esta decisión.
+
+# Ronda 7 — Enmienda propuesta T-615 (2026-07-16)
+
+> **PROPUESTA PARA REVISIÓN — NO IMPLEMENTADA.** Marcar esta ronda como
+> aprobada requiere decisión humana explícita; el commit documental no la
+> aprueba automáticamente.
+
+- [ ] **R7-1 Concepto y separación.** Aprobar
+  `GroundedFact = QuantitativeClaim | TextualFact` y tabla separada
+  `textual_facts`; RF-208/RNF-003 permanecen intactos.
+- [ ] **R7-2 Operaciones cerradas.** Aprobar
+  `direct_text`, `value_presence`, `category_selection`, `argmax_label`,
+  `argmin_label` y `ordered_text_set`; prohibir texto mediante `count=1`.
+- [ ] **R7-3 Normalización.** Aprobar `text-es-v1`: NFC, espacios/saltos
+  canónicos, `casefold` solo para comparación y preservación de
+  tildes/`ñ`/puntuación/grafía mostrada.
+- [ ] **R7-4 Ambigüedad.** Aprobar `tie_policy=reject` para extremos y
+  prohibición de seleccionar por orden incidental.
+- [ ] **R7-5 Procedencia y hash.** Aprobar material canónico, exclusión de
+  UUIDs/timestamps y dataset resuelto obligatoriamente desde la evidencia.
+- [ ] **R7-6 API.** Aprobar lista `claims` única con discriminador
+  `claim_kind`, campos cuantitativos conservados y adaptador histórico
+  estrictamente cuantitativo.
+- [ ] **R7-7 Síntesis.** Aprobar selección de IDs + conectores cerrados +
+  renderizado factual determinista; no admitir prosa factual libre.
+- [ ] **R7-8 Métricas.** Aprobar métricas textuales separadas y puerta total
+  por conjunción, sin cambiar umbrales ni RNF-003.
+- [ ] **R7-9 Golden.** Confirmar que T-615 no toca `golden-v1` ni crea
+  `golden-v2`; `acceptable_facts` discriminados solo se trabajan en T-616.
+- [ ] **R7-10 Entregas.** Aprobar secuencia T-615A…T-615J y autorización
+  separada por incremento, migración y cierre.

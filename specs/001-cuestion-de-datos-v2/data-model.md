@@ -293,6 +293,61 @@ Afirmaciones cuantitativas trazables (RF-208). Toda cifra presentada al usuario 
 
 **Reglas:** `raw_value` DEBE ser reproducible re-aplicando `formula` sobre las filas referenciadas (verificado en pruebas.md §4.2); `display_value` DEBE derivarse de `raw_value` + `rounding` + `unit`; el verificador de groundedness comprueba que ninguna cifra del texto final carece de claim. La canonicalización de filas debe ser explícita: usa `source_row_indexes` ordenados de forma ascendente sobre el arreglo de `evidence_results.rows`, que a su vez proviene de una consulta SoQL canonicalizada con orden determinista cuando el orden afecte el claim. Cambiar contenido de fila, fórmula, columnas, `raw_value`, unidad o redondeo cambia el hash; cambiar únicamente UUIDs de corrida/evidencia/claim no lo cambia.
 
+### `textual_facts` — PROPUESTA T-615
+
+> **PROPUESTA PARA REVISIÓN — SIN TABLA NI MIGRACIÓN IMPLEMENTADAS.** No
+> cambia `quantitative_claims`. La justificación y contrato completo están en
+> `research.md` §27 y `proposals/textual-claims.md`.
+
+Hechos textuales trazables propuestos para RF-210/RNF-013. Todo texto factual
+se construye desde evidencia elegible; una etiqueta, categoría o nombre no se
+representa mediante una cantidad ficticia.
+
+| Campo | Tipo | Reglas propuestas |
+|---|---|---|
+| `id` | uuid PK | Es el `fact_id` del contrato REST. |
+| `run_id` | uuid FK → agent_runs CASCADE | Permite borrado integral por corrida. |
+| `evidence_id` | uuid FK → evidence_results CASCADE | NOT NULL. Determina de forma no ambigua el `dataset_id`; no se duplica este último en la tabla. |
+| `fact_text` | text NOT NULL | Plantilla determinista por operación; no texto libre del LLM. |
+| `operation` | text NOT NULL | CHECK IN (`direct_text`, `value_presence`, `category_selection`, `argmax_label`, `argmin_label`, `ordered_text_set`). |
+| `source_row_indexes` | int[] NOT NULL | No vacío; índices cero-basados válidos, canonicalizados ascendentes; no admite `-1`. |
+| `columns_used` | text[] NOT NULL | No vacío; todas existen en las filas usadas. |
+| `raw_values` | text[] NOT NULL | No vacío; grafía fuente conservada. |
+| `normalized_values` | text[] NOT NULL | No vacío; resultado de `normalization_profile`. |
+| `display_value` | text NOT NULL | No vacío; texto exacto insertable en la respuesta. |
+| `normalization_profile` | text NOT NULL | Inicialmente `text-es-v1`. |
+| `operation_params` | jsonb NOT NULL | Parámetros cerrados y validados por operación, incluida selección/desempate. |
+| `algorithm_version` | text NOT NULL | Inicialmente `textual-fact-v1`. |
+| `source_hash` | text NOT NULL | `sha256:<64 hex>` sobre contenido canónico. |
+
+**Restricciones propuestas.**
+
+- `text-es-v1` aplica NFC, canonicaliza saltos/espacios, recorta y usa
+  `casefold` solo para comparación. Conserva tildes, `ñ`, puntuación y caja
+  mostrada.
+- `direct_text` exige una fila/columna. `argmax_label` y `argmin_label`
+  exigen columnas de etiqueta/métrica y `tie_policy=reject`.
+  `ordered_text_set` deduplica por normalizado y ordena canónicamente.
+- El hash incluye versión, operación, perfil, `dataset_id` resuelto desde la
+  evidencia, SoQL canónica, filas/subconjunto fuente, columnas, valores,
+  presentación y parámetros; excluye UUIDs de instancia y timestamps.
+- Índices propuestos: `run_id`, `evidence_id` y `source_hash`. El hash no es
+  único entre corridas.
+- Las validaciones que dependen de contenido de arrays/filas se realizan en
+  modelos tipados y constructor determinista; la base impone enum, no vacíos,
+  FK, cascades y formato.
+
+**Retención propuesta.** RF-803 y RF-804 borran `textual_facts` por la misma
+cascade que el resto de contenido operativo. Antes del borrado, evaluación
+solo puede copiar el `source_hash` a una lista de fingerprints; quedan
+prohibidos `fact_text`, `raw_values`, `normalized_values`, `display_value` y
+filas en `eval_case_results`.
+
+**Golden-v2 futuro.** T-616 puede proponer `acceptable_facts` con discriminador
+`fact_kind=quantitative|textual`. Para texto debe declarar operación,
+columnas, valor normalizado, regla de selección y alternativas aceptables.
+Esta estructura no se materializa ni modifica `golden-v1` en T-615.
+
 ## 5. Entidades de evaluación (OE3)
 
 ### `eval_suites`

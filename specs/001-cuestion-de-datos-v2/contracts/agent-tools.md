@@ -226,6 +226,91 @@ Materializa las **afirmaciones cuantitativas** (claims, RF-208) a partir de evid
 - Se considera “cifra” cualquier token numérico visible en español o formato internacional: enteros, decimales con coma o punto, porcentajes, monedas, magnitudes con separador de miles, años usados como valor analítico, rangos numéricos y tasas. No se consideran cifras: IDs técnicos (`dataset_id`, UUID), fechas completas en citas, códigos DIVIPOLA y números de sección si no expresan un dato sustantivo.
 - **El sintetizador SOLO puede citar cifras a través de `display_value` de claims aceptados.** Una cifra en la narrativa sin `claim_id` asociado es un defecto bloqueante (verificado por el chequeo de groundedness, pruebas.md §4.2).
 
+## T7b — `construir_hechos_textuales` — PROPUESTA T-615
+
+> **PROPUESTA PARA REVISIÓN — NO IMPLEMENTADA NI VIGENTE.** No reemplaza T7
+> ni autoriza código o migración. El contrato completo se fundamenta en
+> `research.md` §27 y `proposals/textual-claims.md`.
+
+Materializaría `TextualFact` a partir de evidencia elegible. Es un nodo
+determinista separado: el LLM puede proponer una especificación tipada, pero
+no normaliza, selecciona, desempata, calcula el hash ni redacta el valor
+factual.
+
+**Entrada propuesta**
+
+```json
+{
+  "evidence_id": "9a2b...",
+  "textual_fact_specs": [
+    {
+      "operation": "argmax_label",
+      "source_row_indexes": [0, 1, 2],
+      "columns": ["departamento", "total"],
+      "operation_params": {
+        "label_column": "departamento",
+        "metric_column": "total",
+        "tie_policy": "reject"
+      }
+    }
+  ]
+}
+```
+
+**Salida propuesta**
+
+```json
+{
+  "ok": true,
+  "facts": [
+    {
+      "fact_id": "8d2e...",
+      "claim_kind": "textual",
+      "fact": "El departamento con el valor máximo es Valle del Cauca.",
+      "operation": "argmax_label",
+      "evidence_id": "9a2b...",
+      "dataset_id": "m8fd-ahd9",
+      "source_row_indexes": [0, 1, 2],
+      "columns": ["departamento", "total"],
+      "raw_values": ["VALLE DEL CAUCA"],
+      "normalized_values": ["valle del cauca"],
+      "display_value": "VALLE DEL CAUCA",
+      "normalization_profile": "text-es-v1",
+      "operation_params": {
+        "label_column": "departamento",
+        "metric_column": "total",
+        "tie_policy": "reject"
+      },
+      "algorithm_version": "textual-fact-v1",
+      "source_hash": "sha256:cd34..."
+    }
+  ],
+  "rejected": []
+}
+```
+
+**Reglas propuestas:**
+
+- Enum cerrado:
+  `direct_text|value_presence|category_selection|argmax_label|argmin_label|ordered_text_set`.
+- `text-es-v1`: Unicode NFC, saltos/espacios canonicalizados, `casefold` solo
+  para igualdad; tildes, `ñ`, caja de presentación y puntuación se conservan.
+- `null`, vacío, fila fuera de rango, columna ausente, operación desconocida,
+  métrica no numérica o regla no reproducible rechazan el hecho.
+- `argmax_label` y `argmin_label` usan inicialmente
+  `tie_policy="reject"`; un empate no se resuelve por orden incidental.
+- `ordered_text_set` deduplica por valor normalizado y ordena
+  canónicamente; no depende del orden accidental de respuesta.
+- El hash incluye versión, operación, normalización, dataset, SoQL canónica,
+  filas/subconjunto fuente, columnas, valores y parámetros. No incluye UUIDs
+  de instancia, timestamps ni texto libre del LLM.
+- `fact` se genera desde una plantilla determinista por operación. Está
+  prohibido convertir una etiqueta o categoría en `raw_value=1`, `count=1` u
+  otra cifra ficticia.
+- Una evidencia `blocked`, `diagnostic_only` o `no_recomendada` no puede
+  producir un hecho entregable automáticamente; aplica la misma puerta de
+  elegibilidad que a T7.
+
 ## T8 — `comparabilidad_territorial`
 Advierte cuando dos o más territorios resueltos por T3 en la misma corrida no son comparables entre sí (Cap. 9 del Handbook de CSS para Política, `docs/capitulos-css-politicas-publicas.md`). Nodo determinista: no usa LLM, no acepta invocación libre del enrutador. El grafo lo ejecuta automáticamente cuando T3 devuelve `divipola_code` de ≥2 territorios distintos en el mismo run. Implementado por `app/quality/territorial.py` sobre la tabla `territorio_tipologia` (tarea T-404).
 
@@ -257,7 +342,7 @@ Advierte cuando dos o más territorios resueltos por T3 en la misma corrida no s
 
 | Regla | Valor |
 |---|---|
-| Pasos totales máx. por corrida | 10 (configurable `AGENT_MAX_STEPS`) |
+| Pasos totales máx. por corrida | 14 (configurable `AGENT_MAX_STEPS`; RF-201 y `research.md` §19) |
 | Llamadas máx. a `ejecutar_soql` por corrida | 4 |
 | Autocorrecciones de SoQL tras `SOQL_SYNTAX` | 2 por consulta |
 | Filas al contexto LLM | ≤ 50 por consulta (resumen); Evidencia completa ≤ 1.000 |

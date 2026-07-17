@@ -219,7 +219,14 @@ Seguimiento (revisión de código post-merge, dos huecos detectados y cerrados e
 
 **Objetivo:** construir una ruta de validación independiente para el runtime determinista, diagnosticar fallos por etapa y mejorar utilidad sin sobreajustar `golden-v1`. El legado permanece como rollback. La secuencia es estricta: T-610 → T-611 → T-612 → T-613 → T-614 → T-615 → T-616 → T-617.
 
-**Estado para el siguiente agente (2026-07-16):** T-610…T-613 están cerradas. La aceptación E2E está separada entre `legacy_agent_acceptance` y `deterministic_agent_acceptance`; el evaluador persiste `stage_diagnostics` v1.0 y renderiza etapas, códigos y recuperación. `GOLDEN_V2_PROPOSAL.md` continúa sin rango normativo. La siguiente implementación autorizada es **T-614**, empezando por el smoke determinista de 10 casos y sin iniciar todavía hechos textuales ni `golden-v2`.
+**Estado para el siguiente agente (2026-07-16):** T-610…T-614 están cerradas.
+La aceptación E2E está separada entre `legacy_agent_acceptance` y
+`deterministic_agent_acceptance`; el evaluador persiste `stage_diagnostics`
+v1.0; las dos corridas normativas RNF-010 están verdes.
+`GOLDEN_V2_PROPOSAL.md` continúa sin rango normativo. T-615 tiene una
+**PROPUESTA PARA REVISIÓN**, no una implementación autorizada. La siguiente
+acción humana es aprobar o devolver la enmienda; T-616/T-617 permanecen
+bloqueadas.
 
 **Desviación conocida:** `backend/app/config.py` usa actualmente `deterministic` como default, aunque la política aprobada mantiene `legacy` como runtime operativo durante la validación. T-610 debe registrarlo; los entornos de usuario/producción deben fijar `AGENT_RUNTIME=legacy`. La corrección del default requiere una tarea explícita posterior al incremento solo-pruebas, no un cambio silencioso dentro de T-611/T-612.
 
@@ -258,11 +265,159 @@ Seguimiento (revisión de código post-merge, dos huecos detectados y cerrados e
   - ✅ **T-614R1 lifecycle (2026-07-16):** cliente Gemini y engine/pool se reutilizan por worker en el Selector loop principal, con cierre idempotente y pruebas de concurrencia/startup/shutdown. RNF-010 mejoró de p50/p95/p99 `1187,6/1659,3/1770,2 ms` a `923,5/1293,6/1696,2 ms`, cobertura 100 %, pero continúa en rojo.
   - ✅ **T-614R2 lexical (2026-07-16):** decisión SDD cerrada; `lexical_search_vector` materializado con GIN y `lexical_rank_vector` exacto, ambos mantenidos por triggers y backfill reversible. SQL+Python p95 bajó de `810,1` a `144,4 ms`; dos corridas normativas consecutivas obtuvieron p50/p95/p99 `376,8/828,0/1635,5 ms` y `359,5/482,0/771,4 ms`, cobertura `100 %` (8394/8394) y cero errores. Suite no integración `653 passed`; aceptación determinista `14 passed, 1 xfailed`; legacy `7 passed`. **T-614 cerrada. T-615 continúa bloqueada y no se inicia automáticamente.** Véase `backend/eval/reports/rnf010-lexical-optimization.md`.
 
-- [ ] **T-615 Diseñar hechos textuales de primera clase (RF-208; BLOQUEADA para código hasta enmienda contractual).**
-  - Elaborar propuesta `TextualFact` separada de `QuantitativeClaim`: evidencia, dataset, descripción, valor, columna, filas, hash y versión de algoritmo.
-  - Verificar invariantes: valor literal en fila fuente, columna existente, hash reproducible, ambigüedad no colapsada y síntesis limitada a hechos persistidos.
-  - Antes de migración/código, actualizar los documentos superiores y contratos afectados según la jerarquía. No representar texto con `raw_value=1`.
-  - **Puerta:** diseño aprobado y compatibilidad API definida; claims cuantitativos conservan su semántica.
+- [ ] **T-615 Diseñar e implementar hechos textuales de primera clase
+  (RF-210/RNF-013 propuestos; RF-208/RNF-003 preservados).**
+  - **Estado:** `PROPUESTA PARA REVISIÓN`; cero código o migraciones
+    autorizados. Diseño: `research.md` §27 y
+    `proposals/textual-claims.md`.
+  - **Regla global:** no representar texto mediante `raw_value=1`, conteos
+    ficticios ni claims cuantitativos; no editar `golden-v1`; no iniciar
+    T-616/T-617; no retirar el legado; cada incremento requiere autorización
+    explícita y rollback propio.
+
+  - [ ] **T-615A Aprobar la enmienda SDD y congelar decisiones.**
+    - **Requisitos:** RF-210/RNF-013 propuestos; Constitución Art. I/II/IV;
+      RF-208/RNF-003 no se alteran.
+    - **Archivos:** `spec.md`, `research.md`, `plan.md`,
+      `contracts/agent-tools.md`, `contracts/api-rest.md`, `data-model.md`,
+      `pruebas.md`, `tasks.md`, `quickstart.md`,
+      `checklists/requirements.md`, `proposals/textual-claims.md`.
+    - **Dependencias:** T-614 cerrada; revisión humana de la propuesta.
+    - **Pruebas:** `git diff --check`; `uv run ruff check .`; auditoría de que
+      `backend/app`, Alembic, DB y ambos golden no cambiaron.
+    - **Aceptación:** decisión explícita sobre tabla, operaciones,
+      normalización, empates, hash, API, síntesis, métricas y secuencia.
+    - **Rollback:** revertir solo el commit documental.
+    - **Gate:** aprobación o devolución humana. Sin aprobación no empieza
+      T-615B. El commit documental por sí solo no cierra T-615A.
+
+  - [ ] **T-615B Cerrar modelos de dominio y contrato tipado.**
+    - **Requisitos:** RF-210; unión `GroundedFact`; enums cerrados;
+      `QuantitativeClaim` compatible.
+    - **Archivos previstos:** `backend/app/schemas.py`, nuevo módulo de
+      dominio textual bajo `backend/app/quality/`, contratos Pydantic y sus
+      pruebas unitarias/REST.
+    - **Dependencias:** T-615A aprobada; sin migración todavía.
+    - **Pruebas:** validación de seis operaciones, `text-es-v1`, unión
+      discriminada, forma cuantitativa histórica e inputs inválidos.
+    - **Aceptación:** no quedan `dict[str, Any]` en la superficie pública de
+      hechos; los modelos no persisten ni emiten texto.
+    - **Rollback:** retirar solo modelos/enums nuevos.
+    - **Gate:** contrato unitario verde y revisión de compatibilidad antes de
+      T-615C.
+
+  - [ ] **T-615C Añadir persistencia aislada y reversible.**
+    - **Requisitos:** RF-703/RF-803/RF-804, modelo `textual_facts` propuesto.
+    - **Archivos previstos:** `backend/app/db/models.py`, una migración
+      Alembic nueva, repositorio/persistencia y pruebas de base de datos.
+    - **Dependencias:** T-615B; autorización específica para migración.
+    - **Pruebas:** upgrade/downgrade; checks, FK, índices, round-trip,
+      cascades, retención idempotente y ausencia de texto en snapshots OE3.
+    - **Aceptación:** `quantitative_claims` queda byte/semánticamente
+      compatible; downgrade elimina solo `textual_facts`.
+    - **Rollback:** downgrade de la migración y revert del repositorio.
+    - **Gate:** PostgreSQL real verde antes de construir hechos.
+
+  - [ ] **T-615D Implementar normalización, operaciones y hash puros.**
+    - **Requisitos:** RF-210; `direct_text`, `value_presence`,
+      `category_selection`, `argmax_label`, `argmin_label`,
+      `ordered_text_set`; `text-es-v1`; `tie_policy=reject`.
+    - **Archivos previstos:** módulo de dominio de T-615B y pruebas unitarias.
+    - **Dependencias:** T-615B; puede desarrollarse sin escribir DB.
+    - **Pruebas:** matriz `pruebas.md` §4.5: tildes, puntuación, orden,
+      duplicados, nulos, columnas/filas, extremos, empate y estabilidad hash.
+    - **Aceptación:** funciones puras y deterministas; ningún texto se
+      convierte en número; hash cambia solo con material semántico.
+    - **Rollback:** retirar implementación conservando contrato aún inactivo.
+    - **Gate:** cobertura de ramas de operación y regresión cuantitativa
+      verdes.
+
+  - [ ] **T-615E Implementar constructor/verificador textual.**
+    - **Requisitos:** RF-401/RF-404/RF-210; solo evidencia elegible; plantillas
+      deterministas; errores tipados.
+    - **Archivos previstos:** `backend/app/quality/`, persistencia de T-615C,
+      pruebas unitarias e integración.
+    - **Dependencias:** T-615C y T-615D.
+    - **Pruebas:** construcción/rechazo por operación; evidencia bloqueada o
+      no recomendada; recomputación exacta desde filas; transacción fallida.
+    - **Aceptación:** valor, fila, columna, selección y hash se reproducen;
+      `count=1` deja de ser una salida válida para texto.
+    - **Rollback:** feature inactiva y eliminación del constructor sin tocar
+      datos cuantitativos.
+    - **Gate:** constructor y persistencia verdes antes de integrar runtime.
+
+  - [ ] **T-615F Integrar planificación y pipeline determinista.**
+    - **Requisitos:** RF-201…209/RF-210; presupuestos y terminal único;
+      selección textual estructurada.
+    - **Archivos previstos:** `backend/app/agent/deterministic_pipeline.py`,
+      contratos LLM de planificación, runner/persistence y pruebas dirigidas.
+    - **Dependencias:** T-615E; flag/configuración de activación reversible.
+    - **Pruebas:** lookup textual, caso mixto, cambio de candidato, rechazo,
+      cancelación, presupuesto y cero invocaciones al legado.
+    - **Aceptación:** eliminar el fallback semántico de presencia cuantitativa
+      solo cuando el reemplazo esté activo y probado.
+    - **Rollback:** desactivar la capacidad y restaurar comportamiento
+      anterior mediante revert; no hacer fallback automático entre runtimes.
+    - **Gate:** aceptación determinista dirigida verde, sin activar API
+      textual todavía.
+
+  - [ ] **T-615G Habilitar API discriminada y lectura histórica.**
+    - **Requisitos:** contrato REST §4b; SSE/parciales; compatibilidad.
+    - **Archivos previstos:** `backend/app/schemas.py`, rutas/serializadores,
+      persistencia de respuesta y pruebas de contrato.
+    - **Dependencias:** T-615F.
+    - **Pruebas:** listas cuantitativa, textual y mixta; históricos sin
+      discriminador; formas ambiguas; `completed`, `interrupted`, `failed`.
+    - **Aceptación:** campos cuantitativos conservados; consumidores pueden
+      discriminar; nunca se infiere texto desde históricos.
+    - **Rollback:** detener emisión textual; tabla/datos pueden permanecer
+      inaccesibles hasta reactivar.
+    - **Gate:** contrato y API verdes antes de síntesis pública.
+
+  - [ ] **T-615H Restringir síntesis a hechos persistidos.**
+    - **Requisitos:** RF-208/RNF-003 y RF-210/RNF-013; IDs existentes;
+      conectores y plantillas cerrados.
+    - **Archivos previstos:** `backend/app/agent/llm_contracts.py`,
+      sintetizador/renderizador, prompts estructurados y pruebas adversarias.
+    - **Dependencias:** T-615G.
+    - **Pruebas:** ID inexistente, segmento sin ID, valor alterado, evidencia
+      no elegible, conector inválido, respuesta mixta y regresión de cifras.
+    - **Aceptación:** todo segmento factual es renderizado desde hechos; cero
+      hechos/cifras huérfanos; no se promete clasificar prosa factual libre
+      porque esa prosa no se admite.
+    - **Rollback:** desactivar emisión textual y conservar síntesis
+      cuantitativa vigente.
+    - **Gate:** guardas runtime bloqueantes y pruebas adversarias verdes.
+
+  - [ ] **T-615I Añadir métricas y snapshots no identificables.**
+    - **Requisitos:** extensión RF-602; RNF-003 intacto; métricas RF-210/RNF-013.
+    - **Archivos previstos:** `backend/eval/metrics.py`,
+      `backend/eval/persistence.py`, reportes y pruebas de evaluación.
+    - **Dependencias:** T-615H.
+    - **Pruebas:** cobertura/reproducibilidad/display, segmentos huérfanos,
+      operación inválida, conjunción total, fingerprints y privacidad.
+    - **Aceptación:** métricas cuantitativas no cambian; un promedio nunca
+      oculta un fallo; no se almacena contenido textual en
+      `eval_case_results`.
+    - **Rollback:** retirar nuevas claves manteniendo lectores de reportes
+      históricos.
+    - **Gate:** suite de evaluación verde; sin ejecutar Gemini ni modificar
+      umbrales en este incremento.
+
+  - [ ] **T-615J Ejecutar aceptación integral y cerrar la puerta.**
+    - **Requisitos:** todos los anteriores; Art. II/IV; rollback legacy.
+    - **Archivos previstos:** aceptación determinista/legacy, pruebas de
+      integración compartidas y acta `backend/eval/reports/` autorizada.
+    - **Dependencias:** T-615B…I cerradas.
+    - **Pruebas:** no integración, contrato, PostgreSQL, aceptación
+      determinista, aceptación legacy, retención y smoke textual dirigido;
+      no golden completo salvo autorización separada.
+    - **Aceptación:** caso solo textual, mixto, varias filas, empate,
+      síntesis adversaria y borrado; cuantitativos sin regresión.
+    - **Rollback:** prueba documentada para desactivar emisión textual y
+      revertir migración sin perder claims cuantitativos.
+    - **Gate:** aprobación humana del cierre. Solo entonces T-616 puede ser
+      autorizada; T-617 sigue dependiendo de T-616.
 
 - [ ] **T-616 Auditar los 50 casos y construir `golden-v2` (RF-601/602).**
   - No modificar `backend/eval/golden/golden-v1.yaml`.

@@ -505,6 +505,71 @@ los candidatos. `columns_preview`/`columns_all` se enriquecen solo para el
 top-10. SQL+Python p95 diagnóstico bajó a 144,4 ms y las agregaciones laterales
 de 384 a 20.
 
+## 27. Propuesta T-615: hechos textuales de primera clase — `PROPUESTA PARA REVISIÓN`
+
+**Estado y límite.** Esta decisión no está aprobada ni implementada. No
+autoriza código, migraciones, `golden-v2`, cambios de métricas, retiro del
+legado ni edición de `golden-v1`. La propuesta completa está en
+`proposals/textual-claims.md`.
+
+**Problema comprobado.** El modelo vigente solo prueba cifras mediante
+`QuantitativeClaim`. El constructor rechaza celdas no numéricas y la ruta de
+consulta textual del runtime determinista las representa hoy como
+`derived count=1`; la descripción contiene la etiqueta, pero la magnitud no la
+prueba. El verificador de síntesis y el evaluador solo detectan cifras
+huérfanas. En `golden-v1`, 36 de 40 positivos contienen valores textuales y
+nueve dependen exclusivamente de ellos. Por tanto, los pases actuales no
+demuestran integridad textual.
+
+**Alternativas evaluadas.**
+
+1. Reutilizar `quantitative_claims` con nulos o JSON polimórfico: rechazada
+   porque debilita restricciones numéricas y mezcla semánticas.
+2. Representar texto mediante presencia o conteo igual a uno: rechazada
+   porque prueba una cantidad distinta del dato afirmado.
+3. Crear `textual_facts` y exponer ambas variantes como unión discriminada:
+   propuesta por aislamiento, restricciones fuertes, compatibilidad y
+   rollback.
+
+**Decisión propuesta.**
+
+- Concepto común `GroundedFact`, discriminado por
+  `claim_kind=quantitative|textual`; `QuantitativeClaim` conserva
+  `claim_type=direct|derived`, DSL, formato y todas las guardas RNF-003.
+- Tabla separada `textual_facts`, vinculada a corrida y evidencia, con
+  operación cerrada, filas, columnas, valores brutos/normalizados, valor
+  presentado, perfil de normalización, parámetros, versión y hash.
+- Operaciones iniciales: `direct_text`, `value_presence`,
+  `category_selection`, `argmax_label`, `argmin_label` y
+  `ordered_text_set`.
+- Perfil `text-es-v1`: Unicode NFC, saltos y espacios canonicalizados,
+  `casefold` solo para comparación, tildes/`ñ`/puntuación preservadas; la
+  presentación conserva caja y grafía de la fuente.
+- `argmax_label` y `argmin_label` usan `tie_policy=reject`: un empate no se
+  resuelve por orden incidental.
+- `source_hash` incluye versión, operación, normalización, dataset, SoQL
+  canónica, filas y subconjunto fuente, columnas, valores y parámetros; no
+  incluye UUIDs de instancia ni timestamps.
+- `RespuestaFinal.claims` permanece como lista única con modelos tipados
+  discriminados. Los históricos sin `claim_kind` solo pueden inferirse como
+  cuantitativos si cumplen su forma completa; nunca se infiere texto.
+- La síntesis factual se vuelve estructural: el LLM selecciona identificadores
+  y conectores cerrados; un renderizador determinista inserta valores y
+  plantillas. No se promete detectar hechos arbitrarios dentro de prosa libre.
+- RF-602 añade métricas textuales separadas. RNF-003 no se modifica; se
+  propone RF-210/RNF-013 para cobertura y reproducibilidad textual.
+
+**Atribución de fallos.** T-615 no absorbe problemas de otras capas:
+`pilot-012` falla después de recuperación por presupuesto/selección;
+`pilot-021` ejecutó `count(*)` en vez de `cantidad`; `pilot-022` pasó el smoke
+final; `pilot-038` es ambiguo porque la hora esperada no está en la pregunta.
+Los desacuerdos restantes se mantienen `undetermined` hasta T-616.
+
+**Dependencias y gate.** T-615A…T-615J se detallan en `tasks.md`. La primera
+implementación depende de aprobación explícita de esta enmienda. T-616 y
+T-617 continúan bloqueadas. Aprobar el documento no autoriza automáticamente
+una migración o cambio de runtime.
+
 ---
 
 *Para añadir una nueva decisión: sección numerada, estado, problema, alternativas, criterios, decisión y consecuencias. Las decisiones `PENDIENTE` bloquean las tareas que dependan de ellas (ver tasks.md).*

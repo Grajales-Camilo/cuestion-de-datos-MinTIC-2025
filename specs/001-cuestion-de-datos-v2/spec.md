@@ -178,3 +178,54 @@ Cada RNF tiene métrica y método de verificación. "Rápido" o "usable" sin nú
 - **Afirmación cuantitativa (claim):** registro estructurado que vincula una cifra presentada con sus filas de origen, columnas, fórmula, valor bruto, unidad y regla de redondeo (RF-208).
 - **Golden set (conjunto dorado):** colección versionada de preguntas con respuesta/dataset esperado, usada para evaluar el agente.
 - **Evidencia:** resultado de datos validado + narrativa citable + metadatos de trazabilidad.
+
+## 9. Enmienda T-615 — hechos textuales de primera clase
+
+> **PROPUESTA PARA REVISIÓN — SIN VIGENCIA NORMATIVA.** Esta sección no
+> declara la funcionalidad implementada ni autoriza código, migraciones o
+> cambios de golden. El diseño completo y su auditoría están en
+> `proposals/textual-claims.md`.
+
+### Requisitos propuestos
+
+- **RF-210 (propuesto) —** Todo valor textual factual presentado al usuario
+  (entidad, territorio, categoría, etiqueta, estado, nombre o colección
+  textual) DEBE provenir de un `TextualFact` aceptado y persistido, con
+  evidencia y dataset, filas y columnas fuente, operación cerrada, valores
+  brutos y normalizados, valor presentado, versión de normalización y hash
+  reproducible. Está PROHIBIDO representar texto como claim cuantitativo,
+  `raw_value=1`, conteo ficticio u otra magnitud que no sea el dato afirmado.
+  La selección o derivación textual la ejecuta código determinista; el LLM
+  solo puede ordenar identificadores aceptados y elegir conectores no
+  factuales de un vocabulario cerrado.
+- **RF-602 (extensión propuesta, sin sustituir el texto vigente) —** La
+  batería DEBE medir por separado integridad cuantitativa e integridad
+  textual: cobertura de referencias, reproducibilidad, coincidencia de
+  presentación, segmentos factuales huérfanos y operaciones inválidas. La
+  integridad total es la conjunción de todas las guardas; no se promedian
+  incumplimientos.
+- **RNF-013 (propuesto) — Integridad textual.** Cobertura de referencias
+  textuales = 100 %, hechos textuales reproducibles = 100 %, coincidencia
+  exacta de presentación = 100 %, segmentos factuales huérfanos = 0 y
+  operaciones textuales inválidas = 0. Una respuesta que incumpla se bloquea,
+  no se entrega degradada.
+
+RNF-003 y RF-208 conservan literalmente su alcance, sus métricas y su
+condición bloqueante para cifras. La propuesta añade una guarda independiente;
+no convierte hechos textuales en claims cuantitativos ni debilita la
+trazabilidad numérica.
+
+### Definiciones propuestas
+
+- **Hecho fundamentado (`GroundedFact`):** unión conceptual de
+  `QuantitativeClaim` y `TextualFact`, discriminada por
+  `claim_kind=quantitative|textual`.
+- **Hecho textual (`TextualFact`):** registro estructurado que prueba un valor
+  textual mediante una operación cerrada sobre filas y columnas de una
+  evidencia elegible. Sus operaciones iniciales son `direct_text`,
+  `value_presence`, `category_selection`, `argmax_label`, `argmin_label` y
+  `ordered_text_set`.
+- **Segmento factual:** unidad renderizada que contiene datos y debe referir
+  uno o más hechos aceptados. Los conectores y plantillas de limitación no
+  son segmentos factuales y no pueden introducir entidades, categorías,
+  lugares, fechas, estados ni cifras.

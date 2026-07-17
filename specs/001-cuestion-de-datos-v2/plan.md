@@ -375,3 +375,78 @@ Las transiciones, presupuestos y motivos de rechazo pertenecen al código. El LL
 La ruta ejecutable es T-610 → T-611 → T-612 → T-613 → T-614 → T-615 → T-616 → T-617. El primer incremento modifica exclusivamente pruebas y clasificación de suites. Las mejoras de recuperación empiezan únicamente después de disponer de aceptación E2E, matriz diagnóstica y smoke reproducible.
 
 Cuando el determinista cumpla simultáneamente aceptación E2E verde, integraciones compartidas verdes, negativos 100%, `golden-v2` ≥ 80%, cero fabricaciones, cero cifras huérfanas, persistencia/durabilidad verificadas y límites de latencia/costo satisfechos, pasa inmediatamente a ser el default. El runtime legado permanece congelado y accesible solo para rollback durante una versión. Después se eliminan el selector y el código legado mediante una fase independiente y reversible.
+
+## 14. Enmienda T-615 propuesta: arquitectura de hechos fundamentados
+
+> **PROPUESTA PARA REVISIÓN — NO IMPLEMENTADA.** Depende de aprobación
+> explícita. Ver decisión y alternativas en `research.md` §27 y diseño
+> completo en `proposals/textual-claims.md`.
+
+### 14.1 Pipeline objetivo
+
+La extensión propuesta se inserta después de calidad y antes de síntesis, sin
+alterar el flujo cuantitativo vigente:
+
+```text
+evidencia elegible
+  ├── especificaciones cuantitativas
+  │     → constructor QuantitativeClaim
+  │     → verificador RNF-003
+  └── especificaciones textuales
+        → constructor TextualFact
+        → normalización text-es-v1
+        → verificador RF-210/RNF-013
+             ↓
+     persistencia separada y lista API discriminada
+             ↓
+     selección de IDs + conectores cerrados por el LLM
+             ↓
+     renderizado factual determinista
+```
+
+Una falla de un constructor no puede transformarse en éxito narrativo. Si la
+respuesta solicitada depende del hecho rechazado, el pipeline intenta otro
+candidato dentro del presupuesto o termina con rechazo/ausencia controlada.
+Nunca sustituye texto con `count=1`.
+
+### 14.2 Componentes y orden de entrega
+
+1. **Contrato y modelos tipados:** unión `GroundedFact`, enums y perfiles;
+   guardas cuantitativas intactas.
+2. **Persistencia:** migración aislada para `textual_facts`, repositorio,
+   retención y rollback.
+3. **Constructor y verificador:** operaciones puras, normalización, desempate
+   por rechazo, hash y plantillas.
+4. **Integración del pipeline:** planificación textual separada, persistencia
+   transaccional y terminación tipada.
+5. **API y síntesis:** discriminador, compatibilidad histórica, segmentos
+   factuales por identificador y conectores cerrados.
+6. **Evaluación:** métricas separadas, fingerprints sin contenido y pruebas de
+   regresión cuantitativa.
+7. **Aceptación y cierre:** historias E2E, borrado/retención, rollback y acta
+   de gate antes de desbloquear T-616.
+
+La secuencia exacta T-615A…T-615J, con archivos, dependencias, pruebas,
+aceptación, rollback y gate por incremento, está en `tasks.md`.
+
+### 14.3 Compatibilidad
+
+- `quantitative_claims`, RF-208 y RNF-003 no cambian de significado.
+- `RespuestaFinal.claims` sigue siendo una lista; añade `claim_kind` y una
+  variante textual. Los campos cuantitativos actuales se conservan.
+- Los históricos sin discriminador se leen mediante un adaptador
+  cuantitativo estricto, sin reescritura ni inferencia textual.
+- El frontend debe discriminar antes de renderizar; la auditoría actual no
+  encontró consumidores implementados de `claims`, pero esa ausencia no
+  sustituye pruebas de contrato.
+- El runtime legado sigue disponible como rollback. T-615 no cambia defaults
+  ni autoriza su retiro.
+
+### 14.4 Rollback y puertas
+
+Cada incremento debe poder revertirse de forma aislada. Antes de activar la
+emisión textual deben estar verdes: modelos y contrato, migración
+up/down, retención, constructor, hash, síntesis estricta, API histórica,
+métricas, no integración, aceptación determinista y aceptación legacy.
+T-616 continúa bloqueada hasta cierre y aprobación expresa de T-615; T-617
+continúa dependiendo de ambas.

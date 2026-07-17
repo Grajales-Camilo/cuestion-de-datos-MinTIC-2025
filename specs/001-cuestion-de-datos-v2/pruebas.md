@@ -130,7 +130,8 @@ Esta suite cubre ESC-07 para ingesta e índice: T-201 verifica ingesta idempoten
 
 ### 4.1 Con LLM guionado (deterministas, en CI de cada push)
 Se inyecta un LLM falso que devuelve decisiones predefinidas para probar la MECÁNICA del grafo sin costo ni azar:
-- Respeta `AGENT_MAX_STEPS`: al paso 10 fuerza transición a sintetizador `no_evidence` (RF-201/205).
+- Respeta `AGENT_MAX_STEPS`: al paso 14 por defecto fuerza transición a
+  sintetizador `no_evidence` (RF-201/205; el valor sigue siendo configurable).
 - Tras `SOQL_SYNTAX`, reintenta máximo 2 veces y luego cambia de estrategia.
 - El validador corre SIEMPRE tras `ejecutar_soql` exitoso (imposible saltarlo).
 - El sintetizador solo recibe observaciones de herramientas (aislamiento que sustenta groundedness).
@@ -249,6 +250,79 @@ No se cambia el runtime predeterminado ni se retira el legado hasta cumplir simu
 - `legacy_agent_acceptance` verde y rollback probado.
 
 Al superar la puerta, `AGENT_RUNTIME=deterministic` se convierte inmediatamente en el default. `legacy` permanece disponible solo como rollback de emergencia durante una versión adicional; después se eliminan el selector y el código legado en una tarea independiente.
+
+### 4.5 Matriz de pruebas propuesta para hechos textuales (T-615)
+
+> **PROPUESTA PARA REVISIÓN — NO EJECUTABLE TODAVÍA.** Esta sección define la
+> evidencia mínima de futuros incrementos T-615B…T-615J. No crea pruebas,
+> código, migraciones ni golden en el incremento documental.
+
+#### Unitarias del dominio
+
+| Área | Casos obligatorios | Resultado |
+|---|---|---|
+| `direct_text` | una celda válida; fila fuera de rango; cero o varias columnas; columna ausente; `null`; vacío | Solo la celda válida produce hecho. |
+| Normalización | NFC/NFD, espacios Unicode, CRLF, caja, tildes, `ñ`, puntuación | `normalized_values` estable; `display_value` conserva grafía fuente según `text-es-v1`. |
+| `value_presence` | coincidencia tras normalizar; ausencia; columna parcial | Ausencia o columna inválida rechazan. |
+| `category_selection` | selección reproducible; filtro no presente en SoQL; varias ganadoras | Solo regla completamente anclada produce hecho. |
+| Extremos | `argmax_label` y `argmin_label`; métrica nula/no numérica; empate | Empate termina en rechazo, nunca orden incidental. |
+| Varias filas | `ordered_text_set` con orden distinto y duplicados | Mismo orden, deduplicación y hash. |
+| Hash | dos corridas equivalentes; cambio de fila, columna, consulta, operación, perfil, valor o parámetro | Equivalentes: igual; cambio semántico: distinto. |
+| Enum | operación/perfil/versión desconocidos | Rechazo tipado. |
+| Regresión | suite completa de `QuantitativeClaim` y detector de cifras | RF-208/RNF-003 sin cambios. |
+
+#### Contrato, persistencia y retención
+
+- Modelos Pydantic cerrados y unión discriminada; no `dict[str, Any]` para
+  hechos públicos.
+- Round-trip de `textual_facts`; checks/FK/índices; migración `upgrade` y
+  `downgrade` sin tocar `quantitative_claims`.
+- Cascade al borrar evidencia/corrida, RF-803 y barrido RF-804 idempotentes.
+- `eval_case_results` guarda solo fingerprints; prueba negativa para texto,
+  valores fuente, filas y narrativa.
+- API/SSE con listas cuantitativa, textual y mixta; parciales; errores.
+- Respuesta histórica sin `claim_kind` se adapta solo a cuantitativa completa;
+  forma ambigua o incompleta se rechaza.
+
+#### Síntesis fundamentada
+
+- El modelo solo devuelve IDs existentes, orden y conector permitido.
+- El renderizador inserta exactamente `fact_text`/`display_value` persistidos.
+- ID inexistente, evidencia no elegible, operación inválida o segmento
+  factual sin ID bloquean la respuesta.
+- Los conectores cerrados no introducen valores factuales.
+- Una respuesta mixta conserva `orphan_figures_count=0` y
+  `orphan_factual_segments_count=0`.
+- Se mantiene una prueba adversaria que intenta introducir una entidad,
+  categoría, lugar, fecha o estado desde prosa libre; debe rechazarse.
+
+#### Aceptación determinista
+
+1. Caso solo textual persistido y reproducible, sin claim `count=1`.
+2. Caso mixto con etiqueta y cifra, ambas vinculadas a la misma evidencia.
+3. Texto derivado de varias filas con orden canónico.
+4. Empate de extremo con rechazo/abstención controlada.
+5. Cambio de candidato después de un hecho textual inválido.
+6. Cancelación y presupuestos sin parciales no persistidos.
+7. Borrado y retención eliminan ambas variantes.
+8. Aceptación legacy permanece verde como rollback.
+9. `pilot-013-app-dnp` solo se usa en smoke después de implementar la capa y
+   debe probar los valores textuales, no un conteo; esto no modifica el
+   fixture `golden-v1`.
+
+#### Métricas y golden futuro
+
+La evaluación propuesta reporta
+`textual_fact_reference_coverage=1.0`,
+`textual_facts_reproducible=1.0`,
+`textual_fact_display_match=1.0`,
+`orphan_factual_segments_count=0` e
+`invalid_textual_operation_count=0`, separadas de las métricas RNF-003.
+`grounded_fact_integrity` es una conjunción, no un promedio.
+
+T-615 no corre Gemini, no repite RNF-010 y no crea `golden-v2`. T-616 debe
+auditar primero los 50 casos y solo con autorización puede materializar
+`acceptable_facts` discriminados. `golden-v1` permanece byte a byte intacto.
 
 ## 5. Pruebas E2E de frontend y accesibilidad (WCAG 2.2 AA)
 
