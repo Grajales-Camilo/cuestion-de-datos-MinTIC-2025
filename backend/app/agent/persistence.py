@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.agent.durability import reserve_and_add_event
 from app.db.models import (
@@ -25,6 +28,13 @@ from app.db.models import (
 from app.db.models import TextualFact as TextualFactRecord
 from app.quality.claims import BuiltClaim
 from app.quality.grounded_facts import TextualFact
+from app.quality.textual_fact_builder import (
+    TextualEvidenceSnapshot,
+    TextualFactBuildCommand,
+    TextualFactError,
+    build_textual_fact,
+    verify_textual_fact,
+)
 from app.quality.validator import EvidenceDraft, QualityResult
 
 TOOL_OUTPUT_SUMMARY_MAX_BYTES = 20 * 1024
@@ -301,54 +311,9 @@ async def persist_textual_facts(
 
     if not facts:
         return
-    evidence_ids = {fact.evidence_id for fact in facts}
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session, session.begin():
-        evidence_rows = (
-            await session.execute(
-                select(
-                    EvidenceResult.id,
-                    EvidenceResult.run_id,
-                    EvidenceResult.dataset_id,
-                ).where(EvidenceResult.id.in_(evidence_ids))
-            )
-        ).all()
-        evidence_by_id = {
-            evidence_id: (evidence_run_id, dataset_id)
-            for evidence_id, evidence_run_id, dataset_id in evidence_rows
-        }
-        missing = evidence_ids - evidence_by_id.keys()
-        if missing:
-            raise ValueError(f"evidence_id inexistente para hechos textuales: {sorted(missing)}")
-
-        for fact in facts:
-            evidence_run_id, dataset_id = evidence_by_id[fact.evidence_id]
-            if evidence_run_id != run_id:
-                raise ValueError(
-                    "el hecho textual y su evidencia deben pertenecer a la misma corrida"
-                )
-            if dataset_id != fact.dataset_id:
-                raise ValueError(
-                    "dataset_id del hecho textual no coincide con la evidencia persistida"
-                )
-            session.add(
-                TextualFactRecord(
-                    id=fact.fact_id,
-                    run_id=run_id,
-                    evidence_id=fact.evidence_id,
-                    fact_text=fact.fact,
-                    operation=fact.operation.value,
-                    source_row_indexes=list(fact.source_row_indexes),
-                    columns_used=list(fact.columns),
-                    raw_values=list(fact.raw_values),
-                    normalized_values=list(fact.normalized_values),
-                    display_value=fact.display_value,
-                    normalization_profile=fact.normalization_profile.value,
-                    operation_params=fact.operation_params.model_dump(mode="json"),
-                    algorithm_version=fact.algorithm_version.value,
-                    source_hash=fact.source_hash,
-                )
-            )
+        await _persist_textual_facts_in_session(session, run_id, facts)
 
 
 async def load_textual_facts(
@@ -359,17 +324,206 @@ async def load_textual_facts(
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
-        rows = (
-            await session.execute(
-                select(TextualFactRecord, EvidenceResult.dataset_id)
-                .join(
-                    EvidenceResult,
-                    EvidenceResult.id == TextualFactRecord.evidence_id,
-                )
-                .where(TextualFactRecord.run_id == run_id)
-                .order_by(TextualFactRecord.id)
+        return await _load_textual_facts_in_session(session, run_id)
+
+
+async def build_verify_persist_textual_facts(
+    engine: AsyncEngine,
+    run_id: uuid.UUID,
+    commands: tuple[TextualFactBuildCommand, ...],
+    *,
+    fact_id_factory: Callable[[], uuid.UUID] = uuid.uuid4,
+) -> tuple[TextualFact, ...]:
+    """Construye, verifica, persiste, recarga y reverifica en una transacción.
+
+    Es una conexión aislada para T-615E. Ningún runtime la invoca. Las
+    decisiones de elegibilidad y clasificación se leen de ``quality_reports``;
+    las filas y el SoQL se copian una vez a snapshots defensivos. Cualquier
+    rechazo o fallo antes del commit revierte todos los hechos del lote.
+    """
+
+    if not commands:
+        return ()
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with session_factory() as session, session.begin():
+            snapshots = await _load_textual_evidence_snapshots(
+                session,
+                {command.evidence_id for command in commands},
             )
-        ).all()
+            built: list[TextualFact] = []
+            command_snapshots: list[TextualEvidenceSnapshot] = []
+            for command in commands:
+                snapshot = snapshots.get(command.evidence_id)
+                if snapshot is not None and command.validated_order_is_total:
+                    snapshot = TextualEvidenceSnapshot(
+                        run_id=snapshot.run_id,
+                        evidence_id=snapshot.evidence_id,
+                        dataset_id=snapshot.dataset_id,
+                        canonical_soql=snapshot.canonical_soql,
+                        rows=snapshot.rows,
+                        eligibility_status=snapshot.eligibility_status,
+                        quality_classification=snapshot.quality_classification,
+                        validated_order_is_total=True,
+                    )
+                fact = build_textual_fact(
+                    run_id=run_id,
+                    evidence_id=command.evidence_id,
+                    dataset_id=command.dataset_id,
+                    snapshot=snapshot,
+                    spec=command.spec,
+                    fact_id_factory=fact_id_factory,
+                )
+                verify_textual_fact(
+                    run_id=run_id,
+                    evidence_id=command.evidence_id,
+                    dataset_id=command.dataset_id,
+                    snapshot=snapshot,
+                    spec=command.spec,
+                    fact=fact,
+                )
+                built.append(fact)
+                assert snapshot is not None
+                command_snapshots.append(snapshot)
+
+            facts = tuple(built)
+            await _persist_textual_facts_in_session(session, run_id, facts)
+            await session.flush()
+            loaded = await _load_textual_facts_in_session(
+                session,
+                run_id,
+                fact_ids={fact.fact_id for fact in facts},
+            )
+            loaded_by_id = {fact.fact_id: fact for fact in loaded}
+            if loaded_by_id.keys() != {fact.fact_id for fact in facts}:
+                raise TextualFactError(
+                    "textual_persistence_failed",
+                    "la recarga transaccional no devolvió todos los hechos persistidos",
+                )
+            ordered_loaded = tuple(loaded_by_id[fact.fact_id] for fact in facts)
+            for command, snapshot, fact in zip(
+                commands,
+                command_snapshots,
+                ordered_loaded,
+                strict=True,
+            ):
+                verify_textual_fact(
+                    run_id=run_id,
+                    evidence_id=command.evidence_id,
+                    dataset_id=command.dataset_id,
+                    snapshot=snapshot,
+                    spec=command.spec,
+                    fact=fact,
+                )
+            return ordered_loaded
+    except TextualFactError:
+        raise
+    except (SQLAlchemyError, ValidationError, ValueError) as exc:
+        raise TextualFactError(
+            "textual_persistence_failed",
+            "falló la transacción de hechos textuales",
+        ) from exc
+
+
+async def _persist_textual_facts_in_session(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    facts: tuple[TextualFact, ...],
+) -> None:
+    evidence_ids = {fact.evidence_id for fact in facts}
+    evidence_rows = (
+        await session.execute(
+            select(
+                EvidenceResult.id,
+                EvidenceResult.run_id,
+                EvidenceResult.dataset_id,
+            ).where(EvidenceResult.id.in_(evidence_ids))
+        )
+    ).all()
+    evidence_by_id = {
+        evidence_id: (evidence_run_id, dataset_id)
+        for evidence_id, evidence_run_id, dataset_id in evidence_rows
+    }
+    missing = evidence_ids - evidence_by_id.keys()
+    if missing:
+        raise ValueError(f"evidence_id inexistente para hechos textuales: {sorted(missing)}")
+
+    for fact in facts:
+        evidence_run_id, dataset_id = evidence_by_id[fact.evidence_id]
+        if evidence_run_id != run_id:
+            raise ValueError("el hecho textual y su evidencia deben pertenecer a la misma corrida")
+        if dataset_id != fact.dataset_id:
+            raise ValueError("dataset_id del hecho textual no coincide con la evidencia persistida")
+        session.add(
+            TextualFactRecord(
+                id=fact.fact_id,
+                run_id=run_id,
+                evidence_id=fact.evidence_id,
+                fact_text=fact.fact,
+                operation=fact.operation.value,
+                source_row_indexes=list(fact.source_row_indexes),
+                columns_used=list(fact.columns),
+                raw_values=list(fact.raw_values),
+                normalized_values=list(fact.normalized_values),
+                display_value=fact.display_value,
+                normalization_profile=fact.normalization_profile.value,
+                operation_params=fact.operation_params.model_dump(mode="json"),
+                algorithm_version=fact.algorithm_version.value,
+                source_hash=fact.source_hash,
+            )
+        )
+
+
+async def _load_textual_evidence_snapshots(
+    session: AsyncSession,
+    evidence_ids: set[uuid.UUID],
+) -> dict[uuid.UUID, TextualEvidenceSnapshot]:
+    rows = (
+        await session.execute(
+            select(EvidenceResult, QualityReport)
+            .outerjoin(
+                QualityReport,
+                QualityReport.evidence_id == EvidenceResult.id,
+            )
+            .where(EvidenceResult.id.in_(evidence_ids))
+        )
+    ).all()
+    snapshots: dict[uuid.UUID, TextualEvidenceSnapshot] = {}
+    for evidence, quality in rows:
+        if quality is None:
+            raise TextualFactError(
+                "textual_evidence_quality_missing",
+                "la evidencia no tiene un reporte de calidad verificable",
+            )
+        snapshots[evidence.id] = TextualEvidenceSnapshot(
+            run_id=evidence.run_id,
+            evidence_id=evidence.id,
+            dataset_id=evidence.dataset_id,
+            canonical_soql=evidence.soql_query,
+            rows=tuple(evidence.rows),
+            eligibility_status=quality.eligibility_status,
+            quality_classification=quality.classification,
+        )
+    return snapshots
+
+
+async def _load_textual_facts_in_session(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    fact_ids: set[uuid.UUID] | None = None,
+) -> tuple[TextualFact, ...]:
+    statement = (
+        select(TextualFactRecord, EvidenceResult.dataset_id)
+        .join(
+            EvidenceResult,
+            EvidenceResult.id == TextualFactRecord.evidence_id,
+        )
+        .where(TextualFactRecord.run_id == run_id)
+    )
+    if fact_ids is not None:
+        statement = statement.where(TextualFactRecord.id.in_(fact_ids))
+    rows = (await session.execute(statement.order_by(TextualFactRecord.id))).all()
     return tuple(
         TextualFact.model_validate(
             {

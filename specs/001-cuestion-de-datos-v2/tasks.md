@@ -360,7 +360,7 @@ bloqueadas.
       `normalized_values` añade `casefold`, y el hash recibe `canonical_soql`
       literalmente desde el renderer.
 
-  - [ ] **T-615E Implementar constructor/verificador textual.**
+  - [x] **T-615E Implementar constructor/verificador textual.**
     - **Requisitos:** RF-401/RF-404/RF-210; solo evidencia elegible; plantillas
       deterministas; errores tipados.
     - **Archivos previstos:** `backend/app/quality/`, persistencia de T-615C,
@@ -373,6 +373,15 @@ bloqueadas.
     - **Rollback:** feature inactiva y eliminación del constructor sin tocar
       datos cuantitativos.
     - **Gate:** constructor y persistencia verdes antes de integrar runtime.
+    - **Cierre:** constructor puro sobre snapshot defensivo, seis plantillas
+      cerradas, verificación independiente y lote transaccional
+      construir→verificar→persistir→cargar→reverificar cerrados el
+      2026-07-17. Solo `quality_reports.eligibility_status=eligible` con
+      clasificación distinta de `no_recomendada` produce hechos; alteraciones
+      y sustitutos cuantitativos se rechazan con códigos estables. Pruebas
+      unitarias, PostgreSQL real aislado, regresiones cuantitativas, runtimes
+      inactivos y OpenAPI productivo sin cambios verificados. T-615F permanece
+      bloqueada y requiere autorización separada.
 
   - [ ] **T-615F Integrar planificación y pipeline determinista.**
     - **Requisitos:** RF-201…209/RF-210; presupuestos y terminal único;
