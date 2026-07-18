@@ -11,6 +11,15 @@ fundamentadas en la pregunta, no el uso de filtros ocultos del evaluador.
 `golden-v1` continúa siendo inmutable y útil como línea histórica. No debe
 reemplazarse ni reinterpretarse silenciosamente.
 
+> **Auditoría T-616A (2026-07-18, no normativa, pendiente de aprobación).** La
+> auditoría caso por caso de los 50 casos vive en
+> `eval/reports/t616a-golden-v2-audit.md` (informe humano) y
+> `eval/reports/t616a-case-audit.json` (matriz estructurada, esquema
+> `t616a-case-audit-v1`). Confirma y amplía las incompatibilidades de este
+> documento (37 casos con filtros ocultos; `pilot-016`/`022`/`038`/`039`
+> incompatibles) sin crear `golden-v2.yaml` ni alterar `golden-v1`. Ninguna
+> recomendación queda aprobada por este enlace.
+
 ## Evidencia reproducible
 
 - `eval/reports/a4cc79c8-d011-4de7-83e2-2b3770205e38.md`: el caso

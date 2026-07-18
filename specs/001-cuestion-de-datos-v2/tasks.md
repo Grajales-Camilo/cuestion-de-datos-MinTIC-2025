@@ -555,6 +555,7 @@ siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
   - Clasificar: determinado, multi-respuesta, agregado, abstención o incompatible. Proponer esquema con `input_constraints`, `selection_rule`, `acceptable_facts`, `source_urls`, `observed_at` y `data_cutoff_at`.
   - Solo después de aprobación normativa crear `backend/eval/golden/golden-v2.yaml` y sus validaciones.
   - **Puerta:** 50 auditados, positivos derivables, sin filtros ocultos injustificados, suite versionada y autorizada explícitamente. `golden-v1` permanece byte a byte intacto.
+  - **T-616A (2026-07-18): auditoría producida, PENDIENTE DE APROBACIÓN.** Se auditaron los 50 casos (`backend/eval/reports/t616a-golden-v2-audit.md` y `t616a-case-audit.json`, no normativos). No se creó `golden-v2.yaml`, no se modificó `golden-v1` (SHA-256 intacto) y no se inició T-616B/T-617. T-616 sigue **abierta**; requiere revisión y autorización explícita de Juan Camilo y del coordinador antes de materializar cualquier suite.
 
 - [ ] **T-617 Ejecutar puerta completa y mantener rollback (RNF-001…005/009).**
   - Orden: unitarias deterministas → no integración → aceptación determinista → integraciones compartidas → smoke 10 → golden-v1 50 → golden-v2 50 → aceptación legacy.
