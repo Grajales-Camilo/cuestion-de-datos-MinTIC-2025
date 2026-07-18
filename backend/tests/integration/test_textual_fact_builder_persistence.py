@@ -12,6 +12,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agent.persistence import (
+    _persisted_order_is_total,
     build_verify_persist_textual_facts,
     load_allowed_grounded_facts,
 )
@@ -25,6 +26,8 @@ from app.db.models import (
 )
 from app.db.models import TextualFact as TextualFactRecord
 from app.quality.grounded_facts import (
+    CategorySelectionParams,
+    CategorySelectionRule,
     EmptyTextualFactOperationParams,
     TextualFactOperation,
 )
@@ -77,6 +80,17 @@ def direct_spec(*, row_index: int = 0) -> TextualFactSpec:
     )
 
 
+def ordered_category_spec() -> TextualFactSpec:
+    return TextualFactSpec(
+        operation=TextualFactOperation.CATEGORY_SELECTION,
+        source_row_indexes=(0,),
+        columns=("dim_1",),
+        operation_params=CategorySelectionParams(
+            rule=CategorySelectionRule.FIRST_BY_VALIDATED_ORDER
+        ),
+    )
+
+
 async def seed_evidence(
     engine,
     created_ids,
@@ -85,6 +99,7 @@ async def seed_evidence(
     eligibility_status: str = "eligible",
     classification: str = "alta",
     with_quality: bool = True,
+    soql_query: str = "SELECT municipio LIMIT 1000 OFFSET 0",
 ) -> tuple[uuid.UUID, uuid.UUID, str]:
     now = datetime.now(UTC)
     run_id = uuid.uuid4()
@@ -134,7 +149,7 @@ async def seed_evidence(
                 id=evidence_id,
                 run_id=run_id,
                 dataset_id=dataset_id,
-                soql_query="SELECT municipio LIMIT 1000 OFFSET 0",
+                soql_query=soql_query,
                 executed_at=now,
                 source_url="https://example.test/resource/e615-test.json",
                 rows=evidence_rows,
@@ -273,6 +288,94 @@ async def test_synthesis_loader_excludes_an_altered_persisted_fact(
             .where(TextualFactRecord.id == fact_id)
             .values(fact_text="Texto alterado fuera del constructor.")
         )
+
+    allowed = await load_allowed_grounded_facts(engine, run_id)
+
+    assert allowed.facts == ()
+
+
+@pytest.mark.parametrize(
+    ("canonical_soql", "rows", "expected"),
+    (
+        (
+            (
+                "SELECT municipio as dim_1, count(*) as metric_1 "
+                "ORDER BY dim_1 ASC, metric_1 DESC LIMIT 2 OFFSET 0"
+            ),
+            (
+                {"dim_1": "Bogotá", "metric_1": 2},
+                {"dim_1": "Cali", "metric_1": 3},
+            ),
+            True,
+        ),
+        (
+            ("SELECT municipio as dim_1, count(*) as metric_1 ORDER BY dim_1 ASC LIMIT 2 OFFSET 0"),
+            (
+                {"dim_1": "Bogotá", "metric_1": 2},
+                {"dim_1": "Cali", "metric_1": 3},
+            ),
+            False,
+        ),
+        (
+            (
+                "SELECT municipio as dim_1, count(*) as metric_1 "
+                "ORDER BY dim_1 ASC, metric_1 DESC LIMIT 2 OFFSET 0"
+            ),
+            (
+                {"dim_1": "Bogotá", "metric_1": 2},
+                {"dim_1": "Bogotá", "metric_1": 2},
+            ),
+            False,
+        ),
+    ),
+)
+def test_persisted_order_certificate_is_rederived_from_query_and_rows(
+    canonical_soql: str,
+    rows: tuple[dict, ...],
+    expected: bool,
+) -> None:
+    assert (
+        _persisted_order_is_total(
+            canonical_soql=canonical_soql,
+            rows=rows,
+            source_row_indexes=(0,),
+        )
+        is expected
+    )
+
+
+def test_persisted_order_certificate_rejects_operation_without_renderer_aliases() -> None:
+    assert not _persisted_order_is_total(
+        canonical_soql="SELECT municipio ORDER BY municipio ASC LIMIT 2 OFFSET 0",
+        rows=({"municipio": "Bogotá"}, {"municipio": "Cali"}),
+        source_row_indexes=(0,),
+    )
+
+
+async def test_synthesis_loader_rederives_order_instead_of_trusting_build_command(
+    engine,
+    created_ids,
+) -> None:
+    run_id, evidence_id, dataset_id = await seed_evidence(
+        engine,
+        created_ids,
+        rows=[{"dim_1": "Bogotá"}, {"dim_1": "Cali"}],
+        soql_query="SELECT municipio as dim_1 ORDER BY municipio ASC LIMIT 2 OFFSET 0",
+    )
+    fact_id = uuid.uuid4()
+    await build_verify_persist_textual_facts(
+        engine,
+        run_id,
+        (
+            TextualFactBuildCommand(
+                evidence_id=evidence_id,
+                dataset_id=dataset_id,
+                spec=ordered_category_spec(),
+                validated_order_is_total=True,
+            ),
+        ),
+        fact_id_factory=lambda: fact_id,
+    )
 
     allowed = await load_allowed_grounded_facts(engine, run_id)
 

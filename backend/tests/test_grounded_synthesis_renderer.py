@@ -212,6 +212,76 @@ def test_renderer_applies_only_approved_templates_connectors_and_closings() -> N
 
 
 @pytest.mark.parametrize(
+    ("connector", "literal"),
+    (
+        ("ademas", "Además, "),
+        ("por_otra_parte", "Por otra parte, "),
+        ("en_conjunto", "En conjunto, "),
+    ),
+)
+def test_renderer_snapshots_every_approved_explicit_connector(
+    connector: str,
+    literal: str,
+) -> None:
+    allowed = AllowedGroundedFacts(
+        run_id=RUN_ID,
+        facts=(quantitative_fact(), textual_fact()),
+    )
+    synthesis = GroundedSynthesisPlan.model_validate(
+        {
+            "schema_version": "grounded-synthesis-plan-v1",
+            "segments": [
+                {
+                    "segment_id": "s1",
+                    "connector": "sin_conector",
+                    "template": "fact_statement",
+                    "fact_refs": [{"fact_kind": "quantitative", "id": str(CLAIM_ID)}],
+                },
+                {
+                    "segment_id": "s2",
+                    "connector": connector,
+                    "template": "fact_statement",
+                    "fact_refs": [{"fact_kind": "textual", "id": str(FACT_ID)}],
+                },
+            ],
+            "closing": "sin_cierre",
+        }
+    )
+
+    assert render_grounded_synthesis(synthesis, allowed) == (
+        f"Total de registros: 25. {literal}La categoría seleccionada es Salud."
+    )
+
+
+@pytest.mark.parametrize(
+    ("closing", "literal"),
+    (
+        ("sin_cierre", ""),
+        (
+            "limitacion_disponibilidad",
+            " La respuesta se limita a la evidencia disponible.",
+        ),
+        (
+            "advertencia_calidad",
+            " La evidencia utilizada presenta una advertencia de calidad.",
+        ),
+    ),
+)
+def test_renderer_snapshots_every_approved_closing(
+    closing: str,
+    literal: str,
+) -> None:
+    allowed = AllowedGroundedFacts(run_id=RUN_ID, facts=(quantitative_fact(),))
+    synthesis = plan(
+        template="fact_statement",
+        refs=[{"fact_kind": "quantitative", "id": str(CLAIM_ID)}],
+        closing=closing,
+    )
+
+    assert render_grounded_synthesis(synthesis, allowed) == f"Total de registros: 25.{literal}"
+
+
+@pytest.mark.parametrize(
     ("first_connector", "second_connector"),
     (("ademas", "por_otra_parte"), ("sin_conector", "sin_conector")),
 )

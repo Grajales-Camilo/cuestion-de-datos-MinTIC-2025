@@ -47,6 +47,7 @@ from app.quality.textual_fact_builder import (
 )
 from app.quality.textual_facts import TextualFactSpec
 from app.quality.validator import EvidenceDraft, QualityResult
+from app.tools.soql_parser import SoqlGuardError, parse_soql
 
 TOOL_OUTPUT_SUMMARY_MAX_BYTES = 20 * 1024
 
@@ -491,6 +492,11 @@ def _reverify_textual_synthesis_fact(
         validated_order_is_total = (
             isinstance(fact.operation_params, CategorySelectionParams)
             and fact.operation_params.rule is CategorySelectionRule.FIRST_BY_VALIDATED_ORDER
+            and _persisted_order_is_total(
+                canonical_soql=evidence.soql_query,
+                rows=tuple(evidence.rows),
+                source_row_indexes=fact.source_row_indexes,
+            )
         )
         snapshot = TextualEvidenceSnapshot(
             run_id=evidence.run_id,
@@ -529,6 +535,55 @@ def _reverify_textual_synthesis_fact(
         )
     except (TextualFactError, TypeError, ValueError, ValidationError):
         return None
+
+
+def _persisted_order_is_total(
+    *,
+    canonical_soql: str,
+    rows: tuple[dict, ...],
+    source_row_indexes: tuple[int, ...],
+) -> bool:
+    """Reconstruye el certificado de orden desde la evidencia persistida.
+
+    El certificado no puede deducirse de la operación solicitada: exige la
+    forma canónica producida por el renderer determinista y una primera clave
+    inequívoca dentro de la ventana observada.
+    """
+
+    if source_row_indexes != (0,) or not rows:
+        return False
+    try:
+        parsed = parse_soql(canonical_soql)
+    except (SoqlGuardError, ValueError):
+        return False
+    if not parsed.limit_was_explicit or parsed.limit < 2:
+        return False
+
+    selected_aliases: list[str] = []
+    for item in parsed.select_items:
+        alias = item.alias
+        if alias == "group_count":
+            continue
+        if alias is None or not alias.startswith(("dim_", "metric_")):
+            return False
+        selected_aliases.append(alias)
+    if not selected_aliases or len(selected_aliases) != len(set(selected_aliases)):
+        return False
+
+    ordered_aliases = tuple(item.ref for item in parsed.order_by)
+    if len(ordered_aliases) != len(set(ordered_aliases)) or set(ordered_aliases) != set(
+        selected_aliases
+    ):
+        return False
+    if any(alias not in rows[0] for alias in ordered_aliases):
+        return False
+    if len(rows) == 1:
+        return len(rows) < parsed.limit
+    if any(alias not in rows[1] for alias in ordered_aliases):
+        return False
+    first_key = tuple(rows[0][alias] for alias in ordered_aliases)
+    second_key = tuple(rows[1][alias] for alias in ordered_aliases)
+    return first_key != second_key
 
 
 async def build_verify_persist_textual_facts(

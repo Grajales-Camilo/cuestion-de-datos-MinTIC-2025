@@ -227,8 +227,8 @@ v1.0; las dos corridas normativas RNF-010 están verdes.
 `GOLDEN_V2_PROPOSAL.md` continúa sin rango normativo. La enmienda T-615 fue
 aprobada y se ejecuta por incrementos con autorización independiente. La
 matriz terminal ya definida reautorizó T-615G, que cerró junto con T-615G-R.
-La corrección documental de síntesis reautoriza T-615H; T-615I, T-616 y
-T-617 permanecen bloqueadas.
+T-615H y su corrección de reverificación quedaron cerradas; T-615I es la
+siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
 
 **Desviación conocida:** `backend/app/config.py` usa actualmente `deterministic` como default, aunque la política aprobada mantiene `legacy` como runtime operativo durante la validación. T-610 debe registrarlo; los entornos de usuario/producción deben fijar `AGENT_RUNTIME=legacy`. La corrección del default requiere una tarea explícita posterior al incremento solo-pruebas, no un cambio silencioso dentro de T-611/T-612.
 
@@ -476,6 +476,13 @@ T-617 permanecen bloqueadas.
       relacionadas con PostgreSQL verdes (1 `xfail` preexistente); aceptación
       por `execute_deterministic_agent_run_async`, legacy y guardia verdes;
       OpenAPI canónico sin cambios.
+    - **Corrección T-615H-R (2026-07-17):** la reverificación textual ya no
+      infiere el certificado `validated_order_is_total` de la operación
+      solicitada. Lo reconstruye desde la SoQL canónica y las filas persistidas:
+      aliases completos del renderer, `ORDER BY` total sin duplicados,
+      `LIMIT >= 2`, fila fuente inicial y claves observadas inequívocas. Los
+      snapshots cubren literalmente las tres plantillas, los cuatro conectores
+      y los tres cierres aprobados.
 
   - [ ] **T-615I Añadir métricas y snapshots no identificables.**
     - **Requisitos:** extensión RF-602; RNF-003 intacto; métricas RF-210/RNF-013.
