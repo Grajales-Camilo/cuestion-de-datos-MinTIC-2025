@@ -261,10 +261,12 @@ def test_report_renders_stage_reason_and_retrieval_tables(tmp_path: Path) -> Non
             git_commit="abc123",
             config_snapshot={"runtime": "deterministic"},
         ),
+        suite_name="golden-v2",
         results=[("case-1", assessment, diagnostics)],
     )
 
     report = target.read_text(encoding="utf-8")
+    assert "- Suite: golden-v2" in report
     assert "## Fallos por etapa" in report
     assert "expected_dataset_not_retrieved" in report
     assert "## Recuperación" in report

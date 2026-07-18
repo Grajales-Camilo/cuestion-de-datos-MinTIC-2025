@@ -206,6 +206,8 @@ cd backend
 ruff check . && pytest -m "not integration"   # deterministas: unitarias + contrato, sin red
 pytest -m integration                         # integración real con Postgres/Socrata (requiere servicios)
 python -m eval.run --suite golden-v1 --limit 10   # smoke de evaluación (usa LLM: consume cuota)
+python scripts/t616b_materialize.py --check       # valida golden-v2 sin red ni LLM
+python -m eval.run --suite golden-v2 --limit 10   # candidato normativo T-616B (usa LLM: consume cuota)
 cd ../frontend
 npm run test:e2e                          # Playwright (requiere ambos servicios arriba)
 ```

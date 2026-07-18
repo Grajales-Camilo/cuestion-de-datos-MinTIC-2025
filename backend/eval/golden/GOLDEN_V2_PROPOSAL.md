@@ -1,17 +1,24 @@
-# Propuesta de `golden-v2`: contrato de hechos derivables
+# Contrato materializado de `golden-v2`: hechos derivables
 
 ## Estado y alcance
 
+> **T-616B cerrada el 2026-07-18.** La instrucción humana «Continúa con la
+> siguiente tarea» aprobó el paso normativo posterior a T-616A-R. La suite
+> resultante vive en `golden-v2.yaml`, se genera y valida con
+> `scripts/t616b_materialize.py`, contiene 50 casos (40 positivos/10
+> negativos), 59 `acceptable_facts` tipados y 128 proyecciones verificables.
+> `golden-v1.yaml` conserva su SHA-256 histórico. T-617 no se inició.
+
 Este documento no modifica ni relaja `golden-v1`, `eval/metrics.py` ni el
-umbral RNF-002. Registra incompatibilidades observadas al ejecutar el runtime
-determinista contra Socrata real y propone un contrato nuevo, versionado y
-auditable. Satisface RF-208 y RNF-002: la evaluación debe premiar respuestas
-fundamentadas en la pregunta, no el uso de filtros ocultos del evaluador.
+umbral RNF-002. Registra el origen y las decisiones del contrato nuevo,
+versionado y auditable. Satisface RF-208 y RNF-002: la evaluación debe premiar
+respuestas fundamentadas en la pregunta, no el uso de filtros ocultos del
+evaluador.
 
 `golden-v1` continúa siendo inmutable y útil como línea histórica. No debe
 reemplazarse ni reinterpretarse silenciosamente.
 
-> **Auditoría T-616A-R (2026-07-18, no normativa, pendiente de aprobación).**
+> **Auditoría T-616A-R (2026-07-18, antecedente no normativo).**
 > Corrige y completa la auditoría T-616A tras revisión coordinadora (12/40
 > verificados contra Socrata, confianza mal calibrada, `pilot-022` mal
 > clasificado como incompatible, `pilot-001` mal clasificado como agregado,
@@ -24,8 +31,9 @@ reemplazarse ni reinterpretarse silenciosamente.
 > `t616a-case-audit-v2`) y `eval/reports/t616a-evidence-manifest.json`
 > (evidencia reproducible no normativa, esquema
 > `t616a-evidence-manifest-v2`, con metadatos/esquema, proyección completa,
-> nulos, duplicados, empates y hashes). No crea `golden-v2.yaml` ni altera
-> `golden-v1`. Ninguna recomendación queda aprobada por este enlace.
+> nulos, duplicados, empates y hashes). En esa fase no se creó
+> `golden-v2.yaml` ni se alteró `golden-v1`; las recomendaciones se aprobaron
+> posteriormente al iniciar T-616B y quedaron materializadas en este contrato.
 
 ## Evidencia reproducible
 

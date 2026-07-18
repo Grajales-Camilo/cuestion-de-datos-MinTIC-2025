@@ -51,7 +51,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_DIR))
 
 from app.quality.grounded_facts import TextualFactOperation  # noqa: E402
-from eval.loader import load_golden_suite  # noqa: E402
+from eval.loader import GoldenSuiteError, load_golden_suite  # noqa: E402
 
 GOLDEN_PATH = BACKEND_DIR / "eval" / "golden" / "golden-v1.yaml"
 OUTPUT_PATH = BACKEND_DIR / "eval" / "reports" / "t616a-case-audit.json"
@@ -2641,9 +2641,20 @@ def verify_golden() -> list[str]:
                 errors.append(f"{case['case_id']}: no existe en golden-v1")
             elif set(case["expected_dataset_ids"]) != g:
                 errors.append(f"{case['case_id']}: expected_dataset_ids no coincide con golden-v1")
-    forbidden_golden_v2 = GOLDEN_PATH.with_name("golden-v2.yaml")
-    if forbidden_golden_v2.exists():
-        errors.append(f"No debe existir {forbidden_golden_v2.relative_to(BACKEND_DIR)} en T-616A-R")
+    materialized_golden_v2 = GOLDEN_PATH.with_name("golden-v2.yaml")
+    if materialized_golden_v2.exists():
+        try:
+            golden_v2 = load_golden_suite(materialized_golden_v2)
+        except (OSError, GoldenSuiteError) as exc:
+            errors.append(
+                f"{materialized_golden_v2.relative_to(BACKEND_DIR)} existe pero no es valida: {exc}"
+            )
+        else:
+            if golden_v2.schema_version != "golden-v2":
+                errors.append(
+                    f"{materialized_golden_v2.relative_to(BACKEND_DIR)} "
+                    "debe declarar schema_version=golden-v2"
+                )
     return errors
 
 

@@ -306,13 +306,14 @@ def _write_report(
     *,
     record: EvalRun,
     results: list[tuple[str, CaseAssessment, dict[str, object]]],
+    suite_name: str = "golden-v1",
 ) -> None:
     passed = sum(item.passed for _, item, _ in results)
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         f"# Evaluación {record.id}",
         "",
-        "- Suite: golden-v1",
+        f"- Suite: {_md(suite_name)}",
         f"- Runtime: {_md(record.config_snapshot.get('runtime'))}",
         f"- Modelo: {record.llm_provider}/{record.llm_model}",
         f"- Embeddings: {_md(record.embedding_model)}",
@@ -548,7 +549,7 @@ async def run_suite(
             results.append((case.case_id, assessment, stage_diagnostics))
         await _finalize_eval_record(engine, record_id=record.id, results=results)
         report_path = Path("eval/reports") / f"{record.id}.md"
-        _write_report(report_path, record=record, results=results)
+        _write_report(report_path, record=record, suite_name=suite.name, results=results)
         passed = sum(assessment.passed for _, assessment, _ in results)
         success_rate = passed / len(results) if results else None
         return RunSuiteResult(report_path=report_path, success_rate=success_rate)

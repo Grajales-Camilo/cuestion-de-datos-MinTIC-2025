@@ -549,7 +549,7 @@ siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
       `golden-v1` intactos; cero bases temporales o residuos. T-616 y T-617 no
       se iniciaron.
 
-- [ ] **T-616 Auditar los 50 casos y construir `golden-v2` (RF-601/602).**
+- [x] **T-616 Auditar los 50 casos y construir `golden-v2` (RF-601/602).**
   - No modificar `backend/eval/golden/golden-v1.yaml`.
   - Auditar por caso restricciones de la pregunta, filtros ocultos de URL, respuestas válidas, desempate, corte, fuente, elegibilidad y tipo de hecho.
   - Clasificar: determinado, multi-respuesta, agregado, abstención o incompatible. Proponer esquema con `input_constraints`, `selection_rule`, `acceptable_facts`, `source_urls`, `observed_at` y `data_cutoff_at`.
@@ -557,6 +557,21 @@ siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
   - **Puerta:** 50 auditados, positivos derivables, sin filtros ocultos injustificados, suite versionada y autorizada explícitamente. `golden-v1` permanece byte a byte intacto.
   - **T-616A (2026-07-18): auditoría producida, PENDIENTE DE APROBACIÓN.** Se auditaron los 50 casos (`backend/eval/reports/t616a-golden-v2-audit.md` y `t616a-case-audit.json`, no normativos). No se creó `golden-v2.yaml`, no se modificó `golden-v1` (SHA-256 intacto) y no se inició T-616B/T-617. T-616 sigue **abierta**; requiere revisión y autorización explícita de Juan Camilo y del coordinador antes de materializar cualquier suite.
   - **T-616A-R (2026-07-18): auditoría corregida y completada, PENDIENTE DE APROBACIÓN.** La revisión coordinadora encontró rigor insuficiente en T-616A (solo 12/40 positivos verificados contra Socrata, confianza mal calibrada, clasificaciones erróneas en `pilot-001`/`pilot-022`). T-616A-R reaudita los 50 casos desde cero: **40/40 positivos verificados contra el catálogo PostgreSQL local en transacción read-only y contra Socrata real**, reproducible vía `backend/scripts/t616a_audit.py --check`, `--refresh-live-evidence` y `--verify-live`. El manifiesto no normativo `backend/eval/reports/t616a-evidence-manifest.json` (esquema `t616a-evidence-manifest-v2`) persiste metadatos/esquema local y oficial, consultas canónicas completas, cardinalidades físicas/de proyección, nulos, duplicados, selección/empates y hashes; `--verify-live` falla ante diferencias materiales. La corrección final separa pregunta y dataset: `pilot-001`, `pilot-038` y `pilot-039` son ambiguos/multi-respuesta con dataset compatible; `pilot-022` es determinado con ancla v1 equivocada. Artefactos actualizados: `t616a-golden-v2-audit.md`, `t616a-case-audit.json` (esquema `t616a-case-audit-v2`), manifiesto y `t616a_audit.py`. `golden-v1` intacto (SHA-256 sin cambios); `golden-v2.yaml` no creado; no se ejecutó ningún LLM. T-402 conserva su cierre formal como deuda separada. T-616 sigue **abierta**; T-616B y T-617 **no** iniciadas; requiere revisión y autorización explícita de Juan Camilo y del coordinador.
+  - **T-616B (2026-07-18): suite normativa materializada y validada.** La
+    instrucción humana «Continúa con la siguiente tarea» autorizó expresamente
+    el incremento y el coordinador aprobó las propuestas concretas de T-616A-R.
+    `backend/eval/golden/golden-v2.yaml` contiene 50 casos (40 positivos/10
+    negativos), 59 `acceptable_facts` tipados y 128 proyecciones
+    deterministas; `backend/scripts/t616b_materialize.py` reproduce el YAML,
+    valida vocabulario cerrado, cardinalidad, desempate, huellas y fuentes, y
+    re-verifica las 128 proyecciones mediante 44 consultas oficiales únicas.
+    `pilot-016` quedó resuelto con el CSV oficial de 4-72: `153420` urbano y
+    `153427` rural, conservando además los valores tipados por Socrata
+    `153.42/153.427`; `pilot-038/039` se reescribieron con
+    estación+sensor+hora explícitos. El loader acepta exclusivamente
+    `golden-v1`/`golden-v2`; los reportes registran el nombre real de suite.
+    `golden-v1` permanece byte a byte intacto. T-402 sigue abierta como deuda
+    separada y T-617 no se inició.
 
 - [ ] **T-617 Ejecutar puerta completa y mantener rollback (RNF-001…005/009).**
   - Orden: unitarias deterministas → no integración → aceptación determinista → integraciones compartidas → smoke 10 → golden-v1 50 → golden-v2 50 → aceptación legacy.

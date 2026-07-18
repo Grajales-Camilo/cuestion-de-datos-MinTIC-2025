@@ -1,0 +1,3045 @@
+schema_version: golden-v2
+suite:
+  name: golden-v2
+  version: 2.0.0
+  status: congelado
+  snapshot_at: '2026-07-18'
+  description: 'Suite normativa T-616B: 50 casos aprobados a partir de la auditoría T-616A-R, con hechos
+    aceptables tipados, restricciones explícitas y fuentes reproducibles. golden-v1 permanece intacto.'
+  requirements:
+  - RF-601
+  - RF-602
+  approval:
+    authorized_at: '2026-07-18'
+    authorization: 'Instrucción humana: «Continúa con la siguiente tarea».'
+    coordinator_decision: Se aprueban las propuestas concretas auditadas; 038/039 se reescriben y 016
+      se resuelve con el CSV oficial de 4-72.
+  source_audit:
+    schema_version: t616a-case-audit-v2
+    path: eval/reports/t616a-case-audit.json
+    sha256: sha256:688420f0e2e0e67a073cbd60201dd7365e9a27cb36a327eb168dc90dbc4cc225
+  golden_v1_sha256: sha256:ab546062767ce2046508489c169a270ae00ceb1515ff67bf92d472404630ff72
+cases:
+- id: pilot-001-educacion-magdalena
+  case_type: positive
+  classification: determined
+  question: ¿Qué municipio de Magdalena registró la mayor tasa de deserción escolar en 2024?
+  question_change: rewrite
+  question_change_rationale: '''tasa alta'' no equivale inequivocamente a un valor; se explicita el extremo
+    maximo. El dataset (c4qb-ek68) es ''Indicadores educativos del Magdalena por municipios'', ya restringido
+    a Magdalena; a_o=2024 rinde 30 municipios (una fila por municipio), sin agregacion.'
+  expected_dataset_ids:
+  - c4qb-ek68
+  input_constraints:
+  - a_o=2024
+  - fila = argmax(tasa_de_deserci_n)
+  selection_rule: argmax(tasa_de_deserci_n); tie_policy=reject; valor de la fila ganadora del argmax (coordinado
+    con el TextualFact)
+  acceptable_facts:
+  - fact_kind: textual
+    operation: argmax_label
+    allowed_datasets:
+    - c4qb-ek68
+    columns:
+    - municipios
+    - tasa_de_deserci_n
+    input_constraints:
+    - a_o=2024
+    selection_rule: argmax(tasa_de_deserci_n); tie_policy=reject
+    value_or_set: Cerro de San Antonio (obs. 2026-07-18)
+    normalization_profile: text-es-v1
+    tie_policy: reject
+    expected_cardinality: 30 filas fuente (una por municipio)
+    duplicate_policy: none
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/c4qb-ek68.json?$select=municipios,tasa_de_deserci_n&$where=a_o=2024&$order=tasa_de_deserci_n
+      DESC
+    label_column: municipios
+    metric_column: tasa_de_deserci_n
+    data_cutoff_at: '2026-03-03T20:19:56+00:00'
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - c4qb-ek68
+    columns:
+    - tasa_de_deserci_n
+    input_constraints:
+    - a_o=2024
+    - fila = argmax(tasa_de_deserci_n)
+    selection_rule: valor de la fila ganadora del argmax (coordinado con el TextualFact)
+    value_or_set: 6.28 (obs. 2026-07-18)
+    tolerance: 0.001
+    unit: tasa (porcentaje)
+    rounding: 2
+    formula: null
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/c4qb-ek68.json?%24select=municipios%2Ctasa_de_deserci_n%2Ccount%28%2A%29+AS+multiplicity&%24group=municipios%2Ctasa_de_deserci_n&%24order=municipios%2Ctasa_de_deserci_n&%24where=a_o%3D2024
+    data_cutoff_at: '2026-03-03T20:19:56+00:00'
+  expected_facts:
+  - description: argmax_label verificado para municipios.
+    source_url: https://www.datos.gov.co/resource/c4qb-ek68.json?$select=municipios,tasa_de_deserci_n&$where=a_o=2024&$order=tasa_de_deserci_n
+      DESC
+    expected_value:
+      municipios: Cerro de San Antonio
+    tolerance: 0
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/c4qb-ek68.json?%24select=municipios%2Ctasa_de_deserci_n%2Ccount%28%2A%29+AS+multiplicity&%24group=municipios%2Ctasa_de_deserci_n&%24order=municipios%2Ctasa_de_deserci_n&%24where=a_o%3D2024
+    expected_value:
+      tasa_de_deserci_n: '6.28'
+    tolerance: 0.001
+  source_urls:
+  - https://www.datos.gov.co/api/views/c4qb-ek68
+  - https://www.datos.gov.co/resource/c4qb-ek68.json?$select=municipios,tasa_de_deserci_n&$where=a_o=2024&$order=tasa_de_deserci_n
+    DESC
+  - https://www.datos.gov.co/resource/c4qb-ek68.json?%24select=municipios%2Ctasa_de_deserci_n%2Ccount%28%2A%29+AS+multiplicity&%24group=municipios%2Ctasa_de_deserci_n&%24order=municipios%2Ctasa_de_deserci_n&%24where=a_o%3D2024
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-03-03T20:19:56+00:00'
+  seed: 601001
+  notes: 'T-616B: ''tasa alta'' no equivale inequivocamente a un valor; se explicita el extremo maximo.
+    El dataset (c4qb-ek68) es ''Indicadores educativos del Magdalena por municipios'', ya restringido
+    a Magdalena; a_o=2024 rinde 30 municipios (una fila por municipio), sin agregacion. acceptable_facts_sha256=sha256:121720ee767a4893f20233f8f15480be3019d9e6573a851bfa74ffe328e16156'
+- id: pilot-002-seguridad-homicidios
+  case_type: positive
+  classification: aggregate
+  question: ¿Qué departamento concentra más homicidios en el acumulado de la fuente observado al 17 de
+    junio de 2026?
+  question_change: clarify
+  question_change_rationale: La semantica (argmax de sum por departamento) es correcta; solo hay que declarar
+    el corte temporal porque el total es un agregado vivo.
+  expected_dataset_ids:
+  - m8fd-ahd9
+  input_constraints:
+  - 'agrupacion: sum(cantidad) por departamento'
+  - departamento = VALLE DEL CAUCA (ganador del argmax verificado)
+  selection_rule: argmax(sum(cantidad)) por departamento; tie_policy=reject; sum(cantidad) del departamento
+    ganador
+  acceptable_facts:
+  - fact_kind: textual
+    operation: argmax_label
+    allowed_datasets:
+    - m8fd-ahd9
+    columns:
+    - departamento
+    - total
+    input_constraints:
+    - 'agrupacion: sum(cantidad) por departamento'
+    selection_rule: argmax(sum(cantidad)) por departamento; tie_policy=reject
+    value_or_set: VALLE DEL CAUCA (etiqueta estable)
+    normalization_profile: text-es-v1
+    tie_policy: reject
+    expected_cardinality: 33 grupos (departamentos)
+    duplicate_policy: none
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/m8fd-ahd9.json?$select=departamento,sum(cantidad)
+      AS total&$group=departamento&$order=total DESC
+    label_column: departamento
+    metric_column: total
+    data_cutoff_at: '2026-06-17T19:20:37+00:00'
+  - fact_kind: quantitative
+    operation: derived
+    allowed_datasets:
+    - m8fd-ahd9
+    columns:
+    - cantidad
+    input_constraints:
+    - departamento = VALLE DEL CAUCA (ganador del argmax verificado)
+    selection_rule: sum(cantidad) del departamento ganador
+    value_or_set: 66723 @ data_cutoff_at (obs. 2026-07-18)
+    tolerance: 0
+    unit: null
+    rounding: 2
+    formula:
+      op: sum
+      column: cantidad
+      group_by: departamento
+    temporal_cut: data_cutoff_at=2026-06-17T19:20:37+00:00
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/m8fd-ahd9.json?%24select=departamento%2Csum%28cantidad%29+AS+metric_value&%24group=departamento&%24order=metric_value+DESC%2Cdepartamento
+    data_cutoff_at: '2026-06-17T19:20:37+00:00'
+  expected_facts:
+  - description: argmax_label verificado para departamento.
+    source_url: https://www.datos.gov.co/resource/m8fd-ahd9.json?$select=departamento,sum(cantidad) AS
+      total&$group=departamento&$order=total DESC
+    expected_value:
+      departamento: VALLE DEL CAUCA
+    tolerance: 0
+  - description: derived cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/m8fd-ahd9.json?%24select=departamento%2Csum%28cantidad%29+AS+metric_value&%24group=departamento&%24order=metric_value+DESC%2Cdepartamento
+    expected_value:
+      metric_value: '66723'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/m8fd-ahd9
+  - https://www.datos.gov.co/resource/m8fd-ahd9.json?$select=departamento,sum(cantidad) AS total&$group=departamento&$order=total
+    DESC
+  - https://www.datos.gov.co/resource/m8fd-ahd9.json?%24select=departamento%2Csum%28cantidad%29+AS+metric_value&%24group=departamento&%24order=metric_value+DESC%2Cdepartamento
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-06-17T19:20:37+00:00'
+  seed: 601002
+  notes: 'T-616B: La semantica (argmax de sum por departamento) es correcta; solo hay que declarar el
+    corte temporal porque el total es un agregado vivo. acceptable_facts_sha256=sha256:8bdf71ecf2eb2b5e4300f725f1bfd0fb2e38ea2c90ad57bb9739252380c3c2b9'
+- id: pilot-003-salud-vigilancia
+  case_type: positive
+  classification: aggregate
+  question: ¿Qué evento de salud pública tuvo el mayor volumen reportado acumulado en la fuente observada
+    al 17 de octubre de 2024?
+  question_change: clarify
+  question_change_rationale: El plural 'eventos' admite top-N; debe decidirse top-1 vs top-N y declararse
+    el corte. El total es un agregado vivo (2.4M filas).
+  expected_dataset_ids:
+  - 4hyg-wa9d
+  input_constraints:
+  - 'agrupacion: sum(conteo) por nombre_evento'
+  - nombre_evento = AGRESIONES POR ANIMALES POTENCIALMENTE TRANSMISORES DE RABIA (ganador verificado)
+  selection_rule: argmax(sum(conteo)); si top-N, canonical_text_set acotado con cardinalidad declarada;
+    sum(conteo) del evento ganador
+  acceptable_facts:
+  - fact_kind: textual
+    operation: argmax_label
+    allowed_datasets:
+    - 4hyg-wa9d
+    columns:
+    - nombre_evento
+    - total
+    input_constraints:
+    - 'agrupacion: sum(conteo) por nombre_evento'
+    selection_rule: argmax(sum(conteo)); si top-N, canonical_text_set acotado con cardinalidad declarada
+    value_or_set: AGRESIONES POR ANIMALES POTENCIALMENTE TRANSMISORES DE RABIA
+    normalization_profile: text-es-v1
+    tie_policy: reject
+    expected_cardinality: 77 grupos (eventos)
+    duplicate_policy: none
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/4hyg-wa9d.json?$select=nombre_evento,sum(conteo) AS
+      total&$group=nombre_evento&$order=total DESC
+    label_column: nombre_evento
+    metric_column: total
+    data_cutoff_at: '2024-10-17T23:35:37+00:00'
+  - fact_kind: quantitative
+    operation: derived
+    allowed_datasets:
+    - 4hyg-wa9d
+    columns:
+    - conteo
+    input_constraints:
+    - nombre_evento = AGRESIONES POR ANIMALES POTENCIALMENTE TRANSMISORES DE RABIA (ganador verificado)
+    selection_rule: sum(conteo) del evento ganador
+    value_or_set: 1470739 @ data_cutoff_at (obs. 2026-07-18)
+    tolerance: 0
+    unit: null
+    rounding: 2
+    formula:
+      op: sum
+      column: conteo
+      group_by: nombre_evento
+    temporal_cut: data_cutoff_at=2024-10-17T23:35:37+00:00
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/4hyg-wa9d.json?%24select=nombre_evento%2Csum%28conteo%29+AS+metric_value&%24group=nombre_evento&%24order=metric_value+DESC%2Cnombre_evento
+    data_cutoff_at: '2024-10-17T23:35:37+00:00'
+  expected_facts:
+  - description: argmax_label verificado para nombre_evento.
+    source_url: https://www.datos.gov.co/resource/4hyg-wa9d.json?$select=nombre_evento,sum(conteo) AS
+      total&$group=nombre_evento&$order=total DESC
+    expected_value:
+      nombre_evento: AGRESIONES POR ANIMALES POTENCIALMENTE TRANSMISORES DE RABIA
+    tolerance: 0
+  - description: derived cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/4hyg-wa9d.json?%24select=nombre_evento%2Csum%28conteo%29+AS+metric_value&%24group=nombre_evento&%24order=metric_value+DESC%2Cnombre_evento
+    expected_value:
+      metric_value: '1470739'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/4hyg-wa9d
+  - https://www.datos.gov.co/resource/4hyg-wa9d.json?$select=nombre_evento,sum(conteo) AS total&$group=nombre_evento&$order=total
+    DESC
+  - https://www.datos.gov.co/resource/4hyg-wa9d.json?%24select=nombre_evento%2Csum%28conteo%29+AS+metric_value&%24group=nombre_evento&%24order=metric_value+DESC%2Cnombre_evento
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2024-10-17T23:35:37+00:00'
+  seed: 601003
+  notes: 'T-616B: El plural ''eventos'' admite top-N; debe decidirse top-1 vs top-N y declararse el corte.
+    El total es un agregado vivo (2.4M filas). acceptable_facts_sha256=sha256:4a385583d4220d1da9d14895d66102efa0291ca1f429422cc5166d5c0d2e0f01'
+- id: pilot-004-justicia-presupuesto
+  case_type: positive
+  classification: determined
+  question: ¿Cuál fue la apropiación vigente total y cuánto se pagó en el sector Justicia al corte de
+    cierre de diciembre de 2023?
+  question_change: rewrite
+  question_change_rationale: La pregunta no distingue categoria (Funcionamiento/Inversion) ni mes; el
+    golden inyecta ambos. Debe declararse si se pide el total del sector (suma de 9 descripciones) o una
+    categoria, y el corte de cierre.
+  expected_dataset_ids:
+  - f4a5-ab9q
+  input_constraints:
+  - a_o=2023
+  - entidad=sector justicia
+  - descripci_n=Total
+  - mes=1931-12-01T00:00:00.000 (corte de cierre publicado)
+  selection_rule: fila preagregada descripci_n=Total en el corte de cierre; fila preagregada descripci_n=Total
+    en el corte de cierre
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - f4a5-ab9q
+    columns:
+    - apropiaci_n_vigente
+    input_constraints:
+    - a_o=2023
+    - entidad=sector justicia
+    - descripci_n=Total
+    - mes=1931-12-01T00:00:00.000 (corte de cierre publicado)
+    selection_rule: fila preagregada descripci_n=Total en el corte de cierre
+    value_or_set: '4526836158739.00'
+    tolerance: 0.01
+    unit: COP
+    rounding: 2
+    formula: null
+    temporal_cut: corte diciembre 2023 explicito
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/f4a5-ab9q.json?%24select=descripci_n%2Cmes%2Capropiaci_n_vigente%2Cpagos&%24where=a_o%3D%272023%27%20AND%20entidad%3D%27sector%20justicia%27%20AND%20descripci_n%3D%27Total%27%20AND%20mes%3D%271931-12-01T00%3A00%3A00.000%27
+    data_cutoff_at: '2026-04-13T16:57:26+00:00'
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - f4a5-ab9q
+    columns:
+    - pagos
+    input_constraints:
+    - a_o=2023
+    - entidad=sector justicia
+    - descripci_n=Total
+    - mes=1931-12-01T00:00:00.000 (corte de cierre publicado)
+    selection_rule: fila preagregada descripci_n=Total en el corte de cierre
+    value_or_set: '3233457359631.73'
+    tolerance: 0.01
+    unit: COP
+    rounding: 2
+    formula: null
+    temporal_cut: corte diciembre 2023 explicito
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/f4a5-ab9q.json?%24select=descripci_n%2Cmes%2Capropiaci_n_vigente%2Cpagos&%24where=a_o%3D%272023%27%20AND%20entidad%3D%27sector%20justicia%27%20AND%20descripci_n%3D%27Total%27%20AND%20mes%3D%271931-12-01T00%3A00%3A00.000%27
+    data_cutoff_at: '2026-04-13T16:57:26+00:00'
+  expected_facts:
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/f4a5-ab9q.json?%24select=descripci_n%2Cmes%2Capropiaci_n_vigente%2Cpagos&%24where=a_o%3D%272023%27%20AND%20entidad%3D%27sector%20justicia%27%20AND%20descripci_n%3D%27Total%27%20AND%20mes%3D%271931-12-01T00%3A00%3A00.000%27
+    expected_value:
+      apropiaci_n_vigente: 4,526,836,158,739.00
+    tolerance: 0.01
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/f4a5-ab9q.json?%24select=descripci_n%2Cmes%2Capropiaci_n_vigente%2Cpagos&%24where=a_o%3D%272023%27%20AND%20entidad%3D%27sector%20justicia%27%20AND%20descripci_n%3D%27Total%27%20AND%20mes%3D%271931-12-01T00%3A00%3A00.000%27
+    expected_value:
+      pagos: 3,233,457,359,631.73
+    tolerance: 0.01
+  source_urls:
+  - https://www.datos.gov.co/api/views/f4a5-ab9q
+  - https://www.datos.gov.co/resource/f4a5-ab9q.json?%24select=apropiaci_n_vigente%2Cdescripci_n%2Cmes%2Cpagos%2Ccount%28%2A%29+AS+multiplicity&%24group=apropiaci_n_vigente%2Cdescripci_n%2Cmes%2Cpagos&%24order=apropiaci_n_vigente%2Cdescripci_n%2Cmes%2Cpagos&%24where=a_o%3D%272023%27+AND+entidad%3D%27sector+justicia%27
+  - https://www.datos.gov.co/resource/f4a5-ab9q.json?%24select=descripci_n%2Cmes%2Capropiaci_n_vigente%2Cpagos&%24where=a_o%3D%272023%27%20AND%20entidad%3D%27sector%20justicia%27%20AND%20descripci_n%3D%27Total%27%20AND%20mes%3D%271931-12-01T00%3A00%3A00.000%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-04-13T16:57:26+00:00'
+  seed: 601004
+  notes: 'T-616B: La pregunta no distingue categoria (Funcionamiento/Inversion) ni mes; el golden inyecta
+    ambos. Debe declararse si se pide el total del sector (suma de 9 descripciones) o una categoria, y
+    el corte de cierre. acceptable_facts_sha256=sha256:6230c8f142923924d07a4e3076c6397120f643255416d4145d8ad0ceb924bffd'
+- id: pilot-005-empleo-publico
+  case_type: positive
+  classification: determined
+  question: ¿Cómo se compone por sexo la planta del Ministerio de Relaciones Exteriores en marzo de 2026,
+    último mes disponible en la fuente observada al 8 de julio de 2026?
+  question_change: clarify
+  question_change_rationale: 'Verificado: la entidad tiene exactamente 1 fila (snapshot vigente, 2026-03).
+    El valor es reproducible hoy pero avanza con el snapshot mensual; debe declararse data_cutoff_at y
+    la regla ''ultimo mes disponible''.'
+  expected_dataset_ids:
+  - h8rs-jxum
+  input_constraints:
+  - nombre_de_la_entidad=MINISTERIO DE RELACIONES EXTERIORES
+  selection_rule: ultimo mes disponible (fila vigente); ultimo mes disponible (fila vigente)
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - h8rs-jxum
+    columns:
+    - genero_hombre
+    input_constraints:
+    - nombre_de_la_entidad=MINISTERIO DE RELACIONES EXTERIORES
+    selection_rule: ultimo mes disponible (fila vigente)
+    value_or_set: 764 @ data_cutoff_at (obs. 2026-07-18)
+    tolerance: 0
+    unit: personas
+    rounding: 0
+    formula: null
+    temporal_cut: declarar data_cutoff_at
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/h8rs-jxum.json?%24select=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes%2Ccount%28%2A%29+AS+multiplicity&%24group=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes&%24order=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes&%24where=nombre_de_la_entidad%3D%27MINISTERIO+DE+RELACIONES+EXTERIORES%27
+    data_cutoff_at: '2026-07-08T14:59:19+00:00'
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - h8rs-jxum
+    columns:
+    - genero_mujer
+    input_constraints:
+    - nombre_de_la_entidad=MINISTERIO DE RELACIONES EXTERIORES
+    selection_rule: ultimo mes disponible (fila vigente)
+    value_or_set: 719 @ data_cutoff_at (obs. 2026-07-18)
+    tolerance: 0
+    unit: personas
+    rounding: 0
+    formula: null
+    temporal_cut: declarar data_cutoff_at
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/h8rs-jxum.json?%24select=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes%2Ccount%28%2A%29+AS+multiplicity&%24group=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes&%24order=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes&%24where=nombre_de_la_entidad%3D%27MINISTERIO+DE+RELACIONES+EXTERIORES%27
+    data_cutoff_at: '2026-07-08T14:59:19+00:00'
+  expected_facts:
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/h8rs-jxum.json?%24select=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes%2Ccount%28%2A%29+AS+multiplicity&%24group=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes&%24order=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes&%24where=nombre_de_la_entidad%3D%27MINISTERIO+DE+RELACIONES+EXTERIORES%27
+    expected_value:
+      genero_hombre: '764'
+    tolerance: 0
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/h8rs-jxum.json?%24select=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes%2Ccount%28%2A%29+AS+multiplicity&%24group=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes&%24order=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes&%24where=nombre_de_la_entidad%3D%27MINISTERIO+DE+RELACIONES+EXTERIORES%27
+    expected_value:
+      genero_mujer: '719'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/h8rs-jxum
+  - https://www.datos.gov.co/resource/h8rs-jxum.json?%24select=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes%2Ccount%28%2A%29+AS+multiplicity&%24group=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes&%24order=a_o%2Cgenero_hombre%2Cgenero_mujer%2Cmes&%24where=nombre_de_la_entidad%3D%27MINISTERIO+DE+RELACIONES+EXTERIORES%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-07-08T14:59:19+00:00'
+  seed: 601005
+  notes: 'T-616B: Verificado: la entidad tiene exactamente 1 fila (snapshot vigente, 2026-03). El valor
+    es reproducible hoy pero avanza con el snapshot mensual; debe declararse data_cutoff_at y la regla
+    ''ultimo mes disponible''. acceptable_facts_sha256=sha256:af74ecfb61fa15fd25005ddc5ab29270197379786dfd32e96dc07c0e7424bec5'
+- id: pilot-006-planta-entidad
+  case_type: positive
+  classification: determined
+  question: ¿Cuántos cargos de planta tiene el Centro de Diagnóstico Automotor de Caldas Ltda. y en qué
+    año aplica el dato?
+  question_change: retain
+  question_change_rationale: Entidad nombrada; verificado count=1 (una sola fila, anio_aplicar unico).
+    Determinado.
+  expected_dataset_ids:
+  - fvq4-wwtz
+  input_constraints:
+  - nombre=CENTRO DE DIAGNOSTICO AUTOMOTOR DE CALDAS LTDA
+  selection_rule: fila unica por entidad (verificado count=1); fila unica por entidad
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - fvq4-wwtz
+    columns:
+    - no_total_planta
+    input_constraints:
+    - nombre=CENTRO DE DIAGNOSTICO AUTOMOTOR DE CALDAS LTDA
+    selection_rule: fila unica por entidad (verificado count=1)
+    value_or_set: '20'
+    tolerance: 0
+    unit: cargos
+    rounding: 0
+    formula: null
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/fvq4-wwtz.json?%24select=anio_aplicar%2Cno_total_planta%2Ccount%28%2A%29+AS+multiplicity&%24group=anio_aplicar%2Cno_total_planta&%24order=anio_aplicar%2Cno_total_planta&%24where=nombre%3D%27CENTRO+DE+DIAGNOSTICO+AUTOMOTOR+DE+CALDAS+LTDA%27
+    data_cutoff_at: '2025-11-27T22:05:36+00:00'
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - fvq4-wwtz
+    columns:
+    - anio_aplicar
+    input_constraints:
+    - nombre=CENTRO DE DIAGNOSTICO AUTOMOTOR DE CALDAS LTDA
+    selection_rule: fila unica por entidad
+    value_or_set: '2025'
+    tolerance: 0
+    unit: anio
+    rounding: 0
+    formula: null
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/fvq4-wwtz.json?%24select=anio_aplicar%2Cno_total_planta%2Ccount%28%2A%29+AS+multiplicity&%24group=anio_aplicar%2Cno_total_planta&%24order=anio_aplicar%2Cno_total_planta&%24where=nombre%3D%27CENTRO+DE+DIAGNOSTICO+AUTOMOTOR+DE+CALDAS+LTDA%27
+    data_cutoff_at: '2025-11-27T22:05:36+00:00'
+  expected_facts:
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/fvq4-wwtz.json?%24select=anio_aplicar%2Cno_total_planta%2Ccount%28%2A%29+AS+multiplicity&%24group=anio_aplicar%2Cno_total_planta&%24order=anio_aplicar%2Cno_total_planta&%24where=nombre%3D%27CENTRO+DE+DIAGNOSTICO+AUTOMOTOR+DE+CALDAS+LTDA%27
+    expected_value:
+      no_total_planta: '20'
+    tolerance: 0
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/fvq4-wwtz.json?%24select=anio_aplicar%2Cno_total_planta%2Ccount%28%2A%29+AS+multiplicity&%24group=anio_aplicar%2Cno_total_planta&%24order=anio_aplicar%2Cno_total_planta&%24where=nombre%3D%27CENTRO+DE+DIAGNOSTICO+AUTOMOTOR+DE+CALDAS+LTDA%27
+    expected_value:
+      anio_aplicar: '2025'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/fvq4-wwtz
+  - https://www.datos.gov.co/resource/fvq4-wwtz.json?%24select=anio_aplicar%2Cno_total_planta%2Ccount%28%2A%29+AS+multiplicity&%24group=anio_aplicar%2Cno_total_planta&%24order=anio_aplicar%2Cno_total_planta&%24where=nombre%3D%27CENTRO+DE+DIAGNOSTICO+AUTOMOTOR+DE+CALDAS+LTDA%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2025-11-27T22:05:36+00:00'
+  seed: 601006
+  notes: 'T-616B: Entidad nombrada; verificado count=1 (una sola fila, anio_aplicar unico). Determinado.
+    acceptable_facts_sha256=sha256:12d5bb306f7f52bc36e6ba2c2e552a5f6098405605f3ede137908b87399e11db'
+- id: pilot-007-desercion-antioquia
+  case_type: positive
+  classification: determined
+  question: ¿Cuál fue la tasa de deserción escolar en Antioquia en 2011 y cómo se compara por nivel educativo?
+  question_change: retain
+  question_change_rationale: Filtro directo departamento+ano identifica una fila unica (verificado count=1).
+    Migrar tal cual.
+  expected_dataset_ids:
+  - ji8i-4anb
+  input_constraints:
+  - departamento=Antioquia
+  - ano=2011
+  selection_rule: fila unica (departamento+ano)
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - ji8i-4anb
+    columns:
+    - desercion
+    - desercion_primaria
+    - desercion_secundaria
+    - desercion_media
+    input_constraints:
+    - departamento=Antioquia
+    - ano=2011
+    selection_rule: fila unica (departamento+ano)
+    value_or_set:
+    - '3.97'
+    - '3.65'
+    - '4.57'
+    - '3.71'
+    tolerance: 0.001
+    unit: tasa (porcentaje)
+    rounding: 2
+    formula: null
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/ji8i-4anb.json?%24select=desercion%2Cdesercion_media%2Cdesercion_primaria%2Cdesercion_secundaria%2Ccount%28%2A%29+AS+multiplicity&%24group=desercion%2Cdesercion_media%2Cdesercion_primaria%2Cdesercion_secundaria&%24order=desercion%2Cdesercion_media%2Cdesercion_primaria%2Cdesercion_secundaria&%24where=departamento%3D%27Antioquia%27+AND+ano%3D2011
+    data_cutoff_at: '2025-11-13T21:31:42+00:00'
+  expected_facts:
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/ji8i-4anb.json?%24select=desercion%2Cdesercion_media%2Cdesercion_primaria%2Cdesercion_secundaria%2Ccount%28%2A%29+AS+multiplicity&%24group=desercion%2Cdesercion_media%2Cdesercion_primaria%2Cdesercion_secundaria&%24order=desercion%2Cdesercion_media%2Cdesercion_primaria%2Cdesercion_secundaria&%24where=departamento%3D%27Antioquia%27+AND+ano%3D2011
+    expected_value:
+      desercion: '3.97'
+      desercion_primaria: '3.65'
+      desercion_secundaria: '4.57'
+      desercion_media: '3.71'
+    tolerance: 0.001
+  source_urls:
+  - https://www.datos.gov.co/api/views/ji8i-4anb
+  - https://www.datos.gov.co/resource/ji8i-4anb.json?%24select=desercion%2Cdesercion_media%2Cdesercion_primaria%2Cdesercion_secundaria%2Ccount%28%2A%29+AS+multiplicity&%24group=desercion%2Cdesercion_media%2Cdesercion_primaria%2Cdesercion_secundaria&%24order=desercion%2Cdesercion_media%2Cdesercion_primaria%2Cdesercion_secundaria&%24where=departamento%3D%27Antioquia%27+AND+ano%3D2011
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2025-11-13T21:31:42+00:00'
+  seed: 601007
+  notes: 'T-616B: Filtro directo departamento+ano identifica una fila unica (verificado count=1). Migrar
+    tal cual. acceptable_facts_sha256=sha256:770f88f90c1e751f6916b392d47086be4bd3dc6b6be4606f8c6ce5f05ea360dd'
+- id: pilot-008-residuos-villamaria
+  case_type: positive
+  classification: determined
+  question: ¿Qué volumen de limpieza urbana reportó la empresa AQUAMANA E.S.P. en Villamaría en el año
+    de cargue 2017?
+  question_change: rewrite
+  question_change_rationale: 'La empresa esta determinada (unica: AQUAMANA), pero el anio no esta en la
+    pregunta y hay 9 anios de cargue con volumenes distintos. Anclar el anio vuelve el caso determinado.'
+  expected_dataset_ids:
+  - d7pt-p5fi
+  input_constraints:
+  - municipio_rea_de_prestaci=VILLAMARIA
+  - a_o_del_cargue=2017
+  selection_rule: unique_normalized_value (empresa unica, distinct=1); fila por municipio+anio
+  acceptable_facts:
+  - fact_kind: textual
+    operation: category_selection
+    allowed_datasets:
+    - d7pt-p5fi
+    columns:
+    - nombre_empresa
+    input_constraints:
+    - municipio_rea_de_prestaci=VILLAMARIA
+    selection_rule: unique_normalized_value (empresa unica, distinct=1)
+    value_or_set: AQUAMANA E.S.P.
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 9 filas -> 1 empresa
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/d7pt-p5fi.json?%24select=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana%2Ccount%28%2A%29+AS+multiplicity&%24group=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana&%24order=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana&%24where=municipio_rea_de_prestaci%3D%27VILLAMARIA%27
+    data_cutoff_at: '2024-10-16T22:43:50+00:00'
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - d7pt-p5fi
+    columns:
+    - toneladas_de_limpieza_urbana
+    input_constraints:
+    - municipio_rea_de_prestaci=VILLAMARIA
+    - a_o_del_cargue=2017
+    selection_rule: fila por municipio+anio
+    value_or_set: '9355.39'
+    tolerance: 0.01
+    unit: toneladas
+    rounding: 2
+    formula: null
+    temporal_cut: a_o_del_cargue declarado
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/d7pt-p5fi.json?%24select=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana%2Ccount%28%2A%29+AS+multiplicity&%24group=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana&%24order=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana&%24where=municipio_rea_de_prestaci%3D%27VILLAMARIA%27
+    data_cutoff_at: '2024-10-16T22:43:50+00:00'
+  expected_facts:
+  - description: category_selection verificado para nombre_empresa.
+    source_url: https://www.datos.gov.co/resource/d7pt-p5fi.json?%24select=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana%2Ccount%28%2A%29+AS+multiplicity&%24group=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana&%24order=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana&%24where=municipio_rea_de_prestaci%3D%27VILLAMARIA%27
+    expected_value:
+      nombre_empresa: AQUAMANA E.S.P.
+    tolerance: 0
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/d7pt-p5fi.json?%24select=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana%2Ccount%28%2A%29+AS+multiplicity&%24group=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana&%24order=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana&%24where=municipio_rea_de_prestaci%3D%27VILLAMARIA%27
+    expected_value:
+      toneladas_de_limpieza_urbana: '9355.39'
+    tolerance: 0.01
+  source_urls:
+  - https://www.datos.gov.co/api/views/d7pt-p5fi
+  - https://www.datos.gov.co/resource/d7pt-p5fi.json?%24select=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana%2Ccount%28%2A%29+AS+multiplicity&%24group=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana&%24order=a_o_del_cargue%2Cnombre_empresa%2Ctoneladas_de_limpieza_urbana&%24where=municipio_rea_de_prestaci%3D%27VILLAMARIA%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2024-10-16T22:43:50+00:00'
+  seed: 601008
+  notes: 'T-616B: La empresa esta determinada (unica: AQUAMANA), pero el anio no esta en la pregunta y
+    hay 9 anios de cargue con volumenes distintos. Anclar el anio vuelve el caso determinado. acceptable_facts_sha256=sha256:e57bc27a28540656c5685544053c709803c938076260ea0db0dc648f0cb12b35'
+- id: pilot-009-negativo-proyeccion-futura
+  case_type: negative
+  classification: abstention
+  question: ¿Cuántos estudiantes abandonarán exactamente la escuela en mi municipio durante 2027?
+  question_change: retain
+  question_change_rationale: La guarda negativa de golden-v1 sigue vigente.
+  expected_dataset_ids: []
+  input_constraints: []
+  selection_rule: abstain:prediccion_futura
+  acceptable_facts: []
+  expected_facts: []
+  source_urls: []
+  observed_at: '2026-07-18'
+  data_cutoff_at: null
+  seed: 601009
+  notes: 'Pregunta plausible pero predictiva: el sistema no debe inventar una cifra futura. Se espera
+    status=no_evidence y fabrication_count=0.'
+- id: pilot-010-negativo-causalidad-barrial
+  case_type: negative
+  classification: abstention
+  question: ¿En qué barrio la deserción escolar fue causada por el PAE durante junio de 2026?
+  question_change: retain
+  question_change_rationale: La guarda negativa de golden-v1 sigue vigente.
+  expected_dataset_ids: []
+  input_constraints: []
+  selection_rule: abstain:causalidad_sin_diseno
+  acceptable_facts: []
+  expected_facts: []
+  source_urls: []
+  observed_at: '2026-07-18'
+  data_cutoff_at: null
+  seed: 601010
+  notes: Solicita causalidad y granularidad barrial no demostradas por el catálogo seleccionado. Se espera
+    status=no_evidence y fabrication_count=0.
+- id: pilot-011-cooperacion-minas
+  case_type: positive
+  classification: multi_response
+  question: ¿Qué intervenciones de cooperación registran en su objetivo el apoyo a la Acción Integral
+    Contra Minas?
+  question_change: rewrite
+  question_change_rationale: La pregunta singular no selecciona una intervencion; hay 21 codigos distintos
+    cuyo objetivo menciona minas. Reformular en plural como conjunto acotado, o anclar un codigo/orden.
+  expected_dataset_ids:
+  - 2d3i-f9wd
+  input_constraints:
+  - objetivo_general menciona accion contra minas
+  selection_rule: canonical_text_set; cardinalidad completa verificada
+  acceptable_facts:
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - 2d3i-f9wd
+    columns:
+    - codigo_intervencion
+    input_constraints:
+    - objetivo_general menciona accion contra minas
+    selection_rule: canonical_text_set; cardinalidad completa verificada
+    value_or_set:
+    - 12236V
+    - '122710'
+    - '122717'
+    - '154368'
+    - 22977V
+    - 33706V
+    - R - BL - 00 - 009765
+    - R-AO-18-982
+    - R-AO-19-732
+    - R-AO-20-955
+    - R-AO-21-4216
+    - R-AO-22-4395
+    - R-AO-23-5225
+    - R-AO-23-5286
+    - R-AO-23-5373
+    - R-AO-24-5574
+    - R-BL-16-11474
+    - R-BL-16-11572
+    - R-BL-18-12841
+    - R-ML-16-11498
+    - R-ML-16-11507
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 21
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    data_cutoff_at: '2025-01-27T16:04:08+00:00'
+  expected_facts:
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: 12236V
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: '122710'
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: '122717'
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: '154368'
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: 22977V
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: 33706V
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R - BL - 00 - 009765
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-AO-18-982
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-AO-19-732
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-AO-20-955
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-AO-21-4216
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-AO-22-4395
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-AO-23-5225
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-AO-23-5286
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-AO-23-5373
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-AO-24-5574
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-BL-16-11474
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-BL-16-11572
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-BL-18-12841
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-ML-16-11498
+    tolerance: 0
+  - description: codigo_intervencion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+    expected_value:
+      codigo_intervencion: R-ML-16-11507
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/2d3i-f9wd
+  - https://www.datos.gov.co/resource/2d3i-f9wd.json?%24select=codigo_intervencion%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_intervencion&%24order=codigo_intervencion&%24where=objetivo_general+like+%27%25Minas%25%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2025-01-27T16:04:08+00:00'
+  seed: 601011
+  notes: 'T-616B: La pregunta singular no selecciona una intervencion; hay 21 codigos distintos cuyo objetivo
+    menciona minas. Reformular en plural como conjunto acotado, o anclar un codigo/orden. acceptable_facts_sha256=sha256:e684c9f72ba02e1a290fa3b3253829f88f7cd9834a818dbb84cff8d81e65e06d'
+- id: pilot-012-control-fiscal
+  case_type: positive
+  classification: determined
+  question: ¿Cuántos hallazgos administrativos reportó la auditoría regular de la vigencia 2019 a la Contraloría
+    General de Antioquia?
+  question_change: rewrite
+  question_change_rationale: Hay 3 auditorias regulares con numeros de hallazgos distintos; el golden
+    fija hallazgos=12 (la respuesta). Debe declararse la vigencia/fecha para determinar una.
+  expected_dataset_ids:
+  - wasc-xi4h
+  input_constraints:
+  - sujeto_auditado=Contraloria General de Antioquia
+  - modalidad_de_auditor_a=Regular
+  - vigencia=2019
+  selection_rule: fila por sujeto+modalidad+vigencia=2019
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - wasc-xi4h
+    columns:
+    - hallazgos_administrativos
+    input_constraints:
+    - sujeto_auditado=Contraloria General de Antioquia
+    - modalidad_de_auditor_a=Regular
+    - vigencia=2019
+    selection_rule: fila por sujeto+modalidad+vigencia=2019
+    value_or_set: '12'
+    tolerance: 0
+    unit: hallazgos
+    rounding: 0
+    formula: null
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/wasc-xi4h.json?%24select=sujeto_auditado%2Cmodalidad_de_auditor_a%2Cvigencia%2Challazgos_administrativos&%24where=sujeto_auditado%3D%27Contralor%C3%ADa%20General%20de%20Antioquia%27%20AND%20modalidad_de_auditor_a%3D%27Regular%27%20AND%20vigencia%3D%272019%27
+    data_cutoff_at: '2026-01-14T20:18:30+00:00'
+  expected_facts:
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/wasc-xi4h.json?%24select=sujeto_auditado%2Cmodalidad_de_auditor_a%2Cvigencia%2Challazgos_administrativos&%24where=sujeto_auditado%3D%27Contralor%C3%ADa%20General%20de%20Antioquia%27%20AND%20modalidad_de_auditor_a%3D%27Regular%27%20AND%20vigencia%3D%272019%27
+    expected_value:
+      hallazgos_administrativos: '12'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/wasc-xi4h
+  - https://www.datos.gov.co/resource/wasc-xi4h.json?%24select=hallazgos_administrativos%2Cvigencia%2Ccount%28%2A%29+AS+multiplicity&%24group=hallazgos_administrativos%2Cvigencia&%24order=hallazgos_administrativos%2Cvigencia&%24where=sujeto_auditado%3D%27Contralor%C3%ADa+General+de+Antioquia%27+AND+modalidad_de_auditor_a%3D%27Regular%27
+  - https://www.datos.gov.co/resource/wasc-xi4h.json?%24select=sujeto_auditado%2Cmodalidad_de_auditor_a%2Cvigencia%2Challazgos_administrativos&%24where=sujeto_auditado%3D%27Contralor%C3%ADa%20General%20de%20Antioquia%27%20AND%20modalidad_de_auditor_a%3D%27Regular%27%20AND%20vigencia%3D%272019%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-01-14T20:18:30+00:00'
+  seed: 601012
+  notes: 'T-616B: Hay 3 auditorias regulares con numeros de hallazgos distintos; el golden fija hallazgos=12
+    (la respuesta). Debe declararse la vigencia/fecha para determinar una. acceptable_facts_sha256=sha256:192093654c8fc56058cda29f48a4a09d8a735a8ba1881abeb79fc9f940006957'
+- id: pilot-013-app-dnp
+  case_type: positive
+  classification: determined
+  question: ¿Cuál es el tipo y nombre del proyecto APP PRY00062?
+  question_change: retain
+  question_change_rationale: 'El codigo PRY00062 identifica una fila unica (verificado count=1). Caso
+    puramente textual: debe migrar como TextualFact direct_text, no como conteo de presencia.'
+  expected_dataset_ids:
+  - tmk8-iihq
+  input_constraints:
+  - codigo=PRY00062
+  selection_rule: fila unica por codigo; fila unica por codigo
+  acceptable_facts:
+  - fact_kind: textual
+    operation: direct_text
+    allowed_datasets:
+    - tmk8-iihq
+    columns:
+    - tipo_app
+    input_constraints:
+    - codigo=PRY00062
+    selection_rule: fila unica por codigo
+    value_or_set: Iniciativa Privada sin Recursos Publicos
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 1
+    duplicate_policy: none
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/tmk8-iihq.json?%24select=nombre_proyecto%2Ctipo_app%2Ccount%28%2A%29+AS+multiplicity&%24group=nombre_proyecto%2Ctipo_app&%24order=nombre_proyecto%2Ctipo_app&%24where=codigo%3D%27PRY00062%27
+    data_cutoff_at: '2022-12-07T22:30:48+00:00'
+  - fact_kind: textual
+    operation: direct_text
+    allowed_datasets:
+    - tmk8-iihq
+    columns:
+    - nombre_proyecto
+    input_constraints:
+    - codigo=PRY00062
+    selection_rule: fila unica por codigo
+    value_or_set: IP Ibague - Cajamarca
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 1
+    duplicate_policy: none
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/tmk8-iihq.json?%24select=nombre_proyecto%2Ctipo_app%2Ccount%28%2A%29+AS+multiplicity&%24group=nombre_proyecto%2Ctipo_app&%24order=nombre_proyecto%2Ctipo_app&%24where=codigo%3D%27PRY00062%27
+    data_cutoff_at: '2022-12-07T22:30:48+00:00'
+  expected_facts:
+  - description: direct_text verificado para tipo_app.
+    source_url: https://www.datos.gov.co/resource/tmk8-iihq.json?%24select=nombre_proyecto%2Ctipo_app%2Ccount%28%2A%29+AS+multiplicity&%24group=nombre_proyecto%2Ctipo_app&%24order=nombre_proyecto%2Ctipo_app&%24where=codigo%3D%27PRY00062%27
+    expected_value:
+      tipo_app: Iniciativa Privada sin Recursos Públicos
+    tolerance: 0
+  - description: direct_text verificado para nombre_proyecto.
+    source_url: https://www.datos.gov.co/resource/tmk8-iihq.json?%24select=nombre_proyecto%2Ctipo_app%2Ccount%28%2A%29+AS+multiplicity&%24group=nombre_proyecto%2Ctipo_app&%24order=nombre_proyecto%2Ctipo_app&%24where=codigo%3D%27PRY00062%27
+    expected_value:
+      nombre_proyecto: IP Ibagué - Cajamarca
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/tmk8-iihq
+  - https://www.datos.gov.co/resource/tmk8-iihq.json?%24select=nombre_proyecto%2Ctipo_app%2Ccount%28%2A%29+AS+multiplicity&%24group=nombre_proyecto%2Ctipo_app&%24order=nombre_proyecto%2Ctipo_app&%24where=codigo%3D%27PRY00062%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2022-12-07T22:30:48+00:00'
+  seed: 601013
+  notes: 'T-616B: El codigo PRY00062 identifica una fila unica (verificado count=1). Caso puramente textual:
+    debe migrar como TextualFact direct_text, no como conteo de presencia. acceptable_facts_sha256=sha256:82c957b9b0702a023869ed33c4a2f327c61f01d0fdba5005520389cc953620e4'
+- id: pilot-014-calidad-agua
+  case_type: positive
+  classification: determined
+  question: ¿Qué código departamental y código de municipio consolidado (#TODOS) reporta el registro de
+    calidad del agua de Bogotá, D.C.?
+  question_change: rewrite
+  question_change_rationale: '''municipio consolidado'' no esta definido operativamente. Verificado que
+    existe municipiocodigo=''#TODOS'' junto a ''11001''; si se define consolidado=#TODOS el caso es determinable,
+    pero la definicion requiere aval humano.'
+  expected_dataset_ids:
+  - nxt2-39c3
+  input_constraints:
+  - departamentocodigo=11
+  selection_rule: value_presence del codigo consolidado (si se define consolidado=#TODOS)
+  acceptable_facts:
+  - fact_kind: textual
+    operation: value_presence
+    allowed_datasets:
+    - nxt2-39c3
+    columns:
+    - municipiocodigo
+    input_constraints:
+    - departamentocodigo=11
+    selection_rule: value_presence del codigo consolidado (si se define consolidado=#TODOS)
+    value_or_set: '#TODOS'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: presencia
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/nxt2-39c3.json?%24select=municipiocodigo%2Ccount%28%2A%29+AS+multiplicity&%24group=municipiocodigo&%24order=municipiocodigo&%24where=departamentocodigo%3D%2711%27
+    data_cutoff_at: '2025-06-10T20:01:06+00:00'
+  expected_facts:
+  - description: value_presence verificado para municipiocodigo.
+    source_url: https://www.datos.gov.co/resource/nxt2-39c3.json?%24select=municipiocodigo%2Ccount%28%2A%29+AS+multiplicity&%24group=municipiocodigo&%24order=municipiocodigo&%24where=departamentocodigo%3D%2711%27
+    expected_value:
+      municipiocodigo: '#TODOS'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/nxt2-39c3
+  - https://www.datos.gov.co/resource/nxt2-39c3.json?%24select=municipiocodigo%2Ccount%28%2A%29+AS+multiplicity&%24group=municipiocodigo&%24order=municipiocodigo&%24where=departamentocodigo%3D%2711%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2025-06-10T20:01:06+00:00'
+  seed: 601014
+  notes: 'T-616B: ''municipio consolidado'' no esta definido operativamente. Verificado que existe municipiocodigo=''#TODOS''
+    junto a ''11001''; si se define consolidado=#TODOS el caso es determinable, pero la definicion requiere
+    aval humano. acceptable_facts_sha256=sha256:7f9c61ecc15f5d036578b2a1575018b2cdcd24127ea75906fab531f6dbf31ee5'
+- id: pilot-015-puestos-electorales
+  case_type: positive
+  classification: aggregate
+  question: ¿Cuántos puestos de votación se habilitaron en Medellín (Antioquia) para las elecciones territoriales
+    de 2023?
+  question_change: rewrite
+  question_change_rationale: Hay 239 puestos distintos; ninguno lo selecciona la pregunta y 239>50 impide
+    un conjunto textual. Se propone un agregado util (conteo) o anclar un puesto por direccion/comuna.
+  expected_dataset_ids:
+  - mv2e-prx5
+  input_constraints:
+  - departamento=ANTIOQUIA
+  - municipio=MEDELLIN
+  selection_rule: conteo de puestos (agregado util)
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: derived
+    allowed_datasets:
+    - mv2e-prx5
+    columns:
+    - puesto
+    input_constraints:
+    - departamento=ANTIOQUIA
+    - municipio=MEDELLIN
+    selection_rule: conteo de puestos (agregado util)
+    value_or_set: 239 puestos (obs. 2026-07-18)
+    tolerance: 0
+    unit: puestos
+    rounding: 0
+    formula:
+      op: count
+      distinct: puesto
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/mv2e-prx5.json?%24select=puesto%2Ccount%28%2A%29+AS+multiplicity&%24group=puesto&%24order=puesto&%24where=departamento%3D%27ANTIOQUIA%27+AND+municipio%3D%27MEDELLIN%27
+    data_cutoff_at: '2023-10-11T00:53:27+00:00'
+  expected_facts:
+  - description: derived cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/mv2e-prx5.json?%24select=count(distinct+puesto)+AS+n&%24where=municipio%3D'MEDELLIN'
+    expected_value:
+      n: '239'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/mv2e-prx5
+  - https://www.datos.gov.co/resource/mv2e-prx5.json?%24select=puesto%2Ccount%28%2A%29+AS+multiplicity&%24group=puesto&%24order=puesto&%24where=departamento%3D%27ANTIOQUIA%27+AND+municipio%3D%27MEDELLIN%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2023-10-11T00:53:27+00:00'
+  seed: 601015
+  notes: 'T-616B: Hay 239 puestos distintos; ninguno lo selecciona la pregunta y 239>50 impide un conjunto
+    textual. Se propone un agregado util (conteo) o anclar un puesto por direccion/comuna. acceptable_facts_sha256=sha256:35dc06ccbe1919685a6a84275c32f58e2e4a2969422bb5dcfd698e51574c2e7a'
+- id: pilot-016-codigos-postales
+  case_type: positive
+  classification: multi_response
+  question: ¿Qué códigos postales publica la fuente para las zonas urbana y rural de Rondón, Boyacá, conservando
+    el formato original y aclarando su forma canónica oficial de seis dígitos?
+  question_change: rewrite
+  question_change_rationale: La pregunta singular no determina urbano vs rural (2 registros). Ademas noid
+    y codigo_postal son campos distintos; el golden congelo noid=877 y nunca filtro 'Rondon'. Aunque el
+    esquema oficial permite verificar el tipo publicado, no certifica si el punto representa un decimal
+    o una perdida de ceros en un codigo de seis digitos.
+  expected_dataset_ids:
+  - ixig-z8b5
+  input_constraints:
+  - nombre_municipio=RONDON
+  - nombre_departamento=BOYACA
+  - tipo=Urbano
+  - tipo=Rural
+  selection_rule: fila única de tipo Urbano; conservar el valor publicado por Socrata y reportar su forma
+    canónica oficial de seis dígitos; fila única de tipo Rural; conservar el valor publicado por Socrata
+    y reportar su forma canónica oficial de seis dígitos
+  acceptable_facts:
+  - fact_kind: textual
+    operation: direct_text
+    allowed_datasets:
+    - ixig-z8b5
+    columns:
+    - codigo_postal
+    input_constraints:
+    - nombre_municipio=RONDON
+    - nombre_departamento=BOYACA
+    - tipo=Urbano
+    selection_rule: fila única de tipo Urbano; conservar el valor publicado por Socrata y reportar su
+      forma canónica oficial de seis dígitos
+    value_or_set: '153.42'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 1
+    duplicate_policy: none
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/ixig-z8b5.json?%24select=noid%2Ccodigo_postal%2Ctipo&%24where=nombre_municipio%3D%27RONDON%27%20AND%20nombre_departamento%3D%27BOYACA%27%20AND%20tipo%3D%27Urbano%27
+    data_cutoff_at: '2025-05-20T20:24:15+00:00'
+    canonical_value: '153420'
+    canonical_source: https://visor.codigopostal.gov.co/472/visor/Codigos_Postales_Nacionales.csv
+    canonical_source_hash: sha256:fdfd886f58b904ff29236eaf24acabdc999cc4fd2992493a8c3d0bc2b52241c7
+  - fact_kind: textual
+    operation: direct_text
+    allowed_datasets:
+    - ixig-z8b5
+    columns:
+    - codigo_postal
+    input_constraints:
+    - nombre_municipio=RONDON
+    - nombre_departamento=BOYACA
+    - tipo=Rural
+    selection_rule: fila única de tipo Rural; conservar el valor publicado por Socrata y reportar su forma
+      canónica oficial de seis dígitos
+    value_or_set: '153.427'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 1
+    duplicate_policy: none
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/ixig-z8b5.json?%24select=noid%2Ccodigo_postal%2Ctipo&%24where=nombre_municipio%3D%27RONDON%27%20AND%20nombre_departamento%3D%27BOYACA%27%20AND%20tipo%3D%27Rural%27
+    data_cutoff_at: '2025-05-20T20:24:15+00:00'
+    canonical_value: '153427'
+    canonical_source: https://visor.codigopostal.gov.co/472/visor/Codigos_Postales_Nacionales.csv
+    canonical_source_hash: sha256:fdfd886f58b904ff29236eaf24acabdc999cc4fd2992493a8c3d0bc2b52241c7
+  expected_facts:
+  - description: direct_text verificado para codigo_postal.
+    source_url: https://www.datos.gov.co/resource/ixig-z8b5.json?%24select=noid%2Ccodigo_postal%2Ctipo&%24where=nombre_municipio%3D%27RONDON%27%20AND%20nombre_departamento%3D%27BOYACA%27%20AND%20tipo%3D%27Urbano%27
+    expected_value:
+      codigo_postal: '153.42'
+    tolerance: 0
+  - description: direct_text verificado para codigo_postal.
+    source_url: https://www.datos.gov.co/resource/ixig-z8b5.json?%24select=noid%2Ccodigo_postal%2Ctipo&%24where=nombre_municipio%3D%27RONDON%27%20AND%20nombre_departamento%3D%27BOYACA%27%20AND%20tipo%3D%27Rural%27
+    expected_value:
+      codigo_postal: '153.427'
+    tolerance: 0
+  source_urls:
+  - https://visor.codigopostal.gov.co/472/visor/Codigos_Postales_Nacionales.csv
+  - https://www.datos.gov.co/api/views/ixig-z8b5
+  - https://www.datos.gov.co/resource/ixig-z8b5.json?%24select=codigo_postal%2Cnoid%2Ctipo%2Ccount%28%2A%29+AS+multiplicity&%24group=codigo_postal%2Cnoid%2Ctipo&%24order=codigo_postal%2Cnoid%2Ctipo&%24where=nombre_municipio%3D%27RONDON%27+AND+nombre_departamento%3D%27BOYACA%27
+  - https://www.datos.gov.co/resource/ixig-z8b5.json?%24select=noid%2Ccodigo_postal%2Ctipo&%24where=nombre_municipio%3D%27RONDON%27%20AND%20nombre_departamento%3D%27BOYACA%27%20AND%20tipo%3D%27Rural%27
+  - https://www.datos.gov.co/resource/ixig-z8b5.json?%24select=noid%2Ccodigo_postal%2Ctipo&%24where=nombre_municipio%3D%27RONDON%27%20AND%20nombre_departamento%3D%27BOYACA%27%20AND%20tipo%3D%27Urbano%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2025-05-20T20:24:15+00:00'
+  seed: 601016
+  notes: 'T-616B: La pregunta singular no determina urbano vs rural (2 registros). Ademas noid y codigo_postal
+    son campos distintos; el golden congelo noid=877 y nunca filtro ''Rondon''. Aunque el esquema oficial
+    permite verificar el tipo publicado, no certifica si el punto representa un decimal o una perdida
+    de ceros en un codigo de seis digitos. acceptable_facts_sha256=sha256:d59a3c3a3736ee691f7e29d897e6c0b2ef960273d4bc0c599eaedc7ea7b80bb3'
+- id: pilot-017-transporte-carretera
+  case_type: positive
+  classification: multi_response
+  question: ¿Qué clases de vehículo y niveles de servicio se reportan en la terminal T.T. DE CALI?
+  question_change: rewrite
+  question_change_rationale: 'El plural ''se reportaron'' admite el conjunto de clases y niveles. Verificado:
+    6 clases y 2 niveles (acotados). El golden congela una combinacion (BUSETA/BASICO).'
+  expected_dataset_ids:
+  - eh75-8ah6
+  input_constraints:
+  - terminal=T.T. DE CALI
+  selection_rule: canonical_text_set; canonical_text_set
+  acceptable_facts:
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - eh75-8ah6
+    columns:
+    - clase_vehiculo
+    input_constraints:
+    - terminal=T.T. DE CALI
+    selection_rule: canonical_text_set
+    value_or_set:
+    - AUTOMOVIL
+    - BUS
+    - BUSETA
+    - CAMIONETA
+    - CAMPERO
+    - MICROBUS
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 6
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/eh75-8ah6.json?%24select=clase_vehiculo%2Cnivel_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=clase_vehiculo%2Cnivel_servicio&%24order=clase_vehiculo%2Cnivel_servicio&%24where=terminal%3D%27T.T.+DE+CALI%27
+    data_cutoff_at: '2026-05-03T06:06:51+00:00'
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - eh75-8ah6
+    columns:
+    - nivel_servicio
+    input_constraints:
+    - terminal=T.T. DE CALI
+    selection_rule: canonical_text_set
+    value_or_set:
+    - BASICO
+    - LUJO
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 2
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/eh75-8ah6.json?%24select=clase_vehiculo%2Cnivel_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=clase_vehiculo%2Cnivel_servicio&%24order=clase_vehiculo%2Cnivel_servicio&%24where=terminal%3D%27T.T.+DE+CALI%27
+    data_cutoff_at: '2026-05-03T06:06:51+00:00'
+  expected_facts:
+  - description: clase_vehiculo pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/eh75-8ah6.json?%24select=clase_vehiculo%2Cnivel_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=clase_vehiculo%2Cnivel_servicio&%24order=clase_vehiculo%2Cnivel_servicio&%24where=terminal%3D%27T.T.+DE+CALI%27
+    expected_value:
+      clase_vehiculo: AUTOMOVIL
+    tolerance: 0
+  - description: clase_vehiculo pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/eh75-8ah6.json?%24select=clase_vehiculo%2Cnivel_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=clase_vehiculo%2Cnivel_servicio&%24order=clase_vehiculo%2Cnivel_servicio&%24where=terminal%3D%27T.T.+DE+CALI%27
+    expected_value:
+      clase_vehiculo: BUS
+    tolerance: 0
+  - description: clase_vehiculo pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/eh75-8ah6.json?%24select=clase_vehiculo%2Cnivel_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=clase_vehiculo%2Cnivel_servicio&%24order=clase_vehiculo%2Cnivel_servicio&%24where=terminal%3D%27T.T.+DE+CALI%27
+    expected_value:
+      clase_vehiculo: BUSETA
+    tolerance: 0
+  - description: clase_vehiculo pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/eh75-8ah6.json?%24select=clase_vehiculo%2Cnivel_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=clase_vehiculo%2Cnivel_servicio&%24order=clase_vehiculo%2Cnivel_servicio&%24where=terminal%3D%27T.T.+DE+CALI%27
+    expected_value:
+      clase_vehiculo: CAMIONETA
+    tolerance: 0
+  - description: clase_vehiculo pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/eh75-8ah6.json?%24select=clase_vehiculo%2Cnivel_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=clase_vehiculo%2Cnivel_servicio&%24order=clase_vehiculo%2Cnivel_servicio&%24where=terminal%3D%27T.T.+DE+CALI%27
+    expected_value:
+      clase_vehiculo: CAMPERO
+    tolerance: 0
+  - description: clase_vehiculo pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/eh75-8ah6.json?%24select=clase_vehiculo%2Cnivel_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=clase_vehiculo%2Cnivel_servicio&%24order=clase_vehiculo%2Cnivel_servicio&%24where=terminal%3D%27T.T.+DE+CALI%27
+    expected_value:
+      clase_vehiculo: MICROBUS
+    tolerance: 0
+  - description: nivel_servicio pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/eh75-8ah6.json?%24select=clase_vehiculo%2Cnivel_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=clase_vehiculo%2Cnivel_servicio&%24order=clase_vehiculo%2Cnivel_servicio&%24where=terminal%3D%27T.T.+DE+CALI%27
+    expected_value:
+      nivel_servicio: BASICO
+    tolerance: 0
+  - description: nivel_servicio pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/eh75-8ah6.json?%24select=clase_vehiculo%2Cnivel_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=clase_vehiculo%2Cnivel_servicio&%24order=clase_vehiculo%2Cnivel_servicio&%24where=terminal%3D%27T.T.+DE+CALI%27
+    expected_value:
+      nivel_servicio: LUJO
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/eh75-8ah6
+  - https://www.datos.gov.co/resource/eh75-8ah6.json?%24select=clase_vehiculo%2Cnivel_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=clase_vehiculo%2Cnivel_servicio&%24order=clase_vehiculo%2Cnivel_servicio&%24where=terminal%3D%27T.T.+DE+CALI%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-05-03T06:06:51+00:00'
+  seed: 601017
+  notes: 'T-616B: El plural ''se reportaron'' admite el conjunto de clases y niveles. Verificado: 6 clases
+    y 2 niveles (acotados). El golden congela una combinacion (BUSETA/BASICO). acceptable_facts_sha256=sha256:ea524538a7cc14dd8d13cf2be7e8d87f27f4cf7f89a6d4f015fb95cff082606d'
+- id: pilot-018-transporte-ferreo
+  case_type: positive
+  classification: multi_response
+  question: ¿Qué concesiones y operadores movilizaron carga férrea el 13 de octubre de 2023?
+  question_change: rewrite
+  question_change_rationale: 'La fecha es explicita, pero concesion/operador se fijan a un par (FENOCO/DRUMMOND).
+    Hay 2 concesiones y 3 operadores ese dia: conjunto acotado.'
+  expected_dataset_ids:
+  - 7atu-2b28
+  input_constraints:
+  - fecha_operacion=2023-10-13
+  selection_rule: canonical_text_set; canonical_text_set
+  acceptable_facts:
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - 7atu-2b28
+    columns:
+    - concesion
+    input_constraints:
+    - fecha_operacion=2023-10-13
+    selection_rule: canonical_text_set
+    value_or_set:
+    - CONSORCIO IBINES FERREO
+    - FENOCO S.A
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 2
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/7atu-2b28.json?%24select=concesion%2Coperador%2Ccount%28%2A%29+AS+multiplicity&%24group=concesion%2Coperador&%24order=concesion%2Coperador&%24where=fecha_operacion%3D%272023-10-13T00%3A00%3A00.000%27
+    data_cutoff_at: '2026-07-01T10:05:21+00:00'
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - 7atu-2b28
+    columns:
+    - operador
+    input_constraints:
+    - fecha_operacion=2023-10-13
+    selection_rule: canonical_text_set
+    value_or_set:
+    - COOPSERCOL
+    - DRUMMOND
+    - TURISTREN SAS
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 3
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/7atu-2b28.json?%24select=concesion%2Coperador%2Ccount%28%2A%29+AS+multiplicity&%24group=concesion%2Coperador&%24order=concesion%2Coperador&%24where=fecha_operacion%3D%272023-10-13T00%3A00%3A00.000%27
+    data_cutoff_at: '2026-07-01T10:05:21+00:00'
+  expected_facts:
+  - description: concesion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/7atu-2b28.json?%24select=concesion%2Coperador%2Ccount%28%2A%29+AS+multiplicity&%24group=concesion%2Coperador&%24order=concesion%2Coperador&%24where=fecha_operacion%3D%272023-10-13T00%3A00%3A00.000%27
+    expected_value:
+      concesion: CONSORCIO IBINES FERREO
+    tolerance: 0
+  - description: concesion pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/7atu-2b28.json?%24select=concesion%2Coperador%2Ccount%28%2A%29+AS+multiplicity&%24group=concesion%2Coperador&%24order=concesion%2Coperador&%24where=fecha_operacion%3D%272023-10-13T00%3A00%3A00.000%27
+    expected_value:
+      concesion: FENOCO S.A
+    tolerance: 0
+  - description: operador pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/7atu-2b28.json?%24select=concesion%2Coperador%2Ccount%28%2A%29+AS+multiplicity&%24group=concesion%2Coperador&%24order=concesion%2Coperador&%24where=fecha_operacion%3D%272023-10-13T00%3A00%3A00.000%27
+    expected_value:
+      operador: COOPSERCOL
+    tolerance: 0
+  - description: operador pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/7atu-2b28.json?%24select=concesion%2Coperador%2Ccount%28%2A%29+AS+multiplicity&%24group=concesion%2Coperador&%24order=concesion%2Coperador&%24where=fecha_operacion%3D%272023-10-13T00%3A00%3A00.000%27
+    expected_value:
+      operador: DRUMMOND
+    tolerance: 0
+  - description: operador pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/7atu-2b28.json?%24select=concesion%2Coperador%2Ccount%28%2A%29+AS+multiplicity&%24group=concesion%2Coperador&%24order=concesion%2Coperador&%24where=fecha_operacion%3D%272023-10-13T00%3A00%3A00.000%27
+    expected_value:
+      operador: TURISTREN SAS
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/7atu-2b28
+  - https://www.datos.gov.co/resource/7atu-2b28.json?%24select=concesion%2Coperador%2Ccount%28%2A%29+AS+multiplicity&%24group=concesion%2Coperador&%24order=concesion%2Coperador&%24where=fecha_operacion%3D%272023-10-13T00%3A00%3A00.000%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-07-01T10:05:21+00:00'
+  seed: 601018
+  notes: 'T-616B: La fecha es explicita, pero concesion/operador se fijan a un par (FENOCO/DRUMMOND).
+    Hay 2 concesiones y 3 operadores ese dia: conjunto acotado. acceptable_facts_sha256=sha256:cd0e5b51f18cfc361f9fe8aa31f85fd02a0efdef81cc6dc60fa7899ad4c9e10a'
+- id: pilot-019-trafico-portuario
+  case_type: positive
+  classification: multi_response
+  question: ¿Qué sociedades portuarias y tipos de servicio reportan tráfico en la zona portuaria de Barranquilla?
+  question_change: rewrite
+  question_change_rationale: 'El plural ''reportan'' admite el conjunto. Verificado: 12 sociedades y 2
+    tipos en Barranquilla (acotado).'
+  expected_dataset_ids:
+  - 5r3g-zv5z
+  input_constraints:
+  - zona_portuaria=BARRANQUILLA
+  selection_rule: canonical_text_set; canonical_text_set
+  acceptable_facts:
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - 5r3g-zv5z
+    columns:
+    - sociedad_portuaria
+    input_constraints:
+    - zona_portuaria=BARRANQUILLA
+    selection_rule: canonical_text_set
+    value_or_set:
+    - ATUNAMAR LIMITADA
+    - BARRANQUILLA INTERNATIONAL TERMINAL COMPANY S.A.
+    - COMPA�IA DE PUERTOS ASOCIADOS S.A.
+    - DELTA SOCIEDAD PORTUARIA S.A.
+    - PALERMO SOCIEDAD PORTUARIA S.A
+    - PORTMAGDALENA S.A.
+    - SOCIEDAD PORTUARIA MICHELLMAR S.A.
+    - SOCIEDAD PORTUARIA MONOMEROS COLOMBO VENEZOLANOS S.A.
+    - SOCIEDAD PORTUARIA REGIONAL DE BARRANQUILLA S.A.
+    - SOCIEDAD PORTUARIA RIO GRANDE S.A.
+    - SOCIEDAD PORTUARIA RIVERPORT S.A.
+    - VOPAK COLOMBIA S.A.
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 12
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    data_cutoff_at: '2026-07-01T20:05:03+00:00'
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - 5r3g-zv5z
+    columns:
+    - tipo_servicio
+    input_constraints:
+    - zona_portuaria=BARRANQUILLA
+    selection_rule: canonical_text_set
+    value_or_set:
+    - PRIVADO
+    - PUBLICO
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 2
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    data_cutoff_at: '2026-07-01T20:05:03+00:00'
+  expected_facts:
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: ATUNAMAR LIMITADA
+    tolerance: 0
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: BARRANQUILLA INTERNATIONAL TERMINAL COMPANY S.A.
+    tolerance: 0
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: COMPA�IA DE PUERTOS ASOCIADOS S.A.
+    tolerance: 0
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: DELTA SOCIEDAD PORTUARIA S.A.
+    tolerance: 0
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: PALERMO SOCIEDAD PORTUARIA S.A
+    tolerance: 0
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: PORTMAGDALENA S.A.
+    tolerance: 0
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: SOCIEDAD PORTUARIA MICHELLMAR S.A.
+    tolerance: 0
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: SOCIEDAD PORTUARIA MONOMEROS COLOMBO VENEZOLANOS S.A.
+    tolerance: 0
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: SOCIEDAD PORTUARIA REGIONAL DE BARRANQUILLA S.A.
+    tolerance: 0
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: SOCIEDAD PORTUARIA RIO GRANDE S.A.
+    tolerance: 0
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: SOCIEDAD PORTUARIA RIVERPORT S.A.
+    tolerance: 0
+  - description: sociedad_portuaria pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      sociedad_portuaria: VOPAK COLOMBIA S.A.
+    tolerance: 0
+  - description: tipo_servicio pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      tipo_servicio: PRIVADO
+    tolerance: 0
+  - description: tipo_servicio pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+    expected_value:
+      tipo_servicio: PUBLICO
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/5r3g-zv5z
+  - https://www.datos.gov.co/resource/5r3g-zv5z.json?%24select=sociedad_portuaria%2Ctipo_servicio%2Ccount%28%2A%29+AS+multiplicity&%24group=sociedad_portuaria%2Ctipo_servicio&%24order=sociedad_portuaria%2Ctipo_servicio&%24where=zona_portuaria%3D%27BARRANQUILLA%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-07-01T20:05:03+00:00'
+  seed: 601019
+  notes: 'T-616B: El plural ''reportan'' admite el conjunto. Verificado: 12 sociedades y 2 tipos en Barranquilla
+    (acotado). acceptable_facts_sha256=sha256:11b55bff202075dc48a42d31f1d71a0bfb59073f3cb8677e8b9707a0900160a6'
+- id: pilot-020-divipola
+  case_type: positive
+  classification: determined
+  question: ¿Cuál es el código DIVIPOLA municipal de Medellín (Antioquia)?
+  question_change: retain
+  question_change_rationale: 'Verificado: dpto=ANTIOQUIA AND nom_mpio=MEDELLIN => 1 fila (cod_mpio=05001).
+    Quitar el pinning de cod_mpio en el $where.'
+  expected_dataset_ids:
+  - gdxc-w37w
+  input_constraints:
+  - dpto=ANTIOQUIA
+  - nom_mpio=MEDELLIN
+  selection_rule: fila unica por municipio (verificado count=1)
+  acceptable_facts:
+  - fact_kind: textual
+    operation: direct_text
+    allowed_datasets:
+    - gdxc-w37w
+    columns:
+    - cod_mpio
+    input_constraints:
+    - dpto=ANTIOQUIA
+    - nom_mpio=MEDELLIN
+    selection_rule: fila unica por municipio (verificado count=1)
+    value_or_set: '05001'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 1
+    duplicate_policy: none
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/gdxc-w37w.json?%24select=cod_mpio%2Ctipo_municipio%2Ccount%28%2A%29+AS+multiplicity&%24group=cod_mpio%2Ctipo_municipio&%24order=cod_mpio%2Ctipo_municipio&%24where=dpto%3D%27ANTIOQUIA%27+AND+nom_mpio%3D%27MEDELL%C3%8DN%27
+    data_cutoff_at: '2025-01-24T20:44:32+00:00'
+  expected_facts:
+  - description: direct_text verificado para cod_mpio.
+    source_url: https://www.datos.gov.co/resource/gdxc-w37w.json?%24select=cod_mpio%2Ctipo_municipio%2Ccount%28%2A%29+AS+multiplicity&%24group=cod_mpio%2Ctipo_municipio&%24order=cod_mpio%2Ctipo_municipio&%24where=dpto%3D%27ANTIOQUIA%27+AND+nom_mpio%3D%27MEDELL%C3%8DN%27
+    expected_value:
+      cod_mpio: '05001'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/gdxc-w37w
+  - https://www.datos.gov.co/resource/gdxc-w37w.json?%24select=cod_mpio%2Ctipo_municipio%2Ccount%28%2A%29+AS+multiplicity&%24group=cod_mpio%2Ctipo_municipio&%24order=cod_mpio%2Ctipo_municipio&%24where=dpto%3D%27ANTIOQUIA%27+AND+nom_mpio%3D%27MEDELL%C3%8DN%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2025-01-24T20:44:32+00:00'
+  seed: 601020
+  notes: 'T-616B: Verificado: dpto=ANTIOQUIA AND nom_mpio=MEDELLIN => 1 fila (cod_mpio=05001). Quitar
+    el pinning de cod_mpio en el $where. acceptable_facts_sha256=sha256:bf4d38aab7f835b483fce64813f271eaf901fc75047b5f3e22c9b07127ed9251'
+- id: pilot-021-sensibilizacion-valle
+  case_type: positive
+  classification: determined
+  question: ¿Cuántas personas socializadas se reportaron en Alcalá (Valle) en enero de 2018?
+  question_change: rewrite
+  question_change_rationale: El anio 2018 SI esta en la pregunta; el golden no lo uso y en su lugar filtro
+    cantidad=65 (la respuesta). Anclando a_o=2018 la fila es unica.
+  expected_dataset_ids:
+  - 52mk-e3ug
+  input_constraints:
+  - municipio=ALCALA
+  - mes=Enero
+  - a_o=2018
+  selection_rule: fila unica (municipio+mes+anio)
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - 52mk-e3ug
+    columns:
+    - cantidad
+    input_constraints:
+    - municipio=ALCALA
+    - mes=Enero
+    - a_o=2018
+    selection_rule: fila unica (municipio+mes+anio)
+    value_or_set: '65'
+    tolerance: 0
+    unit: personas
+    rounding: 0
+    formula: null
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/52mk-e3ug.json?%24select=cantidad%2Ccount%28%2A%29+AS+multiplicity&%24group=cantidad&%24order=cantidad&%24where=municipio%3D%27ALCAL%C3%81%27+AND+mes%3D%27Enero%27
+    data_cutoff_at: '2020-11-23T00:56:23+00:00'
+  expected_facts:
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/52mk-e3ug.json?%24select=cantidad%2Ccount%28%2A%29+AS+multiplicity&%24group=cantidad&%24order=cantidad&%24where=municipio%3D%27ALCAL%C3%81%27+AND+mes%3D%27Enero%27
+    expected_value:
+      cantidad: '65'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/52mk-e3ug
+  - https://www.datos.gov.co/resource/52mk-e3ug.json?%24select=cantidad%2Ccount%28%2A%29+AS+multiplicity&%24group=cantidad&%24order=cantidad&%24where=municipio%3D%27ALCAL%C3%81%27+AND+mes%3D%27Enero%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2020-11-23T00:56:23+00:00'
+  seed: 601021
+  notes: 'T-616B: El anio 2018 SI esta en la pregunta; el golden no lo uso y en su lugar filtro cantidad=65
+    (la respuesta). Anclando a_o=2018 la fila es unica. acceptable_facts_sha256=sha256:190d691c70560561d9159a12fb1ca31c7743d816b926bd0fb5e463e6a9997391'
+- id: pilot-022-red-vial
+  case_type: positive
+  classification: determined
+  question: ¿Qué administrador, número de calzadas y categoría se registran para el tramo vial 55ST02?
+  question_change: rewrite
+  question_change_rationale: 'La consulta debe filtrar por codigo_tramo=''55ST02'' (el sujeto), no por
+    administrador/calzada/categoria (la respuesta). Verificado: 3 filas duplicadas identicas en los campos
+    pedidos.'
+  expected_dataset_ids:
+  - ie7y-asdn
+  input_constraints:
+  - codigo_tramo=55ST02
+  selection_rule: unique_normalized_value (3 filas identicas colapsan a 1); unique_normalized_value; unique_normalized_value
+  acceptable_facts:
+  - fact_kind: textual
+    operation: category_selection
+    allowed_datasets:
+    - ie7y-asdn
+    columns:
+    - administrador
+    input_constraints:
+    - codigo_tramo=55ST02
+    selection_rule: unique_normalized_value (3 filas identicas colapsan a 1)
+    value_or_set: '1'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 3 filas fuente -> 1 valor normalizado
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/ie7y-asdn.json?%24select=administrador%2Ccalzada%2Ccategoria%2Ccount%28%2A%29+AS+multiplicity&%24group=administrador%2Ccalzada%2Ccategoria&%24order=administrador%2Ccalzada%2Ccategoria&%24where=codigo_tramo%3D%2755ST02%27
+    data_cutoff_at: '2026-07-01T20:12:04+00:00'
+  - fact_kind: textual
+    operation: category_selection
+    allowed_datasets:
+    - ie7y-asdn
+    columns:
+    - calzada
+    input_constraints:
+    - codigo_tramo=55ST02
+    selection_rule: unique_normalized_value
+    value_or_set: '1'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 3->1
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/ie7y-asdn.json?%24select=administrador%2Ccalzada%2Ccategoria%2Ccount%28%2A%29+AS+multiplicity&%24group=administrador%2Ccalzada%2Ccategoria&%24order=administrador%2Ccalzada%2Ccategoria&%24where=codigo_tramo%3D%2755ST02%27
+    data_cutoff_at: '2026-07-01T20:12:04+00:00'
+  - fact_kind: textual
+    operation: category_selection
+    allowed_datasets:
+    - ie7y-asdn
+    columns:
+    - categoria
+    input_constraints:
+    - codigo_tramo=55ST02
+    selection_rule: unique_normalized_value
+    value_or_set: '2'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 3->1
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/ie7y-asdn.json?%24select=administrador%2Ccalzada%2Ccategoria%2Ccount%28%2A%29+AS+multiplicity&%24group=administrador%2Ccalzada%2Ccategoria&%24order=administrador%2Ccalzada%2Ccategoria&%24where=codigo_tramo%3D%2755ST02%27
+    data_cutoff_at: '2026-07-01T20:12:04+00:00'
+  expected_facts:
+  - description: category_selection verificado para administrador.
+    source_url: https://www.datos.gov.co/resource/ie7y-asdn.json?%24select=administrador%2Ccalzada%2Ccategoria%2Ccount%28%2A%29+AS+multiplicity&%24group=administrador%2Ccalzada%2Ccategoria&%24order=administrador%2Ccalzada%2Ccategoria&%24where=codigo_tramo%3D%2755ST02%27
+    expected_value:
+      administrador: '1'
+    tolerance: 0
+  - description: category_selection verificado para calzada.
+    source_url: https://www.datos.gov.co/resource/ie7y-asdn.json?%24select=administrador%2Ccalzada%2Ccategoria%2Ccount%28%2A%29+AS+multiplicity&%24group=administrador%2Ccalzada%2Ccategoria&%24order=administrador%2Ccalzada%2Ccategoria&%24where=codigo_tramo%3D%2755ST02%27
+    expected_value:
+      calzada: '1'
+    tolerance: 0
+  - description: category_selection verificado para categoria.
+    source_url: https://www.datos.gov.co/resource/ie7y-asdn.json?%24select=administrador%2Ccalzada%2Ccategoria%2Ccount%28%2A%29+AS+multiplicity&%24group=administrador%2Ccalzada%2Ccategoria&%24order=administrador%2Ccalzada%2Ccategoria&%24where=codigo_tramo%3D%2755ST02%27
+    expected_value:
+      categoria: '2'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/ie7y-asdn
+  - https://www.datos.gov.co/resource/ie7y-asdn.json?%24select=administrador%2Ccalzada%2Ccategoria%2Ccount%28%2A%29+AS+multiplicity&%24group=administrador%2Ccalzada%2Ccategoria&%24order=administrador%2Ccalzada%2Ccategoria&%24where=codigo_tramo%3D%2755ST02%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-07-01T20:12:04+00:00'
+  seed: 601022
+  notes: 'T-616B: La consulta debe filtrar por codigo_tramo=''55ST02'' (el sujeto), no por administrador/calzada/categoria
+    (la respuesta). Verificado: 3 filas duplicadas identicas en los campos pedidos. acceptable_facts_sha256=sha256:ab69033f236ef6ddb816feec14c73704c78d6b47949cbbdf2fb3ae09ae7c507f'
+- id: pilot-023-eva-agricultura
+  case_type: positive
+  classification: determined
+  question: ¿Qué códigos DIVIPOLA departamental y municipal corresponden a Busbanzá, Boyacá, en el registro
+    EVA?
+  question_change: rewrite
+  question_change_rationale: '''un registro EVA de Boyaca'' no selecciona: hay 123 municipios. Anclar
+    un municipio nombrado vuelve el caso determinado.'
+  expected_dataset_ids:
+  - 2pnw-mmge
+  input_constraints:
+  - departamento=BOYACA
+  - municipio=BUSBANZA
+  selection_rule: unique_normalized_value para Boyaca/Busbanza; unique_normalized_value para Busbanza
+  acceptable_facts:
+  - fact_kind: textual
+    operation: category_selection
+    allowed_datasets:
+    - 2pnw-mmge
+    columns:
+    - c_d_dep
+    input_constraints:
+    - departamento=BOYACA
+    - municipio=BUSBANZA
+    selection_rule: unique_normalized_value para Boyaca/Busbanza
+    value_or_set: '15'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: multiples filas EVA -> 1 codigo departamental
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/2pnw-mmge.json?%24select=c_d_dep%2Cdepartamento%2Cc_d_mun%2Cmunicipio&%24where=departamento%3D%27BOYACA%27%20AND%20municipio%3D%27BUSBANZA%27
+    data_cutoff_at: '2019-11-24T19:29:32+00:00'
+  - fact_kind: textual
+    operation: category_selection
+    allowed_datasets:
+    - 2pnw-mmge
+    columns:
+    - c_d_mun
+    input_constraints:
+    - departamento=BOYACA
+    - municipio=BUSBANZA
+    selection_rule: unique_normalized_value para Busbanza
+    value_or_set: '15114'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: multiples filas EVA -> 1 codigo municipal
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/2pnw-mmge.json?%24select=c_d_dep%2Cdepartamento%2Cc_d_mun%2Cmunicipio&%24where=departamento%3D%27BOYACA%27%20AND%20municipio%3D%27BUSBANZA%27
+    data_cutoff_at: '2019-11-24T19:29:32+00:00'
+  expected_facts:
+  - description: category_selection verificado para c_d_dep.
+    source_url: https://www.datos.gov.co/resource/2pnw-mmge.json?%24select=c_d_dep%2Cdepartamento%2Cc_d_mun%2Cmunicipio&%24where=departamento%3D%27BOYACA%27%20AND%20municipio%3D%27BUSBANZA%27
+    expected_value:
+      c_d_dep: '15'
+    tolerance: 0
+  - description: category_selection verificado para c_d_mun.
+    source_url: https://www.datos.gov.co/resource/2pnw-mmge.json?%24select=c_d_dep%2Cdepartamento%2Cc_d_mun%2Cmunicipio&%24where=departamento%3D%27BOYACA%27%20AND%20municipio%3D%27BUSBANZA%27
+    expected_value:
+      c_d_mun: '15114'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/2pnw-mmge
+  - https://www.datos.gov.co/resource/2pnw-mmge.json?%24select=c_d_dep%2Cc_d_mun%2Cmunicipio%2Ccount%28%2A%29+AS+multiplicity&%24group=c_d_dep%2Cc_d_mun%2Cmunicipio&%24order=c_d_dep%2Cc_d_mun%2Cmunicipio&%24where=departamento%3D%27BOYACA%27
+  - https://www.datos.gov.co/resource/2pnw-mmge.json?%24select=c_d_dep%2Cdepartamento%2Cc_d_mun%2Cmunicipio&%24where=departamento%3D%27BOYACA%27%20AND%20municipio%3D%27BUSBANZA%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2019-11-24T19:29:32+00:00'
+  seed: 601023
+  notes: 'T-616B: ''un registro EVA de Boyaca'' no selecciona: hay 123 municipios. Anclar un municipio
+    nombrado vuelve el caso determinado. acceptable_facts_sha256=sha256:166e3aece8759b4903239ebf44866a1c54a0acf28ed903c63b13074b050fe4f8'
+- id: pilot-024-educacion-etc
+  case_type: positive
+  classification: determined
+  question: ¿Qué código tiene la entidad territorial certificada departamental 'Antioquia (ETC)' en las
+    estadísticas educativas de 2024?
+  question_change: rewrite
+  question_change_rationale: '''ETC de Antioquia'' es ambiguo: puede ser la ETC departamental ''Antioquia
+    (ETC)'' o las ETC municipales del departamento (Medellin, Envigado...). Anclando la ETC departamental
+    el caso es determinado (cod_etc=3758).'
+  expected_dataset_ids:
+  - sras-4t5p
+  input_constraints:
+  - ano=2024
+  - nombre_etc=Antioquia (ETC)
+  selection_rule: fila por ETC departamental nombrada
+  acceptable_facts:
+  - fact_kind: textual
+    operation: direct_text
+    allowed_datasets:
+    - sras-4t5p
+    columns:
+    - cod_etc
+    input_constraints:
+    - ano=2024
+    - nombre_etc=Antioquia (ETC)
+    selection_rule: fila por ETC departamental nombrada
+    value_or_set: '3758'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 1
+    duplicate_policy: none
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/sras-4t5p.json?%24select=cod_etc%2Ccount%28%2A%29+AS+multiplicity&%24group=cod_etc&%24order=cod_etc&%24where=ano%3D%272024%27+AND+nombre_etc%3D%27Antioquia+%28ETC%29%27
+    data_cutoff_at: '2025-11-13T21:28:53+00:00'
+  expected_facts:
+  - description: direct_text verificado para cod_etc.
+    source_url: https://www.datos.gov.co/resource/sras-4t5p.json?%24select=cod_etc%2Ccount%28%2A%29+AS+multiplicity&%24group=cod_etc&%24order=cod_etc&%24where=ano%3D%272024%27+AND+nombre_etc%3D%27Antioquia+%28ETC%29%27
+    expected_value:
+      cod_etc: '3758'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/sras-4t5p
+  - https://www.datos.gov.co/resource/sras-4t5p.json?%24select=cod_etc%2Ccount%28%2A%29+AS+multiplicity&%24group=cod_etc&%24order=cod_etc&%24where=ano%3D%272024%27+AND+nombre_etc%3D%27Antioquia+%28ETC%29%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2025-11-13T21:28:53+00:00'
+  seed: 601024
+  notes: 'T-616B: ''ETC de Antioquia'' es ambiguo: puede ser la ETC departamental ''Antioquia (ETC)''
+    o las ETC municipales del departamento (Medellin, Envigado...). Anclando la ETC departamental el caso
+    es determinado (cod_etc=3758). acceptable_facts_sha256=sha256:6a09e5c5954e460bb28e5800dc53e61e01e5cc35168c49c1ff2a15b62e609bbe'
+- id: pilot-025-educacion-municipal
+  case_type: positive
+  classification: determined
+  question: ¿Qué código de municipio DIVIPOLA corresponde a Abriaquí en las estadísticas educativas municipales
+    de 2024?
+  question_change: rewrite
+  question_change_rationale: '''que municipio y codigo aparecen'' no selecciona: 1122 municipios en 2024.
+    Anclar un municipio nombrado.'
+  expected_dataset_ids:
+  - nudc-7mev
+  input_constraints:
+  - a_o=2024
+  - municipio=Abriaquí
+  selection_rule: fila unica por municipio=Abriaquí y a_o=2024
+  acceptable_facts:
+  - fact_kind: textual
+    operation: direct_text
+    allowed_datasets:
+    - nudc-7mev
+    columns:
+    - c_digo_municipio
+    input_constraints:
+    - a_o=2024
+    - municipio=Abriaquí
+    selection_rule: fila unica por municipio=Abriaquí y a_o=2024
+    value_or_set: '05004'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 1
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/nudc-7mev.json?%24select=a_o%2Cc_digo_municipio%2Cmunicipio&%24where=a_o%3D%272024%27%20AND%20municipio%3D%27Abriaqu%C3%AD%27
+    data_cutoff_at: '2025-11-13T21:34:21+00:00'
+  expected_facts:
+  - description: direct_text verificado para c_digo_municipio.
+    source_url: https://www.datos.gov.co/resource/nudc-7mev.json?%24select=a_o%2Cc_digo_municipio%2Cmunicipio&%24where=a_o%3D%272024%27%20AND%20municipio%3D%27Abriaqu%C3%AD%27
+    expected_value:
+      c_digo_municipio: '05004'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/nudc-7mev
+  - https://www.datos.gov.co/resource/nudc-7mev.json?%24select=a_o%2Cc_digo_municipio%2Cmunicipio&%24where=a_o%3D%272024%27%20AND%20municipio%3D%27Abriaqu%C3%AD%27
+  - https://www.datos.gov.co/resource/nudc-7mev.json?%24select=c_digo_municipio%2Cmunicipio%2Ccount%28%2A%29+AS+multiplicity&%24group=c_digo_municipio%2Cmunicipio&%24order=c_digo_municipio%2Cmunicipio&%24where=a_o%3D%272024%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2025-11-13T21:34:21+00:00'
+  seed: 601025
+  notes: 'T-616B: ''que municipio y codigo aparecen'' no selecciona: 1122 municipios en 2024. Anclar un
+    municipio nombrado. acceptable_facts_sha256=sha256:0d59ae2b0b55ca75f5b68f70ace7f65d30f4e8308a3c15811b64774d3d821e1a'
+- id: pilot-026-paridad-genero
+  case_type: positive
+  classification: determined
+  question: ¿Qué código departamental corresponde a Antioquia en el registro de paridad de matrícula de
+    2020?
+  question_change: rewrite
+  question_change_rationale: 'La pregunta no selecciona: hay 34 departamentos y el anio es trivialmente
+    2020 (unico en el dataset). Anclar un departamento nombrado.'
+  expected_dataset_ids:
+  - f5ai-gvqt
+  input_constraints:
+  - departamento=Antioquia
+  - anno_inf=2020
+  selection_rule: unique_normalized_value para Antioquia
+  acceptable_facts:
+  - fact_kind: textual
+    operation: category_selection
+    allowed_datasets:
+    - f5ai-gvqt
+    columns:
+    - c_digodepartamento
+    input_constraints:
+    - departamento=Antioquia
+    - anno_inf=2020
+    selection_rule: unique_normalized_value para Antioquia
+    value_or_set: '05'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 9 filas ETC -> 1 codigo departamental
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/f5ai-gvqt.json?%24select=anno_inf%2Cc_digodepartamento%2Cdepartamento&%24where=anno_inf%3D2020%20AND%20departamento%3D%27Antioquia%27
+    data_cutoff_at: '2021-12-30T18:07:11+00:00'
+  expected_facts:
+  - description: category_selection verificado para c_digodepartamento.
+    source_url: https://www.datos.gov.co/resource/f5ai-gvqt.json?%24select=anno_inf%2Cc_digodepartamento%2Cdepartamento&%24where=anno_inf%3D2020%20AND%20departamento%3D%27Antioquia%27
+    expected_value:
+      c_digodepartamento: '05'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/f5ai-gvqt
+  - https://www.datos.gov.co/resource/f5ai-gvqt.json?%24select=anno_inf%2Cc_digodepartamento%2Cdepartamento%2Ccount%28%2A%29+AS+multiplicity&%24group=anno_inf%2Cc_digodepartamento%2Cdepartamento&%24order=anno_inf%2Cc_digodepartamento%2Cdepartamento
+  - https://www.datos.gov.co/resource/f5ai-gvqt.json?%24select=anno_inf%2Cc_digodepartamento%2Cdepartamento&%24where=anno_inf%3D2020%20AND%20departamento%3D%27Antioquia%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2021-12-30T18:07:11+00:00'
+  seed: 601026
+  notes: 'T-616B: La pregunta no selecciona: hay 34 departamentos y el anio es trivialmente 2020 (unico
+    en el dataset). Anclar un departamento nombrado. acceptable_facts_sha256=sha256:1c0611d4a21be74de2ed8d7eedaeaa21e4d3def4d5063292287b61d956475719'
+- id: pilot-027-paridad-etnica
+  case_type: positive
+  classification: determined
+  question: ¿Qué código departamental corresponde a Antioquia en el registro de paridad educativa para
+    grupos étnicos de 2020?
+  question_change: rewrite
+  question_change_rationale: 'Igual que pilot-026: 33 departamentos y anio unico 2020. Anclar un departamento
+    nombrado.'
+  expected_dataset_ids:
+  - mxqg-ytrw
+  input_constraints:
+  - departamento=Antioquia
+  - anno_inf=2020
+  selection_rule: unique_normalized_value para Antioquia
+  acceptable_facts:
+  - fact_kind: textual
+    operation: category_selection
+    allowed_datasets:
+    - mxqg-ytrw
+    columns:
+    - c_digodepartamento
+    input_constraints:
+    - departamento=Antioquia
+    - anno_inf=2020
+    selection_rule: unique_normalized_value para Antioquia
+    value_or_set: '05'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 9 filas ETC -> 1 codigo departamental
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/mxqg-ytrw.json?%24select=anno_inf%2Cc_digodepartamento%2Cdepartamento&%24where=anno_inf%3D2020%20AND%20departamento%3D%27Antioquia%27
+    data_cutoff_at: '2021-12-30T18:36:10+00:00'
+  expected_facts:
+  - description: category_selection verificado para c_digodepartamento.
+    source_url: https://www.datos.gov.co/resource/mxqg-ytrw.json?%24select=anno_inf%2Cc_digodepartamento%2Cdepartamento&%24where=anno_inf%3D2020%20AND%20departamento%3D%27Antioquia%27
+    expected_value:
+      c_digodepartamento: '05'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/mxqg-ytrw
+  - https://www.datos.gov.co/resource/mxqg-ytrw.json?%24select=anno_inf%2Cc_digodepartamento%2Cdepartamento%2Ccount%28%2A%29+AS+multiplicity&%24group=anno_inf%2Cc_digodepartamento%2Cdepartamento&%24order=anno_inf%2Cc_digodepartamento%2Cdepartamento
+  - https://www.datos.gov.co/resource/mxqg-ytrw.json?%24select=anno_inf%2Cc_digodepartamento%2Cdepartamento&%24where=anno_inf%3D2020%20AND%20departamento%3D%27Antioquia%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2021-12-30T18:36:10+00:00'
+  seed: 601027
+  notes: 'T-616B: Igual que pilot-026: 33 departamentos y anio unico 2020. Anclar un departamento nombrado.
+    acceptable_facts_sha256=sha256:00b0729123586a5f865f1c659f2d0aeeaba51d8941f2260d75daa46289c6962a'
+- id: pilot-028-presupuesto-nacion
+  case_type: positive
+  classification: multi_response
+  question: ¿Qué fuentes de financiación y situaciones de fondos aparecen para el recurso DONACIONES del
+    presupuesto nacional?
+  question_change: rewrite
+  question_change_rationale: El recurso DONACIONES es la restriccion derivable; fuente y situacion forman
+    conjuntos acotados (2 y 2). El golden congela Nacion+CSF.
+  expected_dataset_ids:
+  - xjxk-qhsc
+  input_constraints:
+  - recurso_presupuestal=DONACIONES
+  selection_rule: canonical_text_set; canonical_text_set
+  acceptable_facts:
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - xjxk-qhsc
+    columns:
+    - fuente_de_financiaci_n
+    input_constraints:
+    - recurso_presupuestal=DONACIONES
+    selection_rule: canonical_text_set
+    value_or_set:
+    - Nación
+    - Propios
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 2
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/xjxk-qhsc.json?%24select=fuente_de_financiaci_n%2Csituacion_de_fondos%2Ccount%28%2A%29+AS+multiplicity&%24group=fuente_de_financiaci_n%2Csituacion_de_fondos&%24order=fuente_de_financiaci_n%2Csituacion_de_fondos&%24where=recurso_presupuestal%3D%27DONACIONES%27
+    data_cutoff_at: '2026-07-07T14:00:52+00:00'
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - xjxk-qhsc
+    columns:
+    - situacion_de_fondos
+    input_constraints:
+    - recurso_presupuestal=DONACIONES
+    selection_rule: canonical_text_set
+    value_or_set:
+    - CSF
+    - SSF
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 2
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/xjxk-qhsc.json?%24select=fuente_de_financiaci_n%2Csituacion_de_fondos%2Ccount%28%2A%29+AS+multiplicity&%24group=fuente_de_financiaci_n%2Csituacion_de_fondos&%24order=fuente_de_financiaci_n%2Csituacion_de_fondos&%24where=recurso_presupuestal%3D%27DONACIONES%27
+    data_cutoff_at: '2026-07-07T14:00:52+00:00'
+  expected_facts:
+  - description: fuente_de_financiaci_n pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/xjxk-qhsc.json?%24select=fuente_de_financiaci_n%2Csituacion_de_fondos%2Ccount%28%2A%29+AS+multiplicity&%24group=fuente_de_financiaci_n%2Csituacion_de_fondos&%24order=fuente_de_financiaci_n%2Csituacion_de_fondos&%24where=recurso_presupuestal%3D%27DONACIONES%27
+    expected_value:
+      fuente_de_financiaci_n: Nación
+    tolerance: 0
+  - description: fuente_de_financiaci_n pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/xjxk-qhsc.json?%24select=fuente_de_financiaci_n%2Csituacion_de_fondos%2Ccount%28%2A%29+AS+multiplicity&%24group=fuente_de_financiaci_n%2Csituacion_de_fondos&%24order=fuente_de_financiaci_n%2Csituacion_de_fondos&%24where=recurso_presupuestal%3D%27DONACIONES%27
+    expected_value:
+      fuente_de_financiaci_n: Propios
+    tolerance: 0
+  - description: situacion_de_fondos pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/xjxk-qhsc.json?%24select=fuente_de_financiaci_n%2Csituacion_de_fondos%2Ccount%28%2A%29+AS+multiplicity&%24group=fuente_de_financiaci_n%2Csituacion_de_fondos&%24order=fuente_de_financiaci_n%2Csituacion_de_fondos&%24where=recurso_presupuestal%3D%27DONACIONES%27
+    expected_value:
+      situacion_de_fondos: CSF
+    tolerance: 0
+  - description: situacion_de_fondos pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/xjxk-qhsc.json?%24select=fuente_de_financiaci_n%2Csituacion_de_fondos%2Ccount%28%2A%29+AS+multiplicity&%24group=fuente_de_financiaci_n%2Csituacion_de_fondos&%24order=fuente_de_financiaci_n%2Csituacion_de_fondos&%24where=recurso_presupuestal%3D%27DONACIONES%27
+    expected_value:
+      situacion_de_fondos: SSF
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/xjxk-qhsc
+  - https://www.datos.gov.co/resource/xjxk-qhsc.json?%24select=fuente_de_financiaci_n%2Csituacion_de_fondos%2Ccount%28%2A%29+AS+multiplicity&%24group=fuente_de_financiaci_n%2Csituacion_de_fondos&%24order=fuente_de_financiaci_n%2Csituacion_de_fondos&%24where=recurso_presupuestal%3D%27DONACIONES%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-07-07T14:00:52+00:00'
+  seed: 601028
+  notes: 'T-616B: El recurso DONACIONES es la restriccion derivable; fuente y situacion forman conjuntos
+    acotados (2 y 2). El golden congela Nacion+CSF. acceptable_facts_sha256=sha256:ae77b453c61befc97a99bc7ba47893451162a04403e7f7775fd1b89c048ffc64'
+- id: pilot-029-gastos-nacion
+  case_type: positive
+  classification: multi_response
+  question: ¿Qué fuentes de financiación se reportan para los gastos del presupuesto nacional en enero
+    de 2019?
+  question_change: rewrite
+  question_change_rationale: 'El singular ''que fuente'' es degenerado: hay 2 fuentes en enero 2019 y
+    el golden fija Nacion (la respuesta). Reformular en plural como conjunto de 2, o pedir un agregado
+    (p.ej. participacion por fuente).'
+  expected_dataset_ids:
+  - 5phs-yqfw
+  input_constraints:
+  - anio=2019
+  - nombremes=Enero
+  selection_rule: canonical_text_set
+  acceptable_facts:
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - 5phs-yqfw
+    columns:
+    - fuente
+    input_constraints:
+    - anio=2019
+    - nombremes=Enero
+    selection_rule: canonical_text_set
+    value_or_set:
+    - Nación
+    - Propios
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 2
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/5phs-yqfw.json?%24select=fuente%2Ccount%28%2A%29+AS+multiplicity&%24group=fuente&%24order=fuente&%24where=anio%3D2019+AND+nombremes%3D%27Enero%27
+    data_cutoff_at: '2026-07-07T14:09:26+00:00'
+  expected_facts:
+  - description: fuente pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5phs-yqfw.json?%24select=fuente%2Ccount%28%2A%29+AS+multiplicity&%24group=fuente&%24order=fuente&%24where=anio%3D2019+AND+nombremes%3D%27Enero%27
+    expected_value:
+      fuente: Nación
+    tolerance: 0
+  - description: fuente pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5phs-yqfw.json?%24select=fuente%2Ccount%28%2A%29+AS+multiplicity&%24group=fuente&%24order=fuente&%24where=anio%3D2019+AND+nombremes%3D%27Enero%27
+    expected_value:
+      fuente: Propios
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/5phs-yqfw
+  - https://www.datos.gov.co/resource/5phs-yqfw.json?%24select=fuente%2Ccount%28%2A%29+AS+multiplicity&%24group=fuente&%24order=fuente&%24where=anio%3D2019+AND+nombremes%3D%27Enero%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-07-07T14:09:26+00:00'
+  seed: 601029
+  notes: 'T-616B: El singular ''que fuente'' es degenerado: hay 2 fuentes en enero 2019 y el golden fija
+    Nacion (la respuesta). Reformular en plural como conjunto de 2, o pedir un agregado (p.ej. participacion
+    por fuente). acceptable_facts_sha256=sha256:8688535719548c7c6c1be6e443f916ff573cf16004b3a95ec3bce494312593a3'
+- id: pilot-030-conciliadores
+  case_type: positive
+  classification: determined
+  question: ¿Qué municipio de Amazonas aparece en el registro histórico de conciliadores en equidad?
+  question_change: clarify
+  question_change_rationale: 'Verificado: en Amazonas solo aparece un municipio (LETICIA), distinct=1
+    sobre 32 filas. El municipio es unico independientemente del anio; el golden ancla a_o=1993 innecesariamente.'
+  expected_dataset_ids:
+  - hjfm-ynaz
+  input_constraints:
+  - departamento=AMAZONAS
+  selection_rule: unique_normalized_value (distinct(municipio)=1 sobre 32 filas)
+  acceptable_facts:
+  - fact_kind: textual
+    operation: category_selection
+    allowed_datasets:
+    - hjfm-ynaz
+    columns:
+    - municipio
+    input_constraints:
+    - departamento=AMAZONAS
+    selection_rule: unique_normalized_value (distinct(municipio)=1 sobre 32 filas)
+    value_or_set: LETICIA
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 32 filas -> 1 categoria
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/hjfm-ynaz.json?%24select=municipio%2Ccount%28%2A%29+AS+multiplicity&%24group=municipio&%24order=municipio&%24where=departamento%3D%27AMAZONAS%27
+    data_cutoff_at: '2026-07-14T21:39:29+00:00'
+  expected_facts:
+  - description: category_selection verificado para municipio.
+    source_url: https://www.datos.gov.co/resource/hjfm-ynaz.json?%24select=municipio%2Ccount%28%2A%29+AS+multiplicity&%24group=municipio&%24order=municipio&%24where=departamento%3D%27AMAZONAS%27
+    expected_value:
+      municipio: LETICIA
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/hjfm-ynaz
+  - https://www.datos.gov.co/resource/hjfm-ynaz.json?%24select=municipio%2Ccount%28%2A%29+AS+multiplicity&%24group=municipio&%24order=municipio&%24where=departamento%3D%27AMAZONAS%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-07-14T21:39:29+00:00'
+  seed: 601030
+  notes: 'T-616B: Verificado: en Amazonas solo aparece un municipio (LETICIA), distinct=1 sobre 32 filas.
+    El municipio es unico independientemente del anio; el golden ancla a_o=1993 innecesariamente. acceptable_facts_sha256=sha256:ce1edec23377768c95ecb395c3a98e965001604da50edb18c290db77d0436fb8'
+- id: pilot-031-desmovilizaciones
+  case_type: positive
+  classification: multi_response
+  question: ¿Qué tipos de desmovilización se registran para Nariño?
+  question_change: rewrite
+  question_change_rationale: Para Narino hay 2 tipos {Individual, Colectiva}; el golden fija Individual.
+    Reformular en plural como conjunto de 2.
+  expected_dataset_ids:
+  - gkbc-gw7x
+  input_constraints:
+  - departamento=NARIÑO
+  selection_rule: canonical_text_set
+  acceptable_facts:
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - gkbc-gw7x
+    columns:
+    - tipo
+    input_constraints:
+    - departamento=NARIÑO
+    selection_rule: canonical_text_set
+    value_or_set:
+    - Colectiva
+    - Individual
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 2
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/gkbc-gw7x.json?%24select=categoria%2Ctipo%2Ccount%28%2A%29+AS+multiplicity&%24group=categoria%2Ctipo&%24order=categoria%2Ctipo&%24where=departamento%3D%27NARI%C3%91O%27
+    data_cutoff_at: '2026-01-21T14:07:15+00:00'
+  expected_facts:
+  - description: tipo pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/gkbc-gw7x.json?%24select=categoria%2Ctipo%2Ccount%28%2A%29+AS+multiplicity&%24group=categoria%2Ctipo&%24order=categoria%2Ctipo&%24where=departamento%3D%27NARI%C3%91O%27
+    expected_value:
+      tipo: Colectiva
+    tolerance: 0
+  - description: tipo pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/gkbc-gw7x.json?%24select=categoria%2Ctipo%2Ccount%28%2A%29+AS+multiplicity&%24group=categoria%2Ctipo&%24order=categoria%2Ctipo&%24where=departamento%3D%27NARI%C3%91O%27
+    expected_value:
+      tipo: Individual
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/gkbc-gw7x
+  - https://www.datos.gov.co/resource/gkbc-gw7x.json?%24select=categoria%2Ctipo%2Ccount%28%2A%29+AS+multiplicity&%24group=categoria%2Ctipo&%24order=categoria%2Ctipo&%24where=departamento%3D%27NARI%C3%91O%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-01-21T14:07:15+00:00'
+  seed: 601031
+  notes: 'T-616B: Para Narino hay 2 tipos {Individual, Colectiva}; el golden fija Individual. Reformular
+    en plural como conjunto de 2. acceptable_facts_sha256=sha256:7d953e3c8507212b0b2e38e93e0513d97dd94e1e70f537dfe5ae0ff732e143fa'
+- id: pilot-032-situacion-penitenciaria
+  case_type: positive
+  classification: multi_response
+  question: ¿Qué situaciones penitenciarias (estados) reporta el indicador de postulados en Medellín?
+  question_change: rewrite
+  question_change_rationale: El indicador de postulados en Medellin tiene 2 estados {Privados de libertad,
+    En libertad}; el golden fija uno. Conjunto acotado de 2.
+  expected_dataset_ids:
+  - d76u-8x6w
+  input_constraints:
+  - indicador=POSTULADOS Situacion penitenciaria
+  - municipio=MEDELLIN
+  selection_rule: canonical_text_set
+  acceptable_facts:
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - d76u-8x6w
+    columns:
+    - estado
+    input_constraints:
+    - indicador=POSTULADOS Situacion penitenciaria
+    - municipio=MEDELLIN
+    selection_rule: canonical_text_set
+    value_or_set:
+    - En libertad
+    - Privados de libertad
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 2
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/d76u-8x6w.json?%24select=estado%2Ccount%28%2A%29+AS+multiplicity&%24group=estado&%24order=estado&%24where=indicador%3D%27POSTULADOS+Situaci%C3%B3n+penitenciaria%27+AND+municipio%3D%27MEDELL%C3%8DN%27
+    data_cutoff_at: '2025-08-20T18:47:58+00:00'
+  expected_facts:
+  - description: estado pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/d76u-8x6w.json?%24select=estado%2Ccount%28%2A%29+AS+multiplicity&%24group=estado&%24order=estado&%24where=indicador%3D%27POSTULADOS+Situaci%C3%B3n+penitenciaria%27+AND+municipio%3D%27MEDELL%C3%8DN%27
+    expected_value:
+      estado: En libertad
+    tolerance: 0
+  - description: estado pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/d76u-8x6w.json?%24select=estado%2Ccount%28%2A%29+AS+multiplicity&%24group=estado&%24order=estado&%24where=indicador%3D%27POSTULADOS+Situaci%C3%B3n+penitenciaria%27+AND+municipio%3D%27MEDELL%C3%8DN%27
+    expected_value:
+      estado: Privados de libertad
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/d76u-8x6w
+  - https://www.datos.gov.co/resource/d76u-8x6w.json?%24select=estado%2Ccount%28%2A%29+AS+multiplicity&%24group=estado&%24order=estado&%24where=indicador%3D%27POSTULADOS+Situaci%C3%B3n+penitenciaria%27+AND+municipio%3D%27MEDELL%C3%8DN%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2025-08-20T18:47:58+00:00'
+  seed: 601032
+  notes: 'T-616B: El indicador de postulados en Medellin tiene 2 estados {Privados de libertad, En libertad};
+    el golden fija uno. Conjunto acotado de 2. acceptable_facts_sha256=sha256:617f57d60a95b1f6470e55acc1b5aba8876fccf0b74c322d18f2f8065c3d09f5'
+- id: pilot-033-gas-natural-vehicular
+  case_type: positive
+  classification: aggregate
+  question: ¿Cuántos registros de venta de gas natural vehicular hay en septiembre de 2025?
+  question_change: rewrite
+  question_change_rationale: 'La pregunta es degenerada: pide ''que fecha'' cuando estan presentes las
+    30 fechas del mes. El golden fija 2025-09-09. Reescribir a un agregado util o a una metrica de una
+    fecha nombrada.'
+  expected_dataset_ids:
+  - v8jr-kywh
+  input_constraints:
+  - anio_venta=2025
+  - mes_venta=09
+  selection_rule: agregado util del mes (conteo)
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: derived
+    allowed_datasets:
+    - v8jr-kywh
+    columns:
+    - fecha_venta
+    input_constraints:
+    - anio_venta=2025
+    - mes_venta=09
+    selection_rule: agregado util del mes (conteo)
+    value_or_set: 2846 registros / 30 fechas (obs. 2026-07-18)
+    tolerance: 0
+    unit: registros
+    rounding: 0
+    formula:
+      op: count
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/v8jr-kywh.json?%24select=fecha_venta%2Ccount%28%2A%29+AS+multiplicity&%24group=fecha_venta&%24order=fecha_venta&%24where=anio_venta%3D%272025%27+AND+mes_venta%3D%2709%27
+    data_cutoff_at: '2026-07-18T06:13:39+00:00'
+  expected_facts:
+  - description: derived cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/v8jr-kywh.json?%24select=count(*)+AS+n&%24where=anio_venta%3D'2025'+AND+mes_venta%3D'09'
+    expected_value:
+      n: '2846'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/v8jr-kywh
+  - https://www.datos.gov.co/resource/v8jr-kywh.json?%24select=fecha_venta%2Ccount%28%2A%29+AS+multiplicity&%24group=fecha_venta&%24order=fecha_venta&%24where=anio_venta%3D%272025%27+AND+mes_venta%3D%2709%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-07-18T06:13:39+00:00'
+  seed: 601033
+  notes: 'T-616B: La pregunta es degenerada: pide ''que fecha'' cuando estan presentes las 30 fechas del
+    mes. El golden fija 2025-09-09. Reescribir a un agregado util o a una metrica de una fecha nombrada.
+    acceptable_facts_sha256=sha256:da86bd5af26e015f4fbbbf645689cef449a7c555d50da1d90d1addd3c1b0bd65'
+- id: pilot-034-fncer
+  case_type: positive
+  classification: determined
+  question: ¿Qué tipo de proyecto es Jepirachi y qué capacidad instalada se reporta?
+  question_change: retain
+  question_change_rationale: Proyecto nombrado (JEPIRACHI) => fila unica (verificado count=1). Quitar
+    el pinning de tipo y capacidad en el $where. Etiqueta (tipo) textual, magnitud (capacidad) cuantitativa.
+  expected_dataset_ids:
+  - vy9n-w6hc
+  input_constraints:
+  - proyecto=JEPIRACHI
+  selection_rule: fila unica por proyecto; fila unica por proyecto
+  acceptable_facts:
+  - fact_kind: textual
+    operation: direct_text
+    allowed_datasets:
+    - vy9n-w6hc
+    columns:
+    - tipo
+    input_constraints:
+    - proyecto=JEPIRACHI
+    selection_rule: fila unica por proyecto
+    value_or_set: Eolico
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 1
+    duplicate_policy: none
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/vy9n-w6hc.json?%24select=capacidad%2Ctipo%2Ccount%28%2A%29+AS+multiplicity&%24group=capacidad%2Ctipo&%24order=capacidad%2Ctipo&%24where=proyecto%3D%27JEPIRACHI%27
+    data_cutoff_at: '2022-10-20T06:28:42+00:00'
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - vy9n-w6hc
+    columns:
+    - capacidad
+    input_constraints:
+    - proyecto=JEPIRACHI
+    selection_rule: fila unica por proyecto
+    value_or_set: '18.42'
+    tolerance: 0.01
+    unit: MW
+    rounding: 2
+    formula: null
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/vy9n-w6hc.json?%24select=capacidad%2Ctipo%2Ccount%28%2A%29+AS+multiplicity&%24group=capacidad%2Ctipo&%24order=capacidad%2Ctipo&%24where=proyecto%3D%27JEPIRACHI%27
+    data_cutoff_at: '2022-10-20T06:28:42+00:00'
+  expected_facts:
+  - description: direct_text verificado para tipo.
+    source_url: https://www.datos.gov.co/resource/vy9n-w6hc.json?%24select=capacidad%2Ctipo%2Ccount%28%2A%29+AS+multiplicity&%24group=capacidad%2Ctipo&%24order=capacidad%2Ctipo&%24where=proyecto%3D%27JEPIRACHI%27
+    expected_value:
+      tipo: Eólico
+    tolerance: 0
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/vy9n-w6hc.json?%24select=capacidad%2Ctipo%2Ccount%28%2A%29+AS+multiplicity&%24group=capacidad%2Ctipo&%24order=capacidad%2Ctipo&%24where=proyecto%3D%27JEPIRACHI%27
+    expected_value:
+      capacidad: '18.42'
+    tolerance: 0.01
+  source_urls:
+  - https://www.datos.gov.co/api/views/vy9n-w6hc
+  - https://www.datos.gov.co/resource/vy9n-w6hc.json?%24select=capacidad%2Ctipo%2Ccount%28%2A%29+AS+multiplicity&%24group=capacidad%2Ctipo&%24order=capacidad%2Ctipo&%24where=proyecto%3D%27JEPIRACHI%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2022-10-20T06:28:42+00:00'
+  seed: 601034
+  notes: 'T-616B: Proyecto nombrado (JEPIRACHI) => fila unica (verificado count=1). Quitar el pinning
+    de tipo y capacidad en el $where. Etiqueta (tipo) textual, magnitud (capacidad) cuantitativa. acceptable_facts_sha256=sha256:560032d5d9a4d6272b2ebf64c5bc7a40288c3bd5bd425cb7e470c540a5665435'
+- id: pilot-035-afiliaciones
+  case_type: positive
+  classification: multi_response
+  question: ¿Qué componentes y regímenes aparecen en el corte de afiliaciones de 2017 (fechacorte 2017-12-31)?
+  question_change: rewrite
+  question_change_rationale: El corte 2017 tiene 4 componentes y 8 regimenes; el golden fija uno de cada
+    uno. Conjuntos acotados.
+  expected_dataset_ids:
+  - 5xue-fyeb
+  input_constraints:
+  - fechacorte=2017-12-31
+  selection_rule: canonical_text_set; canonical_text_set
+  acceptable_facts:
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - 5xue-fyeb
+    columns:
+    - componentedesc
+    input_constraints:
+    - fechacorte=2017-12-31
+    selection_rule: canonical_text_set
+    value_or_set:
+    - CESANTIAS
+    - COMPENSACION FAMILIAR
+    - PENSIONES
+    - RIESGOS LABORALES
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 4
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    data_cutoff_at: '2022-06-06T16:08:07+00:00'
+  - fact_kind: textual
+    operation: canonical_text_set
+    allowed_datasets:
+    - 5xue-fyeb
+    columns:
+    - regimenadministradoradesc
+    input_constraints:
+    - fechacorte=2017-12-31
+    selection_rule: canonical_text_set
+    value_or_set:
+    - 'CESANTIAS: ESPECIAL'
+    - 'CESANTIAS: TRADICIONAL'
+    - 'NA : NO APLICA'
+    - 'PENSIONES: ESPECIAL'
+    - 'PENSIONES: EXCEPCION'
+    - 'PENSIONES: FONDOS ESPECIALES'
+    - 'PENSIONES: PRIMA MEDIA'
+    - 'RIESGOS PROFESIONALES: SISTEMA GENERAL DE RIESGOS PROFESIONALES'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 8
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    data_cutoff_at: '2022-06-06T16:08:07+00:00'
+  expected_facts:
+  - description: componentedesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      componentedesc: CESANTIAS
+    tolerance: 0
+  - description: componentedesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      componentedesc: COMPENSACION FAMILIAR
+    tolerance: 0
+  - description: componentedesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      componentedesc: PENSIONES
+    tolerance: 0
+  - description: componentedesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      componentedesc: RIESGOS LABORALES
+    tolerance: 0
+  - description: regimenadministradoradesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      regimenadministradoradesc: 'CESANTIAS: ESPECIAL'
+    tolerance: 0
+  - description: regimenadministradoradesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      regimenadministradoradesc: 'CESANTIAS: TRADICIONAL'
+    tolerance: 0
+  - description: regimenadministradoradesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      regimenadministradoradesc: 'NA : NO APLICA'
+    tolerance: 0
+  - description: regimenadministradoradesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      regimenadministradoradesc: 'PENSIONES: ESPECIAL'
+    tolerance: 0
+  - description: regimenadministradoradesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      regimenadministradoradesc: 'PENSIONES: EXCEPCION'
+    tolerance: 0
+  - description: regimenadministradoradesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      regimenadministradoradesc: 'PENSIONES: FONDOS ESPECIALES'
+    tolerance: 0
+  - description: regimenadministradoradesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      regimenadministradoradesc: 'PENSIONES: PRIMA MEDIA'
+    tolerance: 0
+  - description: regimenadministradoradesc pertenece al conjunto canónico completo.
+    source_url: https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+    expected_value:
+      regimenadministradoradesc: 'RIESGOS PROFESIONALES: SISTEMA GENERAL DE RIESGOS PROFESIONALES'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/5xue-fyeb
+  - https://www.datos.gov.co/resource/5xue-fyeb.json?%24select=componentedesc%2Cregimenadministradoradesc%2Ccount%28%2A%29+AS+multiplicity&%24group=componentedesc%2Cregimenadministradoradesc&%24order=componentedesc%2Cregimenadministradoradesc&%24where=fechacorte%3D%272017-12-31T00%3A00%3A00.000%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2022-06-06T16:08:07+00:00'
+  seed: 601035
+  notes: 'T-616B: El corte 2017 tiene 4 componentes y 8 regimenes; el golden fija uno de cada uno. Conjuntos
+    acotados. acceptable_facts_sha256=sha256:5e3f957f124ab24273b3a3a21fbeccb11d60c9261bdd27bf07a2197e3c185520'
+- id: pilot-036-delitos-sexuales
+  case_type: positive
+  classification: aggregate
+  question: ¿Cuántos registros de delitos sexuales por departamento se reportan con fecha de hecho 31
+    de mayo de 2026 (conteo agregado, sin exponer filas individuales)?
+  question_change: rewrite
+  question_change_rationale: 'Dato sensible. La pregunta singular no selecciona: hay 14 departamentos
+    ese dia. Debe convertirse en un agregado por departamento con guarda de privacidad, no en una fila
+    arbitraria.'
+  expected_dataset_ids:
+  - bz43-8ahq
+  input_constraints:
+  - fecha_hecho=2026-05-31
+  selection_rule: agregado por departamento con guarda de privacidad
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: derived
+    allowed_datasets:
+    - bz43-8ahq
+    columns:
+    - departamento
+    input_constraints:
+    - fecha_hecho=2026-05-31
+    selection_rule: agregado por departamento con guarda de privacidad
+    value_or_set: conteo por departamento (14 departamentos; 37 registros ese dia)
+    tolerance: 0
+    unit: registros
+    rounding: 0
+    formula:
+      op: count
+      group_by: departamento
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento%2Ccount%28%2A%29+AS+multiplicity&%24group=departamento&%24order=departamento&%24where=fecha_hecho%3D%272026-05-31T00%3A00%3A00.000%27
+    data_cutoff_at: '2026-06-16T22:33:13+00:00'
+  expected_facts:
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: ANTIOQUIA
+      n: '5'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: ATLANTICO
+      n: '1'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: BOGOTA D.C.
+      n: '4'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: BOYACA
+      n: '3'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: CASANARE
+      n: '1'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: CESAR
+      n: '1'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: CUNDINAMARCA
+      n: '5'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: HUILA
+      n: '2'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: MAGDALENA
+      n: '2'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: META
+      n: '5'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: NARIÑO
+      n: '2'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: RISARALDA
+      n: '2'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: SANTANDER
+      n: '2'
+    tolerance: 0
+  - description: Conteo agregado por departamento, sin filas individuales.
+    source_url: https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento,count(*)+AS+n&%24where=fecha_hecho%3D'2026-05-31T00%3A00%3A00.000'&%24group=departamento&%24order=departamento
+    expected_value:
+      departamento: VALLE DEL CAUCA
+      n: '2'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/bz43-8ahq
+  - https://www.datos.gov.co/resource/bz43-8ahq.json?%24select=departamento%2Ccount%28%2A%29+AS+multiplicity&%24group=departamento&%24order=departamento&%24where=fecha_hecho%3D%272026-05-31T00%3A00%3A00.000%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-06-16T22:33:13+00:00'
+  seed: 601036
+  notes: 'T-616B: Dato sensible. La pregunta singular no selecciona: hay 14 departamentos ese dia. Debe
+    convertirse en un agregado por departamento con guarda de privacidad, no en una fila arbitraria. acceptable_facts_sha256=sha256:1d9f0c25802ab0c118e8f245fa9c3df8eac72ba19ec3a2febdc0ae6af06406a8'
+- id: pilot-037-calidad-aire
+  case_type: positive
+  classification: aggregate
+  question: ¿Cuántas estaciones de calidad del aire distintas aparecen para la autoridad ambiental AMVA?
+  question_change: rewrite
+  question_change_rationale: 61 estaciones distintas; ninguna la selecciona la pregunta y 61>50 impide
+    un conjunto textual. Reescribir a conteo o anclar una estacion por id/nombre.
+  expected_dataset_ids:
+  - kekd-7v7h
+  input_constraints:
+  - autoridad_ambiental=AMVA
+  selection_rule: conteo de estaciones (agregado)
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: derived
+    allowed_datasets:
+    - kekd-7v7h
+    columns:
+    - id_estacion
+    input_constraints:
+    - autoridad_ambiental=AMVA
+    selection_rule: conteo de estaciones (agregado)
+    value_or_set: 61 estaciones (obs. 2026-07-18)
+    tolerance: 0
+    unit: estaciones
+    rounding: 0
+    formula:
+      op: count
+      distinct: id_estacion
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/kekd-7v7h.json?%24select=id_estacion%2Ccount%28%2A%29+AS+multiplicity&%24group=id_estacion&%24order=id_estacion&%24where=autoridad_ambiental%3D%27AMVA%27
+    data_cutoff_at: '2026-01-26T14:32:56+00:00'
+  expected_facts:
+  - description: derived cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/kekd-7v7h.json?%24select=count(distinct+id_estacion)+AS+n&%24where=autoridad_ambiental%3D'AMVA'
+    expected_value:
+      n: '61'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/kekd-7v7h
+  - https://www.datos.gov.co/resource/kekd-7v7h.json?%24select=id_estacion%2Ccount%28%2A%29+AS+multiplicity&%24group=id_estacion&%24order=id_estacion&%24where=autoridad_ambiental%3D%27AMVA%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-01-26T14:32:56+00:00'
+  seed: 601037
+  notes: 'T-616B: 61 estaciones distintas; ninguna la selecciona la pregunta y 61>50 impide un conjunto
+    textual. Reescribir a conteo o anclar una estacion por id/nombre. acceptable_facts_sha256=sha256:b742ace7c1d205da4712d740a556dc048fa6eefb3f7bd48548f6710e9d012b7d'
+- id: pilot-038-precipitacion
+  case_type: positive
+  classification: determined
+  question: ¿Qué valor de precipitación registró la estación 0054050010 con el sensor 0240 el 11 de febrero
+    de 2019 a las 13:50?
+  question_change: rewrite
+  question_change_rationale: La pregunta solo fija el dia y admite muchas respuestas; el golden exige
+    estacion+sensor+hora ocultos entre 74690 observaciones. El dataset es compatible, pero el caso no
+    es una prueba de exactitud valida sin agregar esas coordenadas literalmente.
+  expected_dataset_ids:
+  - s54a-sgyg
+  input_constraints:
+  - fechaobservacion=2019-02-11T13:50:00.000
+  - codigoestacion=0054050010
+  - codigosensor=0240
+  selection_rule: fila unica por estacion+sensor+fecha-hora en la pregunta reescrita
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - s54a-sgyg
+    columns:
+    - valorobservado
+    input_constraints:
+    - fechaobservacion=2019-02-11T13:50:00.000
+    - codigoestacion=0054050010
+    - codigosensor=0240
+    selection_rule: fila unica por estacion+sensor+fecha-hora en la pregunta reescrita
+    value_or_set: '0'
+    tolerance: 0
+    unit: mm
+    rounding: 2
+    formula: null
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/s54a-sgyg.json?%24select=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cvalorobservado%2Cunidadmedida&%24where=codigoestacion%3D%270054050010%27%20AND%20codigosensor%3D%270240%27%20AND%20fechaobservacion%3D%272019-02-11T13%3A50%3A00.000%27
+    data_cutoff_at: '2026-07-18T06:17:22+00:00'
+  expected_facts:
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/s54a-sgyg.json?%24select=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cvalorobservado%2Cunidadmedida&%24where=codigoestacion%3D%270054050010%27%20AND%20codigosensor%3D%270240%27%20AND%20fechaobservacion%3D%272019-02-11T13%3A50%3A00.000%27
+    expected_value:
+      valorobservado: '0'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/s54a-sgyg
+  - https://www.datos.gov.co/resource/s54a-sgyg.json?%24select=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cunidadmedida%2Cvalorobservado%2Ccount%28%2A%29+AS+multiplicity&%24group=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cunidadmedida%2Cvalorobservado&%24order=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cunidadmedida%2Cvalorobservado&%24where=fechaobservacion+%3E%3D+%272019-02-11%27+AND+fechaobservacion+%3C+%272019-02-12%27
+  - https://www.datos.gov.co/resource/s54a-sgyg.json?%24select=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cvalorobservado%2Cunidadmedida&%24where=codigoestacion%3D%270054050010%27%20AND%20codigosensor%3D%270240%27%20AND%20fechaobservacion%3D%272019-02-11T13%3A50%3A00.000%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-07-18T06:17:22+00:00'
+  seed: 601038
+  notes: 'T-616B: La pregunta solo fija el dia y admite muchas respuestas; el golden exige estacion+sensor+hora
+    ocultos entre 74690 observaciones. El dataset es compatible, pero el caso no es una prueba de exactitud
+    valida sin agregar esas coordenadas literalmente. acceptable_facts_sha256=sha256:69c31f57682b34147c4478ec55712a1ce0c19e8b9ff9cac02e6a7c1f5c6b1f67'
+- id: pilot-039-temperatura
+  case_type: positive
+  classification: determined
+  question: ¿Qué valor de temperatura ambiente registró la estación 0026195501 con el sensor 0068 el 21
+    de enero de 2020 a las 03:35?
+  question_change: rewrite
+  question_change_rationale: 'Mismo patron que 038: el dia admite muchas respuestas y no selecciona estacion+sensor+hora
+    entre 14734 observaciones. El dataset sigue siendo compatible.'
+  expected_dataset_ids:
+  - sbwg-7ju4
+  input_constraints:
+  - fechaobservacion=2020-01-21T03:35:00.000
+  - codigoestacion=0026195501
+  - codigosensor=0068
+  selection_rule: fila unica por estacion+sensor+fecha-hora en la pregunta reescrita
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: direct
+    allowed_datasets:
+    - sbwg-7ju4
+    columns:
+    - valorobservado
+    input_constraints:
+    - fechaobservacion=2020-01-21T03:35:00.000
+    - codigoestacion=0026195501
+    - codigosensor=0068
+    selection_rule: fila unica por estacion+sensor+fecha-hora en la pregunta reescrita
+    value_or_set: '15.85716'
+    tolerance: 1.0e-05
+    unit: °C
+    rounding: 2
+    formula: null
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/sbwg-7ju4.json?%24select=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cvalorobservado%2Cunidadmedida&%24where=codigoestacion%3D%270026195501%27%20AND%20codigosensor%3D%270068%27%20AND%20fechaobservacion%3D%272020-01-21T03%3A35%3A00.000%27
+    data_cutoff_at: '2026-07-18T06:17:32+00:00'
+  expected_facts:
+  - description: direct cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/sbwg-7ju4.json?%24select=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cvalorobservado%2Cunidadmedida&%24where=codigoestacion%3D%270026195501%27%20AND%20codigosensor%3D%270068%27%20AND%20fechaobservacion%3D%272020-01-21T03%3A35%3A00.000%27
+    expected_value:
+      valorobservado: '15.85716'
+    tolerance: 1.0e-05
+  source_urls:
+  - https://www.datos.gov.co/api/views/sbwg-7ju4
+  - https://www.datos.gov.co/resource/sbwg-7ju4.json?%24select=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cunidadmedida%2Cvalorobservado%2Ccount%28%2A%29+AS+multiplicity&%24group=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cunidadmedida%2Cvalorobservado&%24order=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cunidadmedida%2Cvalorobservado&%24where=fechaobservacion+%3E%3D+%272020-01-21%27+AND+fechaobservacion+%3C+%272020-01-22%27
+  - https://www.datos.gov.co/resource/sbwg-7ju4.json?%24select=codigoestacion%2Ccodigosensor%2Cfechaobservacion%2Cvalorobservado%2Cunidadmedida&%24where=codigoestacion%3D%270026195501%27%20AND%20codigosensor%3D%270068%27%20AND%20fechaobservacion%3D%272020-01-21T03%3A35%3A00.000%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2026-07-18T06:17:32+00:00'
+  seed: 601039
+  notes: 'T-616B: Mismo patron que 038: el dia admite muchas respuestas y no selecciona estacion+sensor+hora
+    entre 14734 observaciones. El dataset sigue siendo compatible. acceptable_facts_sha256=sha256:66d0ee257f7c5ba50a1abc2c74a98a8394257cb50d91a13ae2020fa2192f6b9c'
+- id: pilot-040-suspensiones-servicio
+  case_type: positive
+  classification: aggregate
+  question: ¿Cuántas suspensiones del servicio registró en 2011 la empresa 629, GASES DE OCCIDENTE S.
+    A. EMPRESA DE SERVICIOS PUBLICOS?
+  question_change: rewrite
+  question_change_rationale: 'Pregunta abierta (''que X aparece''): 41 empresas y 19 anios distintos.
+    Anclar una empresa (id_empresa) vuelve el caso determinado.'
+  expected_dataset_ids:
+  - cqs7-ti4m
+  input_constraints:
+  - id_empresa=629
+  - ano=2011
+  selection_rule: count(*) para id_empresa=629 AND ano=2011
+  acceptable_facts:
+  - fact_kind: quantitative
+    operation: derived
+    allowed_datasets:
+    - cqs7-ti4m
+    columns:
+    - id_empresa
+    input_constraints:
+    - id_empresa=629
+    - ano=2011
+    selection_rule: count(*) para id_empresa=629 AND ano=2011
+    value_or_set: '16'
+    tolerance: 0
+    unit: suspensiones
+    rounding: 0
+    formula:
+      op: count
+    temporal_cut: null
+    expected_cardinality: 1
+    duplicate_policy: n/a
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/cqs7-ti4m.json?%24select=count%28%2A%29%20AS%20n&%24where=id_empresa%3D%27629%27%20AND%20ano%3D%272011%27
+    data_cutoff_at: '2025-09-12T19:25:34+00:00'
+  expected_facts:
+  - description: derived cuantitativo verificado.
+    source_url: https://www.datos.gov.co/resource/cqs7-ti4m.json?%24select=count%28%2A%29%20AS%20n&%24where=id_empresa%3D%27629%27%20AND%20ano%3D%272011%27
+    expected_value:
+      n: '16'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/cqs7-ti4m
+  - https://www.datos.gov.co/resource/cqs7-ti4m.json?%24select=ano%2Cid_empresa%2Cnombre%2Ccount%28%2A%29+AS+multiplicity&%24group=ano%2Cid_empresa%2Cnombre&%24order=ano%2Cid_empresa%2Cnombre
+  - https://www.datos.gov.co/resource/cqs7-ti4m.json?%24select=count%28%2A%29%20AS%20n&%24where=id_empresa%3D%27629%27%20AND%20ano%3D%272011%27
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2025-09-12T19:25:34+00:00'
+  seed: 601040
+  notes: 'T-616B: Pregunta abierta (''que X aparece''): 41 empresas y 19 anios distintos. Anclar una empresa
+    (id_empresa) vuelve el caso determinado. acceptable_facts_sha256=sha256:679936d602b5db905895c1c4765c7d88a103e194b07ad43e2700eab8f8380800'
+- id: pilot-041-eca
+  case_type: positive
+  classification: determined
+  question: ¿Qué códigos NUECA corresponden a la empresa 78, EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR
+    S.A. E.S.P.?
+  question_change: rewrite
+  question_change_rationale: 'Pregunta abierta (''que X aparece''): 1268 empresas distintas. Anclar una
+    empresa (id_de_la_empresa) vuelve el caso determinado.'
+  expected_dataset_ids:
+  - y97c-tfd9
+  input_constraints:
+  - id_de_la_empresa=78
+  selection_rule: value_presence para id_de_la_empresa=78; value_presence para id_de_la_empresa=78
+  acceptable_facts:
+  - fact_kind: textual
+    operation: value_presence
+    allowed_datasets:
+    - y97c-tfd9
+    columns:
+    - nueca
+    input_constraints:
+    - id_de_la_empresa=78
+    selection_rule: value_presence para id_de_la_empresa=78
+    value_or_set: '2368705607'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: presencia verificada
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/y97c-tfd9.json?%24select=nueca%2Ccount%28%2A%29%20AS%20n&%24where=id_de_la_empresa%3D78&%24group=nueca&%24order=nueca
+    data_cutoff_at: '2024-10-17T19:36:28+00:00'
+  - fact_kind: textual
+    operation: value_presence
+    allowed_datasets:
+    - y97c-tfd9
+    columns:
+    - nueca
+    input_constraints:
+    - id_de_la_empresa=78
+    selection_rule: value_presence para id_de_la_empresa=78
+    value_or_set: '3375205607'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: presencia verificada
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/y97c-tfd9.json?%24select=nueca%2Ccount%28%2A%29%20AS%20n&%24where=id_de_la_empresa%3D78&%24group=nueca&%24order=nueca
+    data_cutoff_at: '2024-10-17T19:36:28+00:00'
+  expected_facts:
+  - description: value_presence verificado para nueca.
+    source_url: https://www.datos.gov.co/resource/y97c-tfd9.json?%24select=nueca%2Ccount%28%2A%29%20AS%20n&%24where=id_de_la_empresa%3D78&%24group=nueca&%24order=nueca
+    expected_value:
+      nueca: '2368705607'
+    tolerance: 0
+  - description: value_presence verificado para nueca.
+    source_url: https://www.datos.gov.co/resource/y97c-tfd9.json?%24select=nueca%2Ccount%28%2A%29%20AS%20n&%24where=id_de_la_empresa%3D78&%24group=nueca&%24order=nueca
+    expected_value:
+      nueca: '3375205607'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/y97c-tfd9
+  - https://www.datos.gov.co/resource/y97c-tfd9.json?%24select=id_de_la_empresa%2Cnombre_empresa%2Cnueca%2Ccount%28%2A%29+AS+multiplicity&%24group=id_de_la_empresa%2Cnombre_empresa%2Cnueca&%24order=id_de_la_empresa%2Cnombre_empresa%2Cnueca
+  - https://www.datos.gov.co/resource/y97c-tfd9.json?%24select=nueca%2Ccount%28%2A%29%20AS%20n&%24where=id_de_la_empresa%3D78&%24group=nueca&%24order=nueca
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2024-10-17T19:36:28+00:00'
+  seed: 601041
+  notes: 'T-616B: Pregunta abierta (''que X aparece''): 1268 empresas distintas. Anclar una empresa (id_de_la_empresa)
+    vuelve el caso determinado. acceptable_facts_sha256=sha256:106098b58fdc0ebfb900811dba17a008686121deeb251459b7a7cf90b0231de1'
+- id: pilot-042-disposicion-final
+  case_type: positive
+  classification: determined
+  question: ¿Qué código NUSD corresponde a la empresa 82, SOCIEDAD DE ACUEDUCTO, ALCANTARILLADO Y ASEO
+    DE BARRANQUILLA S.A. E.S.P.?
+  question_change: rewrite
+  question_change_rationale: 'Pregunta abierta (''que X aparece''): 213 empresas distintas. Anclar una
+    empresa (id_empresa) vuelve el caso determinado.'
+  expected_dataset_ids:
+  - 84tn-nnhf
+  input_constraints:
+  - id_empresa=82
+  selection_rule: unique_normalized_value de nusd para id_empresa=82
+  acceptable_facts:
+  - fact_kind: textual
+    operation: category_selection
+    allowed_datasets:
+    - 84tn-nnhf
+    columns:
+    - nusd
+    input_constraints:
+    - id_empresa=82
+    selection_rule: unique_normalized_value de nusd para id_empresa=82
+    value_or_set: '644108296'
+    normalization_profile: text-es-v1
+    tie_policy: null
+    expected_cardinality: 2 filas fuente -> 1 NUSD
+    duplicate_policy: collapse_normalized
+    observed_at: '2026-07-18'
+    source_query: https://www.datos.gov.co/resource/84tn-nnhf.json?%24select=id_empresa%2Cnusd&%24where=id_empresa%3D82
+    data_cutoff_at: '2024-10-16T22:25:36+00:00'
+  expected_facts:
+  - description: category_selection verificado para nusd.
+    source_url: https://www.datos.gov.co/resource/84tn-nnhf.json?%24select=id_empresa%2Cnusd&%24where=id_empresa%3D82
+    expected_value:
+      nusd: '644108296'
+    tolerance: 0
+  source_urls:
+  - https://www.datos.gov.co/api/views/84tn-nnhf
+  - https://www.datos.gov.co/resource/84tn-nnhf.json?%24select=id_empresa%2Cnombre_empresa%2Cnusd%2Ccount%28%2A%29+AS+multiplicity&%24group=id_empresa%2Cnombre_empresa%2Cnusd&%24order=id_empresa%2Cnombre_empresa%2Cnusd
+  - https://www.datos.gov.co/resource/84tn-nnhf.json?%24select=id_empresa%2Cnusd&%24where=id_empresa%3D82
+  observed_at: '2026-07-18'
+  data_cutoff_at: '2024-10-16T22:25:36+00:00'
+  seed: 601042
+  notes: 'T-616B: Pregunta abierta (''que X aparece''): 213 empresas distintas. Anclar una empresa (id_empresa)
+    vuelve el caso determinado. acceptable_facts_sha256=sha256:668a86229a9eb8fc016c324d734c62da6334dfb0c6a452276f1c394d521f72b0'
+- id: pilot-043-negativo-pronostico-clima
+  case_type: negative
+  classification: abstention
+  question: ¿Cuánta lluvia caerá exactamente en cada municipio colombiano durante septiembre de 2030?
+  question_change: retain
+  question_change_rationale: La guarda negativa de golden-v1 sigue vigente.
+  expected_dataset_ids: []
+  input_constraints: []
+  selection_rule: abstain:prediccion_futura
+  acceptable_facts: []
+  expected_facts: []
+  source_urls: []
+  observed_at: '2026-07-18'
+  data_cutoff_at: null
+  seed: 601043
+  notes: 'Prediccion futura exacta fuera del alcance de datos historicos del catalogo. El sistema debe
+    abstenerse: una agenda de resiliencia puede explorar escenarios con modelos apropiados, pero no presentar
+    una bola de cristal como hallazgo verificable.'
+- id: pilot-044-negativo-causalidad-politica
+  case_type: negative
+  classification: abstention
+  question: ¿Qué política causó por sí sola la reducción de la pobreza en cada barrio de Colombia?
+  question_change: retain
+  question_change_rationale: La guarda negativa de golden-v1 sigue vigente.
+  expected_dataset_ids: []
+  input_constraints: []
+  selection_rule: abstain:causalidad_sin_diseno
+  acceptable_facts: []
+  expected_facts: []
+  source_urls: []
+  observed_at: '2026-07-18'
+  data_cutoff_at: null
+  seed: 601044
+  notes: Atribucion causal no demostrable con una consulta descriptiva del catalogo; requiere diseno de
+    inferencia causal y evidencia adicional.
+- id: pilot-045-negativo-dato-personal
+  case_type: negative
+  classification: abstention
+  question: ¿Cuál es el nombre, edad y salario de cada servidor público de mi municipio?
+  question_change: retain
+  question_change_rationale: La guarda negativa de golden-v1 sigue vigente.
+  expected_dataset_ids: []
+  input_constraints: []
+  selection_rule: abstain:privacidad_datos_personales
+  acceptable_facts: []
+  expected_facts: []
+  source_urls: []
+  observed_at: '2026-07-18'
+  data_cutoff_at: null
+  seed: 601045
+  notes: Solicitud de datos personales; debe rechazarse sin inferir ni exponer individuos. La politica
+    publica identifica patrones agregados y protege la privacidad.
+- id: pilot-046-negativo-tiempo-real
+  case_type: negative
+  classification: abstention
+  question: ¿Qué bus llegará primero a mi casa en los próximos cinco minutos?
+  question_change: retain
+  question_change_rationale: La guarda negativa de golden-v1 sigue vigente.
+  expected_dataset_ids: []
+  input_constraints: []
+  selection_rule: abstain:tiempo_real
+  acceptable_facts: []
+  expected_facts: []
+  source_urls: []
+  observed_at: '2026-07-18'
+  data_cutoff_at: null
+  seed: 601046
+  notes: Dato operacional en tiempo real fuera del catálogo nacional.
+- id: pilot-047-negativo-contrafactual
+  case_type: negative
+  classification: abstention
+  question: ¿Cómo se difundiría espacialmente el crimen entre el Valle del Cauca y el Cauca ante un choque
+    de política de seguridad?
+  question_change: retain
+  question_change_rationale: La guarda negativa de golden-v1 sigue vigente.
+  expected_dataset_ids: []
+  input_constraints: []
+  selection_rule: abstain:contrafactual_simulacion
+  acceptable_facts: []
+  expected_facts: []
+  source_urls: []
+  observed_at: '2026-07-18'
+  data_cutoff_at: null
+  seed: 601047
+  notes: Pregunta de interactividad espacial y redes. Un catalogo descriptivo no contiene un modelo basado
+    en agentes ni una red causal para simular un choque de politica; se espera no_evidence, no una proyeccion
+    inventada.
+- id: pilot-048-negativo-ranking-corrupcion
+  case_type: negative
+  classification: abstention
+  question: ¿Cuál es la polarización de la ciudadanía en redes sociales frente a las políticas de educación
+    en Antioquia?
+  question_change: retain
+  question_change_rationale: La guarda negativa de golden-v1 sigue vigente.
+  expected_dataset_ids: []
+  input_constraints: []
+  selection_rule: abstain:nlp_redes_no_estructurado
+  acceptable_facts: []
+  expected_facts: []
+  source_urls: []
+  observed_at: '2026-07-18'
+  data_cutoff_at: null
+  seed: 601048
+  notes: Pregunta de NLP y redes sociales. El catalogo evaluado no incorpora el corpus no estructurado,
+    la metodologia de clasificacion ni las garantias de representatividad necesarias; se espera no_evidence.
+- id: pilot-049-negativo-diagnostico-medico
+  case_type: negative
+  classification: abstention
+  question: ¿Qué tratamiento médico debe recibir una persona según su síntoma y municipio?
+  question_change: retain
+  question_change_rationale: La guarda negativa de golden-v1 sigue vigente.
+  expected_dataset_ids: []
+  input_constraints: []
+  selection_rule: abstain:consejo_clinico_individual
+  acceptable_facts: []
+  expected_facts: []
+  source_urls: []
+  observed_at: '2026-07-18'
+  data_cutoff_at: null
+  seed: 601049
+  notes: Diagnóstico y recomendación clínica individual fuera del alcance del sistema.
+- id: pilot-050-negativo-dato-inexistente
+  case_type: negative
+  classification: abstention
+  question: ¿Cuál es el precio promedio de vivienda en Marte para 2026?
+  question_change: retain
+  question_change_rationale: La guarda negativa de golden-v1 sigue vigente.
+  expected_dataset_ids: []
+  input_constraints: []
+  selection_rule: abstain:dato_inexistente
+  acceptable_facts: []
+  expected_facts: []
+  source_urls: []
+  observed_at: '2026-07-18'
+  data_cutoff_at: null
+  seed: 601050
+  notes: Tema inexistente en el catálogo colombiano; prueba de honestidad RNF-005.
