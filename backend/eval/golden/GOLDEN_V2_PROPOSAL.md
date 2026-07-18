@@ -11,14 +11,21 @@ fundamentadas en la pregunta, no el uso de filtros ocultos del evaluador.
 `golden-v1` continúa siendo inmutable y útil como línea histórica. No debe
 reemplazarse ni reinterpretarse silenciosamente.
 
-> **Auditoría T-616A (2026-07-18, no normativa, pendiente de aprobación).** La
-> auditoría caso por caso de los 50 casos vive en
-> `eval/reports/t616a-golden-v2-audit.md` (informe humano) y
+> **Auditoría T-616A-R (2026-07-18, no normativa, pendiente de aprobación).**
+> Corrige y completa la auditoría T-616A tras revisión coordinadora (12/40
+> verificados contra Socrata, confianza mal calibrada, `pilot-022` mal
+> clasificado como incompatible, `pilot-001` mal clasificado como agregado,
+> entre otros hallazgos). La reauditoría caso por caso de los 50 casos —
+> **40/40 positivos verificados contra el catálogo PostgreSQL local y contra
+> Socrata real**, con consultas reproducibles vía
+> `scripts/t616a_audit.py --verify-live`— vive en
+> `eval/reports/t616a-golden-v2-audit.md` (informe humano),
 > `eval/reports/t616a-case-audit.json` (matriz estructurada, esquema
-> `t616a-case-audit-v1`). Confirma y amplía las incompatibilidades de este
-> documento (37 casos con filtros ocultos; `pilot-016`/`022`/`038`/`039`
-> incompatibles) sin crear `golden-v2.yaml` ni alterar `golden-v1`. Ninguna
-> recomendación queda aprobada por este enlace.
+> `t616a-case-audit-v2`) y `eval/reports/t616a-evidence-manifest.json`
+> (evidencia reproducible no normativa, esquema
+> `t616a-evidence-manifest-v2`, con metadatos/esquema, proyección completa,
+> nulos, duplicados, empates y hashes). No crea `golden-v2.yaml` ni altera
+> `golden-v1`. Ninguna recomendación queda aprobada por este enlace.
 
 ## Evidencia reproducible
 
@@ -53,20 +60,27 @@ La misma forma se ejecutó para 2020-01-21. Ambos días devuelven al menos 100
 observaciones. La pregunta no contiene la hora, la estación ni una regla de
 orden que seleccione de manera única el registro congelado.
 
-## Incompatibilidades confirmadas
+## Casos subdeterminados o con ancla inválida confirmados
 
-| Caso | Pregunta observable | Hecho congelado no determinado |
+| Caso | Diagnóstico | Hecho congelado no determinado |
 |---|---|---|
-| `pilot-022-red-vial` | solicita el tramo `55ST02` | la URL esperada filtra `administrador=1`, `calzada=1`, `categoria=2`, pero no filtra el identificador solicitado |
-| `pilot-037-calidad-aire` | pregunta qué estación de AMVA figura | congela la estación `9020 / I.E. COL. COLOMBIA` sin criterio para escogerla entre varias |
-| `pilot-038-precipitacion` | especifica solo 2019-02-11 | exige estación `0054050010`, sensor `0240` y hora `13:50` |
-| `pilot-039-temperatura` | especifica solo 2020-01-21 | exige estación `0026195501`, sensor `0068` y hora `03:35` |
+| `pilot-001-educacion-magdalena` | ambiguo: «tasa alta» no define umbral ni argmax | congela Zona Bananera 2.44; la reescritura con «mayor» da Cerro de San Antonio 6.28, máximo único |
+| `pilot-022-red-vial` | caso y dataset compatibles; evidencia v1 con `wrong_anchor` | la URL esperada filtra `administrador=1`, `calzada=1`, `categoria=2`, pero no `codigo_tramo='55ST02'` |
+| `pilot-037-calidad-aire` | ambiguo/multi-respuesta; dataset compatible | congela la estación `9020 / I.E. COL. COLOMBIA` sin criterio para escogerla entre varias |
+| `pilot-038-precipitacion` | ambiguo/multi-respuesta; dataset compatible; especifica solo 2019-02-11 | exige estación `0054050010`, sensor `0240` y hora `13:50` |
+| `pilot-039-temperatura` | ambiguo/multi-respuesta; dataset compatible; especifica solo 2020-01-21 | exige estación `0026195501`, sensor `0068` y hora `03:35` |
 
-Estos casos no pueden convertirse en pruebas de exactitud determinista sin una
+Los casos ambiguos no pueden convertirse en pruebas de exactitud determinista sin una
 de estas dos correcciones: hacer explícita la restricción en la pregunta o
 evaluar un conjunto de respuestas válidas. Incorporar los valores congelados
 al runtime sería sobreajuste al benchmark y violaría la prohibición de
 hardcodear preguntas, IDs o cifras piloto.
+
+Para 038/039 la matriz propone preguntas nuevas sin marcadores: incluye
+literalmente estación, sensor y hora, y verifica respectivamente 0 mm y
+15.85716 °C. Esos valores son candidatos auditados para una pregunta distinta;
+no convierten retrospectivamente la pregunta v1 en determinada y permanecen
+excluidos hasta aprobación humana.
 
 ## Contrato propuesto
 
@@ -90,7 +104,7 @@ una fila arbitraria.
 ## Migración y puertas
 
 1. Auditar los 40 casos positivos de `golden-v1` sin cambiar ese archivo.
-2. Reescribir únicamente los casos incompatibles en un archivo nuevo
+2. Reescribir únicamente los casos ambiguos/incompatibles aprobados en un archivo nuevo
    `golden-v2.yaml`, con revisión humana de sus fuentes y cortes.
 3. Ejecutar ambos suites durante una versión: v1 informativo y v2 como candidato
    de aceptación.
