@@ -508,6 +508,14 @@ siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
       dirigidas, 847 sin integración y 47 integraciones PostgreSQL verdes
       (1 `xfail` preexistente); Ruff y `git diff --check` verdes. No se
       ejecutaron Gemini, Socrata ni golden y T-615J no se inició.
+    - **Corrección T-615I-C (2026-07-17):** la aplicabilidad reúne hechos
+      públicos, referencias del plan y hechos persistidos/reverificados; la
+      reproducibilidad compara el contrato textual completo y toda entrada
+      estructurada inválida produce métricas fallidas, nunca un error de
+      infraestructura. La prueba de privacidad serializa recursivamente la
+      fila OE3 destinada a persistencia. Evidencia: 98 pruebas dirigidas, 865
+      sin integración y 47 integraciones focalizadas verdes (1 `xfail`
+      preexistente).
 
   - [ ] **T-615J Ejecutar aceptación integral y cerrar la puerta.**
     - **Requisitos:** todos los anteriores; Art. II/IV; rollback legacy.

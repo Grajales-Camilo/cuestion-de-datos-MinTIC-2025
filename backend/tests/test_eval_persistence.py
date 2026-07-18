@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 
 from eval.loader import GoldenCase
@@ -118,11 +119,17 @@ def test_eval_case_result_persists_only_privacy_safe_textual_snapshot() -> None:
     )
 
     persisted = {
+        "passed": row.passed,
+        "status_final": row.status_final,
+        "expected_dataset_hit": row.expected_dataset_hit,
         "metrics": row.metrics,
         "quality_summary": row.quality_summary,
+        "evidence_dataset_ids": row.evidence_dataset_ids,
         "claim_fingerprint_hashes": row.claim_fingerprint_hashes,
+        "error_code": row.error_code,
+        "failure_reason": row.failure_reason,
     }
-    serialized = str(persisted)
+    serialized = json.dumps(persisted, ensure_ascii=False, sort_keys=True)
     assert all(value not in serialized for value in forbidden)
     assert row.metrics["textual_integrity"]["grounded_fact_integrity"] is True
 

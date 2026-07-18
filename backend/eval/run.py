@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.agent.durability import get_run
-from app.agent.persistence import load_allowed_grounded_facts
+from app.agent.persistence import load_allowed_grounded_facts, load_textual_facts
 from app.agent.runner import create_eval_run, execute_agent_run_async
 from app.agent.worker_lease import mark_worker_shutdown, register_worker_instance
 from app.config import get_settings
@@ -465,13 +465,24 @@ async def run_suite(
                     None,
                 )
                 allowed_facts: list[dict[str, object]] = []
-                if final.get("textual_facts"):
+                verified_textual_facts: list[dict[str, object]] = []
+                if final.get("textual_facts") or synthesis_plan is not None:
                     allowed = await load_allowed_grounded_facts(engine, agent_run_id)
                     allowed_facts = [fact.model_dump(mode="json") for fact in allowed.facts]
+                    allowed_textual_ids = {
+                        str(fact.id) for fact in allowed.facts if fact.fact_kind.value == "textual"
+                    }
+                    persisted_textual_facts = await load_textual_facts(engine, agent_run_id)
+                    verified_textual_facts = [
+                        fact.model_dump(mode="json")
+                        for fact in persisted_textual_facts
+                        if str(fact.fact_id) in allowed_textual_ids
+                    ]
                 textual_integrity = assess_textual_integrity(
                     final,
                     synthesis_plan,
                     allowed_facts,
+                    verified_textual_facts,
                 )
                 assessment = assess_case(
                     case,

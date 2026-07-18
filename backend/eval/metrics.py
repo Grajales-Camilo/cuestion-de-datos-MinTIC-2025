@@ -72,13 +72,32 @@ def assess_textual_integrity(
     final_answer: dict[str, Any],
     synthesis_plan: dict[str, Any] | None,
     allowed_facts: list[dict[str, Any]],
+    verified_textual_facts: list[dict[str, Any]] | None = None,
 ) -> TextualIntegrityAssessment:
-    """Evalúa solo objetos estructurados; nunca extrae hechos desde prosa."""
+    """Evalúa RF-210/RNF-013 solo desde objetos persistidos y reverificados."""
 
     public_facts = [
         item for item in (final_answer.get("textual_facts") or []) if isinstance(item, dict)
     ]
-    applicable = bool(public_facts)
+    verified_facts = [item for item in (verified_textual_facts or []) if isinstance(item, dict)]
+    raw_segments = synthesis_plan.get("segments", []) if isinstance(synthesis_plan, dict) else []
+    textual_reference_ids = [
+        str(reference.get("id"))
+        for segment in raw_segments
+        if isinstance(segment, dict)
+        for reference in (
+            segment.get("fact_refs", []) if isinstance(segment.get("fact_refs"), list) else []
+        )
+        if isinstance(reference, dict) and reference.get("fact_kind") == "textual"
+    ]
+    raw_allowed_textual = [
+        item
+        for item in allowed_facts
+        if isinstance(item, dict) and item.get("fact_kind") == "textual"
+    ]
+    applicable = bool(
+        public_facts or textual_reference_ids or raw_allowed_textual or verified_facts
+    )
     if not applicable:
         return TextualIntegrityAssessment(
             applicable=False,
@@ -94,16 +113,29 @@ def assess_textual_integrity(
             grounded_fact_integrity=True,
         )
 
-    allowed = AllowedGroundedFacts.model_validate(
-        {
-            "run_id": allowed_facts[0]["run_id"] if allowed_facts else final_answer.get("run_id"),
-            "facts": allowed_facts,
+    allowed: AllowedGroundedFacts | None = None
+    allowed_textual: dict[str, AllowedTextualFact] = {}
+    try:
+        allowed = AllowedGroundedFacts.model_validate(
+            {
+                "run_id": (
+                    allowed_facts[0].get("run_id")
+                    if allowed_facts and isinstance(allowed_facts[0], dict)
+                    else final_answer.get("run_id")
+                ),
+                "facts": allowed_facts,
+            }
+        )
+        allowed_textual = {
+            str(fact.id): fact for fact in allowed.facts if isinstance(fact, AllowedTextualFact)
         }
-    )
-    allowed_textual = {
-        str(fact.id): fact for fact in allowed.facts if isinstance(fact, AllowedTextualFact)
-    }
+    except (TypeError, ValidationError, ValueError):
+        allowed = None
+
     public_by_id = {str(item.get("fact_id")): item for item in public_facts if item.get("fact_id")}
+    verified_by_id = {
+        str(item.get("fact_id")): item for item in verified_facts if item.get("fact_id")
+    }
     invalid_operations = sum(
         item.get("operation") not in {operation.value for operation in TextualFactOperation}
         for item in public_facts
@@ -112,14 +144,13 @@ def assess_textual_integrity(
         fact_id
         for fact_id, item in public_by_id.items()
         if fact_id in allowed_textual
-        and item.get("source_hash") == allowed_textual[fact_id].source_hash
+        and fact_id in verified_by_id
+        and _public_textual_fact_matches_verified(item, verified_by_id[fact_id])
         and item.get("operation") in {operation.value for operation in TextualFactOperation}
     }
 
     resolved_reference_count = 0
-    textual_reference_count = 0
     orphan_segments = 0
-    raw_segments = synthesis_plan.get("segments", []) if isinstance(synthesis_plan, dict) else []
     for segment in raw_segments:
         references = segment.get("fact_refs", []) if isinstance(segment, dict) else []
         textual_ids = [
@@ -127,7 +158,6 @@ def assess_textual_integrity(
             for reference in references
             if isinstance(reference, dict) and reference.get("fact_kind") == "textual"
         ]
-        textual_reference_count += len(textual_ids)
         if any(fact_id not in allowed_textual for fact_id in textual_ids):
             orphan_segments += 1
         resolved_reference_count += sum(
@@ -136,6 +166,8 @@ def assess_textual_integrity(
 
     display_match = 0.0
     try:
+        if allowed is None:
+            raise ValueError("conjunto permitido inválido")
         plan = GroundedSynthesisPlan.model_validate(synthesis_plan)
         rendered = render_grounded_synthesis(plan, allowed)
         display_match = float(rendered == final_answer.get("narrative"))
@@ -143,10 +175,12 @@ def assess_textual_integrity(
         display_match = 0.0
 
     fact_count = len(public_facts)
+    textual_reference_count = len(textual_reference_ids)
     reference_coverage = (
         resolved_reference_count / textual_reference_count if textual_reference_count else 1.0
     )
-    reproducible = len(reproducible_ids) / fact_count
+    expected_fact_ids = set(public_by_id) | set(verified_by_id) | set(allowed_textual)
+    reproducible = len(reproducible_ids) / max(len(expected_fact_ids), 1)
     integrity = (
         reference_coverage == 1.0
         and reproducible == 1.0
@@ -188,6 +222,39 @@ def assess_textual_integrity(
         grounded_fact_integrity=integrity,
         fact_fingerprints=fingerprints,
     )
+
+
+def _public_textual_fact_matches_verified(
+    public: dict[str, Any],
+    verified: dict[str, Any],
+) -> bool:
+    """Compara el contrato completo sin guardar sus valores en el snapshot."""
+
+    scalar_fields = (
+        "fact_id",
+        "fact",
+        "operation",
+        "evidence_id",
+        "dataset_id",
+        "display_value",
+        "normalization_profile",
+        "algorithm_version",
+        "source_hash",
+    )
+    if any(str(public.get(field)) != str(verified.get(field)) for field in scalar_fields):
+        return False
+    sequence_fields = (
+        "source_row_indexes",
+        "columns",
+        "raw_values",
+        "normalized_values",
+    )
+    if any(
+        tuple(public.get(field) or ()) != tuple(verified.get(field) or ())
+        for field in sequence_fields
+    ):
+        return False
+    return (public.get("operation_params") or {}) == (verified.get("operation_params") or {})
 
 
 def recall_hit_at_10(case: GoldenCase, search_dataset_ids: list[str]) -> bool | None:
