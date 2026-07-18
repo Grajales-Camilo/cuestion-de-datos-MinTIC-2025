@@ -527,7 +527,7 @@ siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
       119 aprobadas, 1 omitida y 1 `xfail` estricto preexistente; cero bases
       `t615ir_*`, tablas de respaldo o residuos al terminar.
 
-  - [ ] **T-615J Ejecutar aceptación integral y cerrar la puerta.**
+  - [x] **T-615J Ejecutar aceptación integral y cerrar la puerta.**
     - **Requisitos:** todos los anteriores; Art. II/IV; rollback legacy.
     - **Archivos previstos:** aceptación determinista/legacy, pruebas de
       integración compartidas y acta `backend/eval/reports/` autorizada.
@@ -541,6 +541,13 @@ siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
       revertir migración sin perder claims cuantitativos.
     - **Gate:** aprobación humana del cierre. Solo entonces T-616 puede ser
       autorizada; T-617 sigue dependiendo de T-616.
+    - **Cierre técnico (2026-07-17):** acta
+      `backend/eval/reports/t615-final-acceptance.md`; 265 pruebas dirigidas,
+      865 sin integración, 51 aceptaciones/persistencia/retención focalizadas
+      y dos marcas completas de integración con 119 aprobadas, 1 omitida y 1
+      `xfail` estricto conocido en cada ejecución. OpenAPI canónico y
+      `golden-v1` intactos; cero bases temporales o residuos. T-616 y T-617 no
+      se iniciaron.
 
 - [ ] **T-616 Auditar los 50 casos y construir `golden-v2` (RF-601/602).**
   - No modificar `backend/eval/golden/golden-v1.yaml`.
