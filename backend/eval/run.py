@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.agent.durability import get_run
+from app.agent.persistence import load_allowed_grounded_facts
 from app.agent.runner import create_eval_run, execute_agent_run_async
 from app.agent.worker_lease import mark_worker_shutdown, register_worker_instance
 from app.config import get_settings
@@ -24,7 +25,12 @@ from app.db.engine import create_app_async_engine
 from app.db.models import AgentRunEvent, AgentStep, EvalCaseResult, EvalRun
 from eval.diagnostics import StageObservation, build_stage_diagnostics
 from eval.loader import default_suite_path, load_golden_suite
-from eval.metrics import CaseAssessment, assess_case, recall_hit_at_10
+from eval.metrics import (
+    CaseAssessment,
+    assess_case,
+    assess_textual_integrity,
+    recall_hit_at_10,
+)
 from eval.persistence import PersistedGoldenSuite, sync_golden_suite
 
 # Hallazgo (2026-07-12, diagnostico real): main() siempre devolvia 0 tras
@@ -209,13 +215,44 @@ def _case_result_model(
             "recall_hit": assessment.recall_hit,
             "usage": final.get("usage", {}),
             "stage_diagnostics": stage_diagnostics,
+            **(
+                {"textual_integrity": assessment.textual_integrity.snapshot()}
+                if assessment.textual_integrity is not None
+                else {}
+            ),
         },
-        quality_summary=[item.get("quality") for item in final.get("evidence", [])],
+        quality_summary=_privacy_safe_quality_summary(final.get("evidence", [])),
         evidence_dataset_ids=list(assessment.evidence_dataset_ids),
         claim_fingerprint_hashes=list(assessment.claim_hashes),
         error_code=error_code,
         failure_reason=assessment.failure_reason,
     )
+
+
+def _privacy_safe_quality_summary(evidence: object) -> dict[str, object]:
+    """Reduce calidad a enums y conteos; excluye warnings y contenido."""
+
+    classifications: dict[str, int] = {}
+    eligibility: dict[str, int] = {}
+    warning_count = 0
+    for item in evidence if isinstance(evidence, list) else []:
+        quality = item.get("quality") if isinstance(item, dict) else None
+        if not isinstance(quality, dict):
+            continue
+        classification = quality.get("classification")
+        if isinstance(classification, str):
+            classifications[classification] = classifications.get(classification, 0) + 1
+        status = quality.get("eligibility_status")
+        if isinstance(status, str):
+            eligibility[status] = eligibility.get(status, 0) + 1
+        warnings = quality.get("warnings_user")
+        if isinstance(warnings, list):
+            warning_count += len(warnings)
+    return {
+        "classification_counts": classifications,
+        "eligibility_status_counts": eligibility,
+        "warning_count": warning_count,
+    }
 
 
 async def _create_eval_record(
@@ -345,6 +382,28 @@ def _write_report(
         f"{_md(diag['estimated_cost_usd'])} |"
         for case_id, _item, diag in results
     )
+    lines.extend(
+        [
+            "",
+            "## Integridad textual",
+            "",
+            "| Caso | Aplica | Cobertura refs | Reproducibles | Presentación | "
+            "Segmentos huérfanos | Operaciones inválidas | Integridad total |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for case_id, item, _diag in results:
+        metric = item.textual_integrity
+        lines.append(
+            f"| {_md(case_id)} | "
+            f"{'sí' if metric and metric.applicable else 'no'} | "
+            f"{_md(metric.textual_fact_reference_coverage if metric else None)} | "
+            f"{_md(metric.textual_facts_reproducible if metric else None)} | "
+            f"{_md(metric.textual_fact_display_match if metric else None)} | "
+            f"{metric.orphan_factual_segments_count if metric else 0} | "
+            f"{metric.invalid_textual_operation_count if metric else 0} | "
+            f"{'sí' if metric is None or metric.grounded_fact_integrity else 'no'} |"
+        )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -384,6 +443,7 @@ async def run_suite(
         for case in selected_cases:
             agent_run_id: uuid.UUID | None = None
             error_code: str | None = None
+            observations: tuple[StageObservation, ...] = ()
             try:
                 agent_run_id = await create_eval_run(
                     engine,
@@ -394,7 +454,30 @@ async def run_suite(
                 await execute_agent_run_async(settings, agent_run_id)
                 run = await get_run(engine, agent_run_id)
                 final = run.final_answer if run and run.final_answer else {"status": "failed"}
-                assessment = assess_case(case, final)
+                observations = await _stage_observations(engine, agent_run_id)
+                synthesis_plan = next(
+                    (
+                        observation.detail.get("grounded_synthesis_plan")
+                        for observation in observations
+                        if observation.node == "synthesize"
+                        and isinstance(observation.detail.get("grounded_synthesis_plan"), dict)
+                    ),
+                    None,
+                )
+                allowed_facts: list[dict[str, object]] = []
+                if final.get("textual_facts"):
+                    allowed = await load_allowed_grounded_facts(engine, agent_run_id)
+                    allowed_facts = [fact.model_dump(mode="json") for fact in allowed.facts]
+                textual_integrity = assess_textual_integrity(
+                    final,
+                    synthesis_plan,
+                    allowed_facts,
+                )
+                assessment = assess_case(
+                    case,
+                    final,
+                    textual_integrity=textual_integrity,
+                )
                 search_dataset_ids = await _planner_search_dataset_ids(engine, agent_run_id)
                 assessment = dataclasses.replace(
                     assessment, recall_hit=recall_hit_at_10(case, search_dataset_ids)
@@ -410,7 +493,8 @@ async def run_suite(
                     claim_hashes=(),
                     failure_reason=f"Error de infraestructura al ejecutar el caso: {exc}",
                 )
-            observations = await _stage_observations(engine, agent_run_id)
+            if not observations:
+                observations = await _stage_observations(engine, agent_run_id)
             stage_diagnostics = build_stage_diagnostics(
                 case,
                 final,

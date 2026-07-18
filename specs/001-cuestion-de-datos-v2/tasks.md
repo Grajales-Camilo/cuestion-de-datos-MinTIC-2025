@@ -484,7 +484,7 @@ siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
       snapshots cubren literalmente las tres plantillas, los cuatro conectores
       y los tres cierres aprobados.
 
-  - [ ] **T-615I Añadir métricas y snapshots no identificables.**
+  - [x] **T-615I Añadir métricas y snapshots no identificables.**
     - **Requisitos:** extensión RF-602; RNF-003 intacto; métricas RF-210/RNF-013.
     - **Archivos previstos:** `backend/eval/metrics.py`,
       `backend/eval/persistence.py`, reportes y pruebas de evaluación.
@@ -498,6 +498,16 @@ siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
       históricos.
     - **Gate:** suite de evaluación verde; sin ejecutar Gemini ni modificar
       umbrales en este incremento.
+    - **Cierre (2026-07-17):** OE3 calcula cobertura de referencias,
+      reproducibilidad, coincidencia literal de presentación, segmentos
+      huérfanos, operaciones inválidas y la conjunción
+      `grounded_fact_integrity`, con semántica explícita no aplicable para
+      respuestas sin hechos textuales. `eval_case_results` conserva solo
+      métricas, conteos, enums/versiones y fingerprints `source_hash`; la
+      calidad se reduce a conteos sin warnings libres. Evidencia: 84 pruebas
+      dirigidas, 847 sin integración y 47 integraciones PostgreSQL verdes
+      (1 `xfail` preexistente); Ruff y `git diff --check` verdes. No se
+      ejecutaron Gemini, Socrata ni golden y T-615J no se inició.
 
   - [ ] **T-615J Ejecutar aceptación integral y cerrar la puerta.**
     - **Requisitos:** todos los anteriores; Art. II/IV; rollback legacy.

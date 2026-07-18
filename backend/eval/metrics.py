@@ -6,8 +6,52 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import ValidationError
+
 from app.quality.claims import find_orphan_figures
+from app.quality.grounded_facts import GroundedSynthesisPlan, TextualFactOperation
+from app.quality.grounded_synthesis import (
+    AllowedGroundedFacts,
+    AllowedTextualFact,
+    GroundedSynthesisValidationError,
+    render_grounded_synthesis,
+)
 from eval.loader import GoldenCase
+
+
+@dataclass(frozen=True)
+class TextualIntegrityAssessment:
+    """Resultado RF-602 sin contenido textual persistible."""
+
+    applicable: bool
+    textual_fact_count: int
+    textual_reference_count: int
+    referenced_textual_fact_count: int
+    reproducible_textual_fact_count: int
+    textual_fact_reference_coverage: float | None
+    textual_facts_reproducible: float | None
+    textual_fact_display_match: float | None
+    orphan_factual_segments_count: int
+    invalid_textual_operation_count: int
+    grounded_fact_integrity: bool
+    fact_fingerprints: tuple[dict[str, str], ...] = ()
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "schema_version": "textual-integrity-snapshot-v1",
+            "applicable": self.applicable,
+            "textual_fact_count": self.textual_fact_count,
+            "textual_reference_count": self.textual_reference_count,
+            "referenced_textual_fact_count": self.referenced_textual_fact_count,
+            "reproducible_textual_fact_count": self.reproducible_textual_fact_count,
+            "textual_fact_reference_coverage": self.textual_fact_reference_coverage,
+            "textual_facts_reproducible": self.textual_facts_reproducible,
+            "textual_fact_display_match": self.textual_fact_display_match,
+            "orphan_factual_segments_count": self.orphan_factual_segments_count,
+            "invalid_textual_operation_count": self.invalid_textual_operation_count,
+            "grounded_fact_integrity": self.grounded_fact_integrity,
+            "fact_fingerprints": [dict(item) for item in self.fact_fingerprints],
+        }
 
 
 @dataclass(frozen=True)
@@ -21,6 +65,129 @@ class CaseAssessment:
     facts_verified: bool | None = None
     orphan_figures: tuple[str, ...] = ()
     recall_hit: bool | None = None
+    textual_integrity: TextualIntegrityAssessment | None = None
+
+
+def assess_textual_integrity(
+    final_answer: dict[str, Any],
+    synthesis_plan: dict[str, Any] | None,
+    allowed_facts: list[dict[str, Any]],
+) -> TextualIntegrityAssessment:
+    """Evalúa solo objetos estructurados; nunca extrae hechos desde prosa."""
+
+    public_facts = [
+        item for item in (final_answer.get("textual_facts") or []) if isinstance(item, dict)
+    ]
+    applicable = bool(public_facts)
+    if not applicable:
+        return TextualIntegrityAssessment(
+            applicable=False,
+            textual_fact_count=0,
+            textual_reference_count=0,
+            referenced_textual_fact_count=0,
+            reproducible_textual_fact_count=0,
+            textual_fact_reference_coverage=None,
+            textual_facts_reproducible=None,
+            textual_fact_display_match=None,
+            orphan_factual_segments_count=0,
+            invalid_textual_operation_count=0,
+            grounded_fact_integrity=True,
+        )
+
+    allowed = AllowedGroundedFacts.model_validate(
+        {
+            "run_id": allowed_facts[0]["run_id"] if allowed_facts else final_answer.get("run_id"),
+            "facts": allowed_facts,
+        }
+    )
+    allowed_textual = {
+        str(fact.id): fact for fact in allowed.facts if isinstance(fact, AllowedTextualFact)
+    }
+    public_by_id = {str(item.get("fact_id")): item for item in public_facts if item.get("fact_id")}
+    invalid_operations = sum(
+        item.get("operation") not in {operation.value for operation in TextualFactOperation}
+        for item in public_facts
+    )
+    reproducible_ids = {
+        fact_id
+        for fact_id, item in public_by_id.items()
+        if fact_id in allowed_textual
+        and item.get("source_hash") == allowed_textual[fact_id].source_hash
+        and item.get("operation") in {operation.value for operation in TextualFactOperation}
+    }
+
+    resolved_reference_count = 0
+    textual_reference_count = 0
+    orphan_segments = 0
+    raw_segments = synthesis_plan.get("segments", []) if isinstance(synthesis_plan, dict) else []
+    for segment in raw_segments:
+        references = segment.get("fact_refs", []) if isinstance(segment, dict) else []
+        textual_ids = [
+            str(reference.get("id"))
+            for reference in references
+            if isinstance(reference, dict) and reference.get("fact_kind") == "textual"
+        ]
+        textual_reference_count += len(textual_ids)
+        if any(fact_id not in allowed_textual for fact_id in textual_ids):
+            orphan_segments += 1
+        resolved_reference_count += sum(
+            fact_id in allowed_textual and fact_id in public_by_id for fact_id in textual_ids
+        )
+
+    display_match = 0.0
+    try:
+        plan = GroundedSynthesisPlan.model_validate(synthesis_plan)
+        rendered = render_grounded_synthesis(plan, allowed)
+        display_match = float(rendered == final_answer.get("narrative"))
+    except (GroundedSynthesisValidationError, TypeError, ValidationError, ValueError):
+        display_match = 0.0
+
+    fact_count = len(public_facts)
+    reference_coverage = (
+        resolved_reference_count / textual_reference_count if textual_reference_count else 1.0
+    )
+    reproducible = len(reproducible_ids) / fact_count
+    integrity = (
+        reference_coverage == 1.0
+        and reproducible == 1.0
+        and display_match == 1.0
+        and orphan_segments == 0
+        and invalid_operations == 0
+    )
+    fingerprints = tuple(
+        sorted(
+            (
+                {
+                    "algorithm_version": str(item.get("algorithm_version")),
+                    "normalization_profile": str(item.get("normalization_profile")),
+                    "operation": str(item.get("operation")),
+                    "source_hash": str(item.get("source_hash")),
+                }
+                for fact_id, item in public_by_id.items()
+                if fact_id in reproducible_ids
+            ),
+            key=lambda item: (
+                item["source_hash"],
+                item["operation"],
+                item["algorithm_version"],
+                item["normalization_profile"],
+            ),
+        )
+    )
+    return TextualIntegrityAssessment(
+        applicable=True,
+        textual_fact_count=fact_count,
+        textual_reference_count=textual_reference_count,
+        referenced_textual_fact_count=resolved_reference_count,
+        reproducible_textual_fact_count=len(reproducible_ids),
+        textual_fact_reference_coverage=reference_coverage,
+        textual_facts_reproducible=reproducible,
+        textual_fact_display_match=display_match,
+        orphan_factual_segments_count=orphan_segments,
+        invalid_textual_operation_count=invalid_operations,
+        grounded_fact_integrity=integrity,
+        fact_fingerprints=fingerprints,
+    )
 
 
 def recall_hit_at_10(case: GoldenCase, search_dataset_ids: list[str]) -> bool | None:
@@ -177,7 +344,12 @@ def _collect_orphan_figures(final_answer: dict[str, Any]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(orphans))
 
 
-def assess_case(case: GoldenCase, final_answer: dict[str, Any]) -> CaseAssessment:
+def assess_case(
+    case: GoldenCase,
+    final_answer: dict[str, Any],
+    *,
+    textual_integrity: TextualIntegrityAssessment | None = None,
+) -> CaseAssessment:
     """Evalúa el desenlace mínimo sin reinterpretar la respuesta del LLM."""
 
     status = final_answer.get("status")
@@ -208,11 +380,20 @@ def assess_case(case: GoldenCase, final_answer: dict[str, Any]) -> CaseAssessmen
             reason,
             facts_verified,
             orphan_figures,
+            textual_integrity=textual_integrity,
         )
 
     fabrication = bool(claims or evidence or final_answer.get("narrative"))
     passed = status == "no_evidence" and not fabrication
     reason = None if passed else "El caso negativo no se abstuvo limpiamente."
     return CaseAssessment(
-        passed, None, fabrication, dataset_ids, claim_hashes, reason, None, orphan_figures
+        passed,
+        None,
+        fabrication,
+        dataset_ids,
+        claim_hashes,
+        reason,
+        None,
+        orphan_figures,
+        textual_integrity=textual_integrity,
     )

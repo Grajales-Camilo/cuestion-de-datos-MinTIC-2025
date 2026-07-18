@@ -514,6 +514,7 @@ async def execute_deterministic_agent_run_async(
                         "runtime": "deterministic",
                         "schema_version": synthesis_plan.schema_version.value,
                         "allowed_fact_count": len(allowed_grounded_facts.facts),
+                        "grounded_synthesis_plan": synthesis_plan.model_dump(mode="json"),
                         "usage": synthesis_usage.model_dump(mode="json"),
                     },
                 )
