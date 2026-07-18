@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.catalog.ingest import run_ingest
 from app.config import Settings, normalize_database_url_for_sqlalchemy
-from tests.integration._snapshot import backup_tables, restore_tables
 
 pytestmark = pytest.mark.integration
 
@@ -41,7 +40,7 @@ def _page(items: list[dict]) -> dict:
 
 
 @pytest.fixture
-async def engine():
+async def engine(isolated_database_url):
     database_url = normalize_database_url_for_sqlalchemy(os.environ["DATABASE_URL"])
     engine = create_async_engine(database_url, pool_pre_ping=True)
     yield engine
@@ -50,18 +49,7 @@ async def engine():
 
 @pytest.fixture
 async def clean_catalog(engine):
-    # catalog_embeddings no se borra explicitamente pero cae en cascada al
-    # borrar catalog_datasets (FK ondelete=CASCADE) -- hay que respaldarla
-    # igual o se pierde sin que este archivo la mencione.
-    tables = ("catalog_datasets", "catalog_columns", "catalog_embeddings", "ingest_runs")
-    async with engine.begin() as connection:
-        await backup_tables(connection, *tables)
-        await connection.execute(text("DELETE FROM catalog_columns"))
-        await connection.execute(text("DELETE FROM catalog_datasets"))
-        await connection.execute(text("DELETE FROM ingest_runs"))
     yield
-    async with engine.begin() as connection:
-        await restore_tables(connection, *tables)
 
 
 @pytest.fixture
@@ -147,9 +135,7 @@ async def test_api_active_reconciled_on_full_run(engine, clean_catalog, settings
     await run_ingest(engine, settings, trigger="manual", limit=None)
 
     async with engine.connect() as connection:
-        rows = (
-            await connection.execute(text("SELECT id, api_active FROM catalog_datasets"))
-        ).all()
+        rows = (await connection.execute(text("SELECT id, api_active FROM catalog_datasets"))).all()
     active_by_id = {row.id: row.api_active for row in rows}
     assert active_by_id["aaaa-0001"] is True
     assert active_by_id["aaaa-0002"] is False
@@ -170,9 +156,7 @@ async def test_api_active_not_reconciled_with_limit(engine, clean_catalog, setti
     await run_ingest(engine, settings, trigger="manual", limit=1)
 
     async with engine.connect() as connection:
-        rows = (
-            await connection.execute(text("SELECT id, api_active FROM catalog_datasets"))
-        ).all()
+        rows = (await connection.execute(text("SELECT id, api_active FROM catalog_datasets"))).all()
     active_by_id = {row.id: row.api_active for row in rows}
     assert active_by_id["aaaa-0001"] is True
     assert active_by_id["aaaa-0002"] is True
@@ -238,6 +222,8 @@ async def test_malformed_record_does_not_abort_the_run(engine, clean_catalog, se
 
     async with engine.connect() as connection:
         ids = (
-            await connection.execute(text("SELECT id FROM catalog_datasets ORDER BY id"))
-        ).scalars().all()
+            (await connection.execute(text("SELECT id FROM catalog_datasets ORDER BY id")))
+            .scalars()
+            .all()
+        )
     assert ids == ["aaaa-0001", "aaaa-0002"]

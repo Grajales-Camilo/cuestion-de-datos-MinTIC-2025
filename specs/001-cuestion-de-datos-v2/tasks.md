@@ -517,6 +517,16 @@ siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
       sin integración y 47 integraciones focalizadas verdes (1 `xfail`
       preexistente).
 
+  - [x] **T-615I-R Aislar fixtures antiguas de integración.**
+    - **Cierre (2026-07-17):** las pruebas que controlan catálogos,
+      publicadores o geografía ejecutan cada caso en una base PostgreSQL
+      temporal migrada, sin borrar ni respaldar tablas compartidas. Una fila
+      centinela ajena se verificó antes y después de cada caso y solo su
+      fixture la eliminó al final. Evidencia: 41 pruebas saneadas juntas y dos
+      ejecuciones completas idénticas de la marca `integration`, cada una con
+      119 aprobadas, 1 omitida y 1 `xfail` estricto preexistente; cero bases
+      `t615ir_*`, tablas de respaldo o residuos al terminar.
+
   - [ ] **T-615J Ejecutar aceptación integral y cerrar la puerta.**
     - **Requisitos:** todos los anteriores; Art. II/IV; rollback legacy.
     - **Archivos previstos:** aceptación determinista/legacy, pruebas de

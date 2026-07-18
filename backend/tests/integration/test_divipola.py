@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import normalize_database_url_for_sqlalchemy
 from app.db.divipola import rows_to_entries, upsert_divipola_entries
-from tests.integration._snapshot import backup_tables, restore_tables
 
 pytestmark = pytest.mark.integration
 
@@ -45,7 +44,7 @@ _SYNTHETIC_ROWS = [
 
 
 @pytest.fixture
-async def engine():
+async def engine(isolated_database_url):
     database_url = normalize_database_url_for_sqlalchemy(os.environ["DATABASE_URL"])
     engine = create_async_engine(database_url, pool_pre_ping=True)
     yield engine
@@ -54,17 +53,7 @@ async def engine():
 
 @pytest.fixture
 async def clean_divipola(engine):
-    # territorio_tipologia (T-207/T-404) tiene FK a divipola_entries.code; hay que
-    # vaciarla primero o el DELETE de abajo falla si quedaron filas reales cargadas
-    # (p. ej. por scripts/load_tipologias_dnp.py) referenciando estos codigos.
-    tables = ("divipola_entries", "territorio_tipologia")
-    async with engine.begin() as connection:
-        await backup_tables(connection, *tables)
-        await connection.execute(text("DELETE FROM territorio_tipologia"))
-        await connection.execute(text("DELETE FROM divipola_entries"))
     yield
-    async with engine.begin() as connection:
-        await restore_tables(connection, *tables)
 
 
 async def test_upsert_creates_departments_and_municipalities(engine, clean_divipola) -> None:

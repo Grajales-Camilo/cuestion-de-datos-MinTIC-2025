@@ -4,19 +4,17 @@ import os
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.catalog.coverage import build_coverage_report_from_db
 from app.config import normalize_database_url_for_sqlalchemy
-from app.db.models import CatalogDataset, OfficialPublisherAlias
-from tests.integration._snapshot import backup_tables, restore_tables
+from app.db.models import CatalogDataset, OfficialPublisher, OfficialPublisherAlias
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-async def engine():
+async def engine(isolated_database_url):
     database_url = normalize_database_url_for_sqlalchemy(os.environ["DATABASE_URL"])
     engine = create_async_engine(database_url, pool_pre_ping=True)
     yield engine
@@ -38,17 +36,20 @@ def _dataset(id_: str, publisher: str, status: str, api_active: bool = True) -> 
 
 @pytest.fixture
 async def seeded_catalog(engine):
-    # catalog_embeddings no se toca aqui explicitamente pero cae en cascada
-    # al borrar catalog_datasets (FK ondelete=CASCADE) -- se respalda igual.
-    tables = ("catalog_datasets", "catalog_columns", "catalog_embeddings")
-    async with engine.begin() as connection:
-        await backup_tables(connection, *tables, "official_publisher_aliases")
-        await connection.execute(text("DELETE FROM catalog_columns"))
-        await connection.execute(text("DELETE FROM catalog_datasets"))
-        await connection.execute(text("DELETE FROM official_publisher_aliases"))
-
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session, session.begin():
+        session.add(
+            OfficialPublisher(
+                id="dane",
+                canonical_name="Departamento Administrativo Nacional de Estadística",
+                normalized_name="DEPARTAMENTO ADMINISTRATIVO NACIONAL DE ESTADISTICA",
+                entity_type="departamento_administrativo",
+                active=True,
+                verification_source="prueba de integración T-201A",
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await session.flush()
         session.add_all(
             [
                 _dataset("aaaa-0001", "DANE", "verified"),
@@ -72,8 +73,6 @@ async def seeded_catalog(engine):
         )
 
     yield
-    async with engine.begin() as connection:
-        await restore_tables(connection, *tables, "official_publisher_aliases")
 
 
 async def test_report_counts_only_active_datasets(engine, seeded_catalog) -> None:

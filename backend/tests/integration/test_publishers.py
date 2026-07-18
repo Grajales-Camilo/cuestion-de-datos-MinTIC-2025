@@ -4,7 +4,6 @@ import os
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -21,7 +20,7 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-async def engine():
+async def engine(isolated_database_url):
     database_url = normalize_database_url_for_sqlalchemy(os.environ["DATABASE_URL"])
     engine = create_async_engine(database_url, pool_pre_ping=True)
     yield engine
@@ -31,44 +30,7 @@ async def engine():
 @pytest.fixture
 async def loaded_fixture(engine):
     fixture = load_fixture()
-    # catalog_datasets.official_publisher_id apunta a esta tabla; datasets reales
-    # ingeridos (T-201) pueden referenciar publicadores que el fixture tambien
-    # define (p. ej. "dane"), y el DELETE de abajo viola esa FK si no se
-    # desvinculan primero. reload_official_publishers siempre reescribe los
-    # mismos ids conocidos del fixture, asi que basta con restaurar el mismo
-    # vinculo despues -- no hace falta respaldar official_publishers/aliases:
-    # su contenido es siempre el mismo fixture estatico, no datos que se pierdan.
-    async with engine.begin() as connection:
-        linked = (
-            await connection.execute(
-                text(
-                    "SELECT id, official_publisher_id FROM catalog_datasets "
-                    "WHERE official_publisher_id IS NOT NULL"
-                )
-            )
-        ).all()
-        if linked:
-            await connection.execute(
-                text(
-                    "UPDATE catalog_datasets SET official_publisher_id = NULL "
-                    "WHERE official_publisher_id IS NOT NULL"
-                )
-            )
-        await connection.execute(text("DELETE FROM official_publisher_aliases"))
-        await connection.execute(text("DELETE FROM official_publishers"))
     summary = await reload_official_publishers(engine, fixture)
-    if linked:
-        async with engine.begin() as connection:
-            await connection.execute(
-                text(
-                    "UPDATE catalog_datasets SET official_publisher_id = :publisher_id "
-                    "WHERE id = :dataset_id"
-                ),
-                [
-                    {"dataset_id": row.id, "publisher_id": row.official_publisher_id}
-                    for row in linked
-                ],
-            )
     return fixture, summary
 
 
