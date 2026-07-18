@@ -8,10 +8,13 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.agent.persistence import build_verify_persist_textual_facts
+from app.agent.persistence import (
+    build_verify_persist_textual_facts,
+    load_allowed_grounded_facts,
+)
 from app.config import normalize_database_url_for_sqlalchemy
 from app.db.models import (
     AgentRun,
@@ -218,6 +221,62 @@ async def test_build_verify_persist_load_and_reverify_exactly(engine, created_id
         ).fact
         == fact
     )
+
+
+async def test_synthesis_loader_reverifies_and_isolates_facts_by_run(
+    engine,
+    created_ids,
+) -> None:
+    run_id, evidence_id, dataset_id = await seed_evidence(engine, created_ids)
+    other_run_id, other_evidence_id, other_dataset_id = await seed_evidence(
+        engine,
+        created_ids,
+        rows=[{"municipio": "Cali"}],
+    )
+    fact_id = uuid.uuid4()
+    other_fact_id = uuid.uuid4()
+    await build_verify_persist_textual_facts(
+        engine,
+        run_id,
+        (command(evidence_id, dataset_id),),
+        fact_id_factory=lambda: fact_id,
+    )
+    await build_verify_persist_textual_facts(
+        engine,
+        other_run_id,
+        (command(other_evidence_id, other_dataset_id),),
+        fact_id_factory=lambda: other_fact_id,
+    )
+
+    allowed = await load_allowed_grounded_facts(engine, run_id)
+
+    assert [fact.id for fact in allowed.facts] == [fact_id]
+    assert allowed.facts[0].run_id == run_id
+    assert allowed.facts[0].evidence_id == evidence_id
+
+
+async def test_synthesis_loader_excludes_an_altered_persisted_fact(
+    engine,
+    created_ids,
+) -> None:
+    run_id, evidence_id, dataset_id = await seed_evidence(engine, created_ids)
+    fact_id = uuid.uuid4()
+    await build_verify_persist_textual_facts(
+        engine,
+        run_id,
+        (command(evidence_id, dataset_id),),
+        fact_id_factory=lambda: fact_id,
+    )
+    async with engine.begin() as connection:
+        await connection.execute(
+            update(TextualFactRecord)
+            .where(TextualFactRecord.id == fact_id)
+            .values(fact_text="Texto alterado fuera del constructor.")
+        )
+
+    allowed = await load_allowed_grounded_facts(engine, run_id)
+
+    assert allowed.facts == ()
 
 
 @pytest.mark.parametrize(

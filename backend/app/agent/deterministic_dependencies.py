@@ -48,6 +48,8 @@ from app.llm.factory import (
     get_structured_chat_model,
     usage_from_message,
 )
+from app.quality.grounded_facts import GroundedSynthesisPlan
+from app.quality.grounded_synthesis import AllowedGroundedFacts
 from app.tools.catalog_lookup import fetch_columns_catalog
 from app.tools.explorar_valores import explorar_valores
 
@@ -161,6 +163,11 @@ def build_real_runtime_dependencies(
     )
     planner_model = _model(settings, planner_schema)
     synthesis_model = _model(settings, GroundedSynthesis)
+    synthesis_plan_model = (
+        _model(settings, GroundedSynthesisPlan)
+        if settings.deterministic_textual_facts_enabled
+        else None
+    )
     app_token = _secret(settings.socrata_app_token)
 
     async def extract_intent(question: str) -> IntentExtraction:
@@ -419,6 +426,40 @@ def build_real_runtime_dependencies(
             usage=usage,
         )
 
+    async def plan_synthesis(
+        intent,
+        allowed: AllowedGroundedFacts,
+    ) -> GroundedSynthesisPlan:
+        if synthesis_plan_model is None:
+            raise RuntimeError("el plan de síntesis cerrada requiere el flag textual")
+        return await _invoke(
+            synthesis_plan_model,
+            GroundedSynthesisPlan,
+            [
+                SystemMessage(
+                    content=(
+                        "Devuelve únicamente grounded-synthesis-plan-v1. Puedes elegir y ordenar "
+                        "IDs persistidos, plantillas y conectores del esquema; no redactes texto, "
+                        "no copies valores, no calcules, no agregues referencias y no alteres "
+                        "identificadores. El primer segmento usa sin_conector y los posteriores "
+                        "un conector explícito. comparison_pair solo relaciona dos referencias "
+                        "distintas de la misma evidencia."
+                    )
+                ),
+                HumanMessage(
+                    content=json.dumps(
+                        {
+                            "intent": intent.model_dump(mode="json"),
+                            "allowed_grounded_facts": allowed.model_dump(mode="json"),
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+            ],
+            settings=settings,
+            usage=usage,
+        )
+
     return DeterministicRuntimeDependencies(
         extract_intent=extract_intent,
         retrieve=retrieve,
@@ -427,4 +468,5 @@ def build_real_runtime_dependencies(
         explore=explore,
         execute=execute,
         synthesize=synthesize,
+        plan_synthesis=(plan_synthesis if settings.deterministic_textual_facts_enabled else None),
     )

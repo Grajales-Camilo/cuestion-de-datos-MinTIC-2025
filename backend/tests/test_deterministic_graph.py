@@ -86,6 +86,40 @@ def test_textual_rejection_abstains_even_when_quantitative_claims_exist() -> Non
     assert transition.stop_reason is StopReason.CLAIMS_NOT_AVAILABLE
 
 
+def test_deferred_synthesis_persists_quantitative_claims_before_textual_rejection() -> None:
+    transition = decide_next_transition(
+        state(
+            schema_available=True,
+            plan_available=True,
+            plan_valid=True,
+            query_executed=True,
+            evidence_eligible=True,
+            claims_available=True,
+            textual_result_available=True,
+            textual_rejected=True,
+            synthesis_deferred=True,
+        )
+    )
+
+    assert transition.node is SupervisorNode.PERSIST_FACTS
+
+
+def test_deferred_textual_synthesis_requires_an_accepted_textual_result() -> None:
+    accepted = state(
+        schema_available=True,
+        plan_available=True,
+        plan_valid=True,
+        query_executed=True,
+        evidence_eligible=True,
+        textual_result_available=True,
+        synthesis_deferred=True,
+    )
+    rejected = accepted.model_copy(update={"textual_rejected": True})
+
+    assert decide_next_transition(accepted).node is SupervisorNode.PERSIST_FACTS
+    assert decide_next_transition(rejected).node is SupervisorNode.ABSTAIN
+
+
 def test_blocked_evidence_builds_safe_aggregate_when_possible() -> None:
     snapshot = state(
         schema_available=True,

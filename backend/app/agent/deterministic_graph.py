@@ -22,6 +22,7 @@ class SupervisorNode(StrEnum):
     EXECUTE_QUERY = "execute_query"
     VALIDATE_QUALITY = "validate_quality"
     DERIVE_CLAIMS = "derive_claims"
+    PERSIST_FACTS = "persist_facts"
     SYNTHESIZE = "synthesize"
     NEXT_CANDIDATE = "next_candidate"
     ABSTAIN = "abstain"
@@ -96,6 +97,7 @@ class SupervisorSnapshot(BaseModel):
     claims_available: bool = False
     textual_result_available: bool = False
     textual_rejected: bool = False
+    synthesis_deferred: bool = False
     synthesis_valid: bool = False
     budgets: SupervisorBudgets = SupervisorBudgets()
     usage: SupervisorUsage = SupervisorUsage()
@@ -191,11 +193,21 @@ def decide_next_transition(state: SupervisorSnapshot) -> Transition:
             reason="no se obtuvo evidencia elegible",
             stop_reason=StopReason.EVIDENCE_NOT_ELIGIBLE,
         )
+    if state.synthesis_deferred and state.claims_available:
+        return Transition(
+            node=SupervisorNode.PERSIST_FACTS,
+            reason="claims derivados listos para persistencia y reverificación",
+        )
     if state.textual_rejected:
         return Transition(
             node=SupervisorNode.ABSTAIN,
             reason="la selección textual fue rechazada por código determinista",
             stop_reason=StopReason.CLAIMS_NOT_AVAILABLE,
+        )
+    if state.synthesis_deferred and state.textual_result_available:
+        return Transition(
+            node=SupervisorNode.PERSIST_FACTS,
+            reason="hechos derivados listos para persistencia y reverificación",
         )
     if not state.claims_available:
         if state.textual_result_available:

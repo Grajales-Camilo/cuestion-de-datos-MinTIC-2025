@@ -492,6 +492,38 @@ async def test_runtime_observes_every_transition_for_durable_steps() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_defers_synthesis_until_persistence_boundary() -> None:
+    dependencies = _dependencies()
+    synthesis_called = False
+
+    async def forbidden_synthesis(*_args):
+        nonlocal synthesis_called
+        synthesis_called = True
+        raise AssertionError("la síntesis no puede ejecutarse antes de persistir")
+
+    dependencies = DeterministicRuntimeDependencies(
+        dependencies.extract_intent,
+        dependencies.retrieve,
+        dependencies.profile,
+        dependencies.plan,
+        dependencies.explore,
+        dependencies.execute,
+        forbidden_synthesis,
+    )
+
+    result = await run_deterministic_agent(
+        "¿Cuál es el total?",
+        dependencies=dependencies,
+        defer_synthesis_until_persisted=True,
+    )
+
+    assert result.status == "ready_for_synthesis"
+    assert result.synthesis is None
+    assert result.trace[-1].node is SupervisorNode.PERSIST_FACTS
+    assert synthesis_called is False
+
+
+@pytest.mark.asyncio
 async def test_runtime_honors_cooperative_cancellation_between_transitions() -> None:
     cancelled = False
 

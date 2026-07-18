@@ -26,8 +26,18 @@ from app.db.models import (
     QuantitativeClaim,
 )
 from app.db.models import TextualFact as TextualFactRecord
-from app.quality.claims import BuiltClaim
-from app.quality.grounded_facts import TextualFact
+from app.quality.claims import BuiltClaim, compute_source_hash, format_es_co
+from app.quality.grounded_facts import (
+    CategorySelectionParams,
+    CategorySelectionRule,
+    QuantitativeClaimResponse,
+    TextualFact,
+)
+from app.quality.grounded_synthesis import (
+    AllowedGroundedFacts,
+    AllowedQuantitativeFact,
+    AllowedTextualFact,
+)
 from app.quality.textual_fact_builder import (
     TextualEvidenceSnapshot,
     TextualFactBuildCommand,
@@ -35,6 +45,7 @@ from app.quality.textual_fact_builder import (
     build_textual_fact,
     verify_textual_fact,
 )
+from app.quality.textual_facts import TextualFactSpec
 from app.quality.validator import EvidenceDraft, QualityResult
 
 TOOL_OUTPUT_SUMMARY_MAX_BYTES = 20 * 1024
@@ -78,9 +89,7 @@ def summarize_output(value: Any) -> Any:
             return compact
     return {
         "output_truncated": True,
-        "preview": encoded[: TOOL_OUTPUT_SUMMARY_MAX_BYTES - 100].decode(
-            "utf-8", errors="ignore"
-        ),
+        "preview": encoded[: TOOL_OUTPUT_SUMMARY_MAX_BYTES - 100].decode("utf-8", errors="ignore"),
     }
 
 
@@ -170,12 +179,8 @@ async def persist_evidence_and_quality(
         "soql_query": draft.canonical_soql,
         "executed_at": draft.evaluated_at.isoformat(),
         "source_url": draft.source_url,
-        "data_updated_at": (
-            draft.data_updated_at.isoformat() if draft.data_updated_at else None
-        ),
-        "data_cutoff_at": (
-            cutoff.data_cutoff_at.isoformat() if cutoff.data_cutoff_at else None
-        ),
+        "data_updated_at": (draft.data_updated_at.isoformat() if draft.data_updated_at else None),
+        "data_cutoff_at": (cutoff.data_cutoff_at.isoformat() if cutoff.data_cutoff_at else None),
     }
     dimensions = {name: asdict(value) for name, value in quality.dimensions.items()}
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -325,6 +330,205 @@ async def load_textual_facts(
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
         return await _load_textual_facts_in_session(session, run_id)
+
+
+async def load_allowed_grounded_facts(
+    engine: AsyncEngine,
+    run_id: uuid.UUID,
+) -> AllowedGroundedFacts:
+    """Carga y reverifica únicamente hechos persistidos y elegibles de una corrida.
+
+    Esta frontera no reconstruye propuestas preparadas ni consulta fuentes
+    externas. Los registros alterados o incompatibles quedan fuera del
+    conjunto autorizado; si no queda ninguno, el llamador debe abstenerse.
+    """
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        quantitative_rows = (
+            await session.execute(
+                select(QuantitativeClaim, EvidenceResult, QualityReport)
+                .join(EvidenceResult, EvidenceResult.id == QuantitativeClaim.evidence_id)
+                .join(QualityReport, QualityReport.evidence_id == EvidenceResult.id)
+                .where(
+                    QuantitativeClaim.run_id == run_id,
+                    EvidenceResult.run_id == run_id,
+                    QualityReport.eligibility_status == "eligible",
+                    QualityReport.classification.in_(("alta", "media", "baja")),
+                )
+                .order_by(QuantitativeClaim.id)
+            )
+        ).all()
+        textual_rows = (
+            await session.execute(
+                select(TextualFactRecord, EvidenceResult, QualityReport)
+                .join(EvidenceResult, EvidenceResult.id == TextualFactRecord.evidence_id)
+                .join(QualityReport, QualityReport.evidence_id == EvidenceResult.id)
+                .where(
+                    TextualFactRecord.run_id == run_id,
+                    EvidenceResult.run_id == run_id,
+                    QualityReport.eligibility_status == "eligible",
+                    QualityReport.classification.in_(("alta", "media", "baja")),
+                )
+                .order_by(TextualFactRecord.id)
+            )
+        ).all()
+
+    facts: list[AllowedQuantitativeFact | AllowedTextualFact] = []
+    for claim, evidence, quality in quantitative_rows:
+        verified = _reverify_quantitative_synthesis_fact(
+            run_id=run_id,
+            claim=claim,
+            evidence=evidence,
+            quality=quality,
+        )
+        if verified is not None:
+            facts.append(verified)
+    for row, evidence, quality in textual_rows:
+        verified = _reverify_textual_synthesis_fact(
+            run_id=run_id,
+            row=row,
+            evidence=evidence,
+            quality=quality,
+        )
+        if verified is not None:
+            facts.append(verified)
+    return AllowedGroundedFacts(run_id=run_id, facts=tuple(facts))
+
+
+def _reverify_quantitative_synthesis_fact(
+    *,
+    run_id: uuid.UUID,
+    claim: QuantitativeClaim,
+    evidence: EvidenceResult,
+    quality: QualityReport,
+) -> AllowedQuantitativeFact | None:
+    try:
+        rounding = int(claim.rounding)
+        public = QuantitativeClaimResponse.model_validate(
+            {
+                "claim_id": claim.id,
+                "claim": claim.claim_text,
+                "claim_type": claim.claim_type,
+                "evidence_id": claim.evidence_id,
+                "dataset_id": evidence.dataset_id,
+                "source_row_indexes": claim.source_row_indexes,
+                "columns": claim.columns_used,
+                "formula": claim.formula,
+                "raw_value": claim.raw_value,
+                "display_value": claim.display_value,
+                "unit": claim.unit,
+                "rounding": rounding,
+                "source_hash": claim.source_hash,
+            }
+        )
+        expected_display = format_es_co(claim.raw_value, rounding, claim.unit)
+        expected_hash = compute_source_hash(
+            dataset_id=evidence.dataset_id,
+            canonical_soql=evidence.soql_query,
+            source_row_indexes=tuple(public.source_row_indexes),
+            rows=tuple(evidence.rows),
+            columns=tuple(public.columns),
+            formula=public.formula,
+            raw_value=claim.raw_value,
+            unit=public.unit,
+            rounding=rounding,
+        )
+        suffix = f": {public.display_value}"
+        if (
+            evidence.run_id != run_id
+            or public.display_value != expected_display
+            or public.source_hash != expected_hash
+            or not public.claim.endswith(suffix)
+        ):
+            return None
+        claim_label = public.claim[: -len(suffix)]
+        if not claim_label:
+            return None
+        return AllowedQuantitativeFact(
+            id=public.claim_id,
+            run_id=run_id,
+            evidence_id=public.evidence_id,
+            dataset_id=public.dataset_id,
+            source_row_indexes=public.source_row_indexes,
+            columns=public.columns,
+            source_hash=public.source_hash,
+            claim=claim_label,
+            display_value=public.display_value,
+            quality_classification=quality.classification,
+        )
+    except (IndexError, TypeError, ValueError, ValidationError):
+        return None
+
+
+def _reverify_textual_synthesis_fact(
+    *,
+    run_id: uuid.UUID,
+    row: TextualFactRecord,
+    evidence: EvidenceResult,
+    quality: QualityReport,
+) -> AllowedTextualFact | None:
+    try:
+        fact = TextualFact.model_validate(
+            {
+                "fact_id": row.id,
+                "fact_kind": "textual",
+                "fact": row.fact_text,
+                "operation": row.operation,
+                "evidence_id": row.evidence_id,
+                "dataset_id": evidence.dataset_id,
+                "source_row_indexes": row.source_row_indexes,
+                "columns": row.columns_used,
+                "raw_values": row.raw_values,
+                "normalized_values": row.normalized_values,
+                "display_value": row.display_value,
+                "normalization_profile": row.normalization_profile,
+                "operation_params": row.operation_params,
+                "algorithm_version": row.algorithm_version,
+                "source_hash": row.source_hash,
+            }
+        )
+        validated_order_is_total = (
+            isinstance(fact.operation_params, CategorySelectionParams)
+            and fact.operation_params.rule is CategorySelectionRule.FIRST_BY_VALIDATED_ORDER
+        )
+        snapshot = TextualEvidenceSnapshot(
+            run_id=evidence.run_id,
+            evidence_id=evidence.id,
+            dataset_id=evidence.dataset_id,
+            canonical_soql=evidence.soql_query,
+            rows=tuple(evidence.rows),
+            eligibility_status=quality.eligibility_status,
+            quality_classification=quality.classification,
+            validated_order_is_total=validated_order_is_total,
+        )
+        spec = TextualFactSpec(
+            operation=fact.operation,
+            source_row_indexes=fact.source_row_indexes,
+            columns=fact.columns,
+            operation_params=fact.operation_params,
+        )
+        verify_textual_fact(
+            run_id=run_id,
+            evidence_id=evidence.id,
+            dataset_id=evidence.dataset_id,
+            snapshot=snapshot,
+            spec=spec,
+            fact=fact,
+        )
+        return AllowedTextualFact(
+            id=fact.fact_id,
+            run_id=run_id,
+            evidence_id=fact.evidence_id,
+            dataset_id=fact.dataset_id,
+            source_row_indexes=fact.source_row_indexes,
+            columns=fact.columns,
+            source_hash=fact.source_hash,
+            fact=fact.fact,
+            quality_classification=quality.classification,
+        )
+    except (TextualFactError, TypeError, ValueError, ValidationError):
+        return None
 
 
 async def build_verify_persist_textual_facts(
@@ -548,9 +752,7 @@ async def _load_textual_facts_in_session(
     )
 
 
-async def update_evidence_narratives(
-    engine: AsyncEngine, narratives: dict[str, str]
-) -> None:
+async def update_evidence_narratives(engine: AsyncEngine, narratives: dict[str, str]) -> None:
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session, session.begin():
         for evidence_id, narrative in narratives.items():

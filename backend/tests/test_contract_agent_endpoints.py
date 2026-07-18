@@ -249,7 +249,7 @@ def test_textual_terminal_is_identical_in_rest_and_sse_replay(monkeypatch) -> No
     run.final_answer.update(
         {
             "summary": "Se encontraron hechos textuales verificables.",
-            "narrative": None,
+            "narrative": "La ciudad es Medellín.",
             "textual_facts": [_textual_fact()],
             "partial_textual_facts": [],
         }
@@ -272,9 +272,11 @@ def test_textual_terminal_is_identical_in_rest_and_sse_replay(monkeypatch) -> No
     assert rest.status_code == 200
     assert len(rest.json()["textual_facts"]) == 1
     assert rest.json()["textual_facts"][0]["display_value"] == "Medellín"
+    assert rest.json()["answer"]["narrative"] == "La ciudad es Medellín."
     data_line = next(line for line in stream.text.splitlines() if line.startswith("data: "))
     replay_payload = json.loads(data_line.removeprefix("data: "))
     assert replay_payload == rest.json()["answer"]
+    assert replay_payload["narrative"] == "La ciudad es Medellín."
 
 
 def test_delete_without_retention_hash_salt_fails_clearly(monkeypatch) -> None:

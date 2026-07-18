@@ -64,6 +64,8 @@ from app.agent.query_plan import (
 )
 from app.llm.factory import LLMProviderError
 from app.quality.claims import ClaimsBuildResult
+from app.quality.grounded_facts import GroundedSynthesisPlan
+from app.quality.grounded_synthesis import AllowedGroundedFacts
 
 
 @dataclass(frozen=True)
@@ -126,6 +128,10 @@ Explorer = Callable[
 ]
 Executor = Callable[[ValidatedQueryPlan], Awaitable[DeterministicExecutionResult]]
 Synthesizer = Callable[[IntentExtraction, ClaimsBuildResult], Awaitable[GroundedSynthesis]]
+SynthesisPlanner = Callable[
+    [IntentExtraction, AllowedGroundedFacts],
+    Awaitable[GroundedSynthesisPlan],
+]
 TransitionObserver = Callable[[RuntimeTraceEntry, SupervisorUsage], Awaitable[None]]
 
 
@@ -138,6 +144,7 @@ class DeterministicRuntimeDependencies:
     explore: Explorer
     execute: Executor
     synthesize: Synthesizer
+    plan_synthesis: SynthesisPlanner | None = None
 
 
 def _replace_status(
@@ -275,6 +282,7 @@ async def run_deterministic_agent(
     budgets: SupervisorBudgets | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     observe_transition: TransitionObserver | None = None,
+    defer_synthesis_until_persisted: bool = False,
 ) -> DeterministicRuntimeResult:
     """Ejecuta el ciclo completo sin permitir que el LLM elija transiciones."""
 
@@ -345,6 +353,7 @@ async def run_deterministic_agent(
             ),
             textual_rejected=execution is not None
             and bool(getattr(execution, "textual_rejections", ())),
+            synthesis_deferred=defer_synthesis_until_persisted,
             synthesis_valid=synthesis is not None,
             budgets=limits,
             usage=SupervisorUsage(
@@ -383,6 +392,20 @@ async def run_deterministic_agent(
                 retrieval,
                 execution,
                 synthesis,
+                tuple(trace),
+                snapshot.usage,
+            )
+        if transition.node is SupervisorNode.PERSIST_FACTS:
+            assert execution is not None
+            assert current is not None
+            _replace_status(candidates, current, CandidateStatus.ACCEPTED)
+            return DeterministicRuntimeResult(
+                "ready_for_synthesis",
+                None,
+                intent,
+                retrieval,
+                execution,
+                None,
                 tuple(trace),
                 snapshot.usage,
             )

@@ -31,6 +31,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.agent.deterministic_dependencies import (
@@ -57,6 +58,7 @@ from app.agent.graph import (
     initial_state,
 )
 from app.agent.persistence import (
+    load_allowed_grounded_facts,
     load_dataset_evidence_metadata,
     persist_final_answer,
     record_step_and_event,
@@ -69,6 +71,13 @@ from app.llm.factory import (
     LLMConfigurationError,
     LLMProviderError,
     get_structured_chat_model,
+)
+from app.quality.grounded_facts import QuantitativeFactKind
+from app.quality.grounded_synthesis import (
+    GroundedSynthesisValidationError,
+    build_grounded_synthesis_fallback,
+    render_grounded_synthesis,
+    validate_grounded_synthesis_plan,
 )
 from app.schemas import (
     ErrorDetail,
@@ -419,6 +428,7 @@ async def execute_deterministic_agent_run_async(
                 ),
                 is_cancelled=cancel_event.is_set,
                 observe_transition=observe_transition,
+                defer_synthesis_until_persisted=(settings.deterministic_textual_facts_enabled),
             )
         await touch_run_heartbeat(engine, run_id)
         latency_ms = round((time.monotonic() - started) * 1000)
@@ -429,9 +439,9 @@ async def execute_deterministic_agent_run_async(
             getattr(result.execution, "textual_facts", ())
             or getattr(result.execution, "textual_rejections", ())
         )
-        if result.status == "completed" or has_internal_textual_result:
+        if result.status in {"completed", "ready_for_synthesis"} or has_internal_textual_result:
             assert result.execution is not None
-            if result.status == "completed":
+            if result.status == "completed" and not settings.deterministic_textual_facts_enabled:
                 assert result.synthesis is not None
             if cancel_event.is_set():
                 raise DeterministicRunCancelled("corrida cancelada antes de persistir")
@@ -450,16 +460,79 @@ async def execute_deterministic_agent_run_async(
             )
         if cancel_event.is_set():
             raise DeterministicRunCancelled("corrida cancelada antes del terminal")
+        allowed_grounded_facts = None
+        synthesis_answer: str | None = None
+        if (
+            settings.deterministic_textual_facts_enabled
+            and persisted is not None
+            and result.execution is not None
+        ):
+            allowed_grounded_facts = await load_allowed_grounded_facts(engine, run_id)
+            if allowed_grounded_facts.facts:
+                synthesis_plan_attempted = False
+                try:
+                    if dependencies.plan_synthesis is None:
+                        raise GroundedSynthesisValidationError(
+                            "no existe planificador de síntesis cerrada"
+                        )
+                    synthesis_plan_attempted = True
+                    synthesis_plan = await dependencies.plan_synthesis(
+                        result.intent,
+                        allowed_grounded_facts,
+                    )
+                    validate_grounded_synthesis_plan(
+                        synthesis_plan,
+                        allowed_grounded_facts,
+                    )
+                except (
+                    GroundedSynthesisValidationError,
+                    LLMProviderError,
+                    TypeError,
+                    ValidationError,
+                    ValueError,
+                ):
+                    synthesis_plan = build_grounded_synthesis_fallback(allowed_grounded_facts)
+                if cancel_event.is_set():
+                    raise DeterministicRunCancelled(
+                        "corrida cancelada después de planificar síntesis"
+                    )
+                synthesis_answer = render_grounded_synthesis(
+                    synthesis_plan,
+                    allowed_grounded_facts,
+                )
+                synthesis_usage = result.usage.model_copy(
+                    update={"llm_calls": (result.usage.llm_calls + int(synthesis_plan_attempted))}
+                )
+                observed_steps += 1
+                await record_step_and_event(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    node="synthesize",
+                    display_message=("síntesis literal validada desde hechos persistidos"),
+                    detail={
+                        "runtime": "deterministic",
+                        "schema_version": synthesis_plan.schema_version.value,
+                        "allowed_fact_count": len(allowed_grounded_facts.facts),
+                        "usage": synthesis_usage.model_dump(mode="json"),
+                    },
+                )
         quantitative_completed = result.status == "completed"
         prepared_textual_count = (
             len(result.execution.textual_facts) if result.execution is not None else 0
         )
+        allowed_identities = (
+            {(fact.fact_kind.value, fact.id) for fact in allowed_grounded_facts.facts}
+            if allowed_grounded_facts is not None
+            else set()
+        )
         persisted_textual_facts = (
-            persisted.textual_facts
-            if settings.deterministic_textual_facts_enabled
-            and persisted is not None
-            and prepared_textual_count
-            and len(persisted.textual_facts) == prepared_textual_count
+            tuple(
+                fact
+                for fact in persisted.textual_facts
+                if ("textual", fact.fact_id) in allowed_identities
+            )
+            if settings.deterministic_textual_facts_enabled and persisted is not None
             else ()
         )
         textual_persistence_complete = (
@@ -469,21 +542,46 @@ async def execute_deterministic_agent_run_async(
             TextualFactResponse.model_validate(fact.model_dump()).model_dump(mode="json")
             for fact in persisted_textual_facts
         ]
-        public_completed = quantitative_completed or (
-            bool(textual_facts) and textual_persistence_complete
-        )
+        if settings.deterministic_textual_facts_enabled:
+            public_completed = synthesis_answer is not None
+            quantitative_completed = any(
+                fact.fact_kind is QuantitativeFactKind.QUANTITATIVE
+                for fact in (
+                    allowed_grounded_facts.facts if allowed_grounded_facts is not None else ()
+                )
+            )
+        else:
+            public_completed = quantitative_completed or (
+                bool(textual_facts) and textual_persistence_complete
+            )
         if public_completed:
             assert persisted is not None
             evidence = [persisted.evidence]
             if quantitative_completed:
-                claims = list(persisted.claims)
+                claims = (
+                    [
+                        claim
+                        for claim in persisted.claims
+                        if (
+                            "quantitative",
+                            uuid.UUID(str(claim["claim_id"])),
+                        )
+                        in allowed_identities
+                    ]
+                    if settings.deterministic_textual_facts_enabled
+                    else list(persisted.claims)
+                )
 
         final_answer = {
             "run_id": str(run_id),
             "status": "completed" if public_completed else "no_evidence",
             "intention": result.intent.model_dump(mode="json"),
             "summary": (
-                result.synthesis.answer
+                synthesis_answer
+                if public_completed
+                and quantitative_completed
+                and settings.deterministic_textual_facts_enabled
+                else result.synthesis.answer
                 if public_completed and quantitative_completed and result.synthesis is not None
                 else (
                     "Se encontraron hechos textuales verificables."
@@ -492,7 +590,9 @@ async def execute_deterministic_agent_run_async(
                 )
             ),
             "narrative": (
-                result.synthesis.answer
+                synthesis_answer
+                if public_completed and settings.deterministic_textual_facts_enabled
+                else result.synthesis.answer
                 if public_completed and quantitative_completed and result.synthesis is not None
                 else None
             ),
@@ -513,7 +613,7 @@ async def execute_deterministic_agent_run_async(
                 }
             ),
             "usage": {
-                "steps_used": len(result.trace),
+                "steps_used": observed_steps,
                 "input_tokens": llm_usage.input_tokens,
                 "output_tokens": llm_usage.output_tokens,
                 "estimated_cost_usd": llm_usage.estimated_cost_usd,

@@ -447,7 +447,7 @@ T-617 permanecen bloqueadas.
       `completed`, claims, evidencia y narrativa cuantitativa, y entrega ambas
       listas textuales vacías.
 
-  - [ ] **T-615H Restringir síntesis a hechos persistidos.**
+  - [x] **T-615H Restringir síntesis a hechos persistidos.**
     - **Requisitos:** RF-208/RNF-003 y RF-210/RNF-013; IDs existentes;
       conectores y plantillas cerrados.
     - **Archivos previstos:** `backend/app/agent/llm_contracts.py`,
@@ -469,6 +469,13 @@ T-617 permanecen bloqueadas.
       reverificar antes de sintetizar. Se reautoriza exclusivamente T-615H;
       T-615I no se inicia.
     - **Gate:** guardas runtime bloqueantes y pruebas adversarias verdes.
+    - **Cierre (2026-07-17):** el flag activado difiere T8 hasta después de
+      persistir y reverificar; el conjunto permitido se aísla por corrida y
+      evidencia elegible; plan, renderer literal y fallback cerrado comparten
+      validador. Evidencia: 236 pruebas dirigidas, 832 sin integración y 47
+      relacionadas con PostgreSQL verdes (1 `xfail` preexistente); aceptación
+      por `execute_deterministic_agent_run_async`, legacy y guardia verdes;
+      OpenAPI canónico sin cambios.
 
   - [ ] **T-615I Añadir métricas y snapshots no identificables.**
     - **Requisitos:** extensión RF-602; RNF-003 intacto; métricas RF-210/RNF-013.

@@ -108,6 +108,7 @@ from app.db.models import (
     TextualFact as TextualFactRecord,
 )
 from app.llm.factory import LLMProviderError
+from app.quality.grounded_facts import GroundedSynthesisPlan
 from app.quality.textual_fact_builder import TextualFactError
 
 pytestmark = [pytest.mark.integration, pytest.mark.deterministic_agent_acceptance]
@@ -635,7 +636,7 @@ async def test_h1_positive_path_completes_with_evidence_quality_claims_and_singl
     _assert_budgets_respected([event for event in events if event.event_type == "step"])
 
 
-async def test_t615g_text_only_is_completed_and_exposed_without_synthesis_or_legacy(
+async def test_t615h_text_only_is_rendered_only_after_persistence_without_legacy(
     engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
 ) -> None:
     dataset_id = _fresh_dataset_id()
@@ -691,7 +692,32 @@ async def test_t615g_text_only_is_completed_and_exposed_without_synthesis_or_leg
         )
 
     async def synthesize(*_args):
-        raise AssertionError("T-615F no debe sintetizar hechos textuales")
+        raise AssertionError("T-615H no puede sintetizar antes de persistir")
+
+    async def plan_synthesis(_intent, allowed) -> GroundedSynthesisPlan:
+        persisted_facts = await _load_textual_facts(engine, run_id)
+        assert len(persisted_facts) == 1
+        assert len(allowed.facts) == 1
+        assert allowed.facts[0].id == persisted_facts[0].id
+        return GroundedSynthesisPlan.model_validate(
+            {
+                "schema_version": "grounded-synthesis-plan-v1",
+                "segments": [
+                    {
+                        "segment_id": "textual-1",
+                        "connector": "sin_conector",
+                        "template": "subject_fact",
+                        "fact_refs": [
+                            {
+                                "fact_kind": "textual",
+                                "id": str(allowed.facts[0].id),
+                            }
+                        ],
+                    }
+                ],
+                "closing": "sin_cierre",
+            }
+        )
 
     _patch_runtime(
         monkeypatch,
@@ -703,6 +729,7 @@ async def test_t615g_text_only_is_completed_and_exposed_without_synthesis_or_leg
             explore=explore,
             execute=execute,
             synthesize=synthesize,
+            plan_synthesis=plan_synthesis,
         ),
     )
     monkeypatch.setattr(
@@ -719,7 +746,7 @@ async def test_t615g_text_only_is_completed_and_exposed_without_synthesis_or_leg
     final_answer = result["final_answer"]
     assert final_answer["status"] == "completed"
     assert final_answer["summary"] == "Se encontraron hechos textuales verificables."
-    assert final_answer["narrative"] is None
+    assert final_answer["narrative"] == ("Resultado verificado: El valor observado es Medellín.")
     assert len(final_answer["evidence"]) == 1
     assert final_answer["claims"] == []
     assert final_answer["no_evidence_report"] is None
@@ -739,15 +766,14 @@ async def test_t615g_text_only_is_completed_and_exposed_without_synthesis_or_leg
     assert await _count_claims(engine, run_id) == 0
 
     nodes = [step.node for step in await _load_steps(engine, run_id)]
-    assert nodes[-1] == "abstain"
-    assert "synthesize" not in nodes
+    assert nodes[-2:] == ["persist_facts", "synthesize"]
     events = await _load_events(engine, run_id)
     assert len([event for event in events if event.event_type in ("answer", "error")]) == 1
     _assert_budgets_respected([event for event in events if event.event_type == "step"])
 
 
 @pytest.mark.parametrize("fail_textual_persistence", [False, True])
-async def test_t615g_mixed_response_and_textual_persistence_failure_are_isolated(
+async def test_t615h_mixed_fallback_uses_only_reverified_persisted_objects(
     engine,
     monkeypatch: pytest.MonkeyPatch,
     created: _CreatedIds,
@@ -818,6 +844,29 @@ async def test_t615g_mixed_response_and_textual_persistence_failure_are_isolated
             cited_claim_indexes=(0,),
         )
 
+    async def plan_synthesis(_intent, _allowed) -> GroundedSynthesisPlan:
+        if fail_textual_persistence:
+            raise LLMProviderError("proveedor no disponible durante síntesis cerrada")
+        return GroundedSynthesisPlan.model_validate(
+            {
+                "schema_version": "grounded-synthesis-plan-v1",
+                "segments": [
+                    {
+                        "segment_id": "invalid-reference",
+                        "connector": "sin_conector",
+                        "template": "fact_statement",
+                        "fact_refs": [
+                            {
+                                "fact_kind": "quantitative",
+                                "id": str(uuid.uuid4()),
+                            }
+                        ],
+                    }
+                ],
+                "closing": "sin_cierre",
+            }
+        )
+
     async def fail_textual_batch(*_args, **_kwargs):
         raise TextualFactError("textual_persistence_failed", "rollback del lote")
 
@@ -831,6 +880,7 @@ async def test_t615g_mixed_response_and_textual_persistence_failure_are_isolated
             explore=explore,
             execute=execute,
             synthesize=synthesize,
+            plan_synthesis=plan_synthesis,
         ),
     )
     if fail_textual_persistence:
@@ -848,9 +898,15 @@ async def test_t615g_mixed_response_and_textual_persistence_failure_are_isolated
         run_id,
     )
     final_answer = result["final_answer"]
+    quantitative_fallback = (
+        "sum: T-611 fallo textual no es éxito narrativo "
+        "(metric_sum_1, fila 0): 20. "
+        "Además, sum: T-611 fallo textual no es éxito narrativo "
+        "(metric_sum_1, fila 1): 10."
+    )
     if fail_textual_persistence:
         assert final_answer["status"] == "completed"
-        assert final_answer["narrative"] == "El monto observado fue 20."
+        assert final_answer["narrative"] == quantitative_fallback
         assert len(final_answer["claims"]) == 2
         assert final_answer["textual_facts"] == []
         assert final_answer["partial_textual_facts"] == []
@@ -865,8 +921,9 @@ async def test_t615g_mixed_response_and_textual_persistence_failure_are_isolated
         assert len(final_answer["textual_facts"]) == 1
         assert final_answer["textual_facts"][0]["display_value"] == "Bogotá"
         assert final_answer["partial_textual_facts"] == []
-        assert final_answer["narrative"] == "El monto observado fue 20."
-        assert "Bogotá" not in final_answer["narrative"]
+        assert final_answer["narrative"] == (
+            f"{quantitative_fallback} Además, La etiqueta con el valor máximo es Bogotá."
+        )
         assert len(final_answer["evidence"]) == 1
 
 
@@ -1822,6 +1879,34 @@ def _fake_get_structured_chat_model(_provider: str, _model_name: str, schema, **
             )
 
         return _FakeStructuredModel(_respond)
+    if schema is GroundedSynthesisPlan:
+
+        def _respond_plan(messages) -> GroundedSynthesisPlan:
+            payload = json.loads(messages[-1].content)
+            allowed = payload["allowed_grounded_facts"]["facts"]
+            assert allowed
+            selected = allowed[0]
+            return GroundedSynthesisPlan.model_validate(
+                {
+                    "schema_version": "grounded-synthesis-plan-v1",
+                    "segments": [
+                        {
+                            "segment_id": "real-factory-1",
+                            "connector": "sin_conector",
+                            "template": "fact_statement",
+                            "fact_refs": [
+                                {
+                                    "fact_kind": selected["fact_kind"],
+                                    "id": selected["id"],
+                                }
+                            ],
+                        }
+                    ],
+                    "closing": "sin_cierre",
+                }
+            )
+
+        return _FakeStructuredModel(_respond_plan)
     raise AssertionError(f"esquema de salida estructurada inesperado en la prueba: {schema!r}")
 
 
@@ -1933,6 +2018,76 @@ async def test_h10_real_dependency_factory_assembles_working_adapters_end_to_end
     assert "execute_query" in nodes
     assert "synthesize" in nodes
     assert nodes[-1] == "complete"
+
+
+async def test_t615h_real_factory_plans_only_from_post_persistence_allowed_ids(
+    engine,
+    monkeypatch: pytest.MonkeyPatch,
+    created: _CreatedIds,
+) -> None:
+    dataset_id = _fresh_dataset_id()
+    await _seed_dataset(
+        engine,
+        created,
+        dataset_id=dataset_id,
+        columns=(("valor", "Number"),),
+    )
+    await _seed_embedding(engine, dataset_id=dataset_id)
+    run_id = await _seed_run(
+        engine,
+        created,
+        question=f"{QUESTION_PREFIX}T-615H fábrica productiva post persistencia",
+    )
+
+    monkeypatch.setattr(
+        "app.agent.runner.GoogleGenerativeAIEmbeddings",
+        _RealFactoryEmbeddingClient,
+    )
+    monkeypatch.setattr(
+        "httpx.AsyncClient",
+        _mock_socrata_http_client_factory([{"metric_count_1": "42"}]),
+    )
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.get_structured_chat_model",
+        _fake_get_structured_chat_model,
+    )
+    real_factory = deterministic_dependencies_module.build_real_runtime_dependencies
+    factory_spy = Mock(side_effect=real_factory)
+    monkeypatch.setattr(
+        "app.agent.runner.build_real_runtime_dependencies",
+        factory_spy,
+    )
+    monkeypatch.setattr(
+        "app.agent.runner.execute_legacy_agent_run_async",
+        lambda *_args, **_kwargs: pytest.fail("T-615H no invoca el runtime legacy"),
+    )
+
+    result = await execute_deterministic_agent_run_async(
+        settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=True),
+        run_id,
+    )
+
+    factory_spy.assert_called_once()
+    final_answer = result["final_answer"]
+    assert final_answer["status"] == "completed"
+    assert len(final_answer["claims"]) == 1
+    assert final_answer["textual_facts"] == []
+    assert final_answer["narrative"] == (
+        "count: T-611 T-615H fábrica productiva post persistencia (metric_count_1, fila 0): 42."
+    )
+    assert final_answer["summary"] == final_answer["narrative"]
+
+    persisted_claims = await _count_claims(engine, run_id)
+    assert persisted_claims == 1
+    nodes = [step.node for step in await _load_steps(engine, run_id)]
+    assert nodes[-2:] == ["persist_facts", "synthesize"]
+    terminal_events = [
+        event
+        for event in await _load_events(engine, run_id)
+        if event.event_type in ("answer", "error")
+    ]
+    assert len(terminal_events) == 1
+    assert terminal_events[0].payload["narrative"] == final_answer["narrative"]
 
 
 # --- Preservación de datos ajenos (Corrección 1, condición 6) ---------------
