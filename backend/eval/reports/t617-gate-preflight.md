@@ -338,15 +338,98 @@ golden-v2 50):
 
 ---
 
-## H. Decisión
+## H. Decisión (estado histórico T-617A, corregido)
 
-**READY_FOR_T617B.**
+**READY_FOR_T617B0.**
+
+> Corrección T-617B0 (2026-07-18): la decisión histórica de T-617A decía
+> "READY_FOR_T617B". Era prematura: el runner terminaba y mostraba valores
+> crudos por caso, pero **no certificaba mecánicamente** varias condiciones de
+> `pruebas.md` §4.2/§4.4 (ver §I). El estado correcto tras T-617A es
+> **READY_FOR_T617B0** (cerrar instrumentación antes de gastar cuota). La
+> decisión de pasar a T-617B corresponde a §I/§J de este informe y a la
+> aprobación de Juan Camilo y del coordinador.
 
 Todas las precondiciones sin LLM de la puerta §4.4 están verdes y reproducibles;
 el runner real está validado para aceptar ambas suites, seleccionar el smoke 10
 de forma explícita/reproducible, exigir `EVAL_MODE=true`, registrar runtime/
 modelo/commit/semilla/límites y no colisionar reportes. El rollback legado está
-verde (diagnóstico anticipado). No hay bloqueos técnicos para autorizar las 110
-corridas reales. La formalización del cambio de default y el cierre de T-617
-quedan sujetos a la ejecución de T-617B y a la aprobación normativa de Juan
-Camilo y del coordinador.
+verde (diagnóstico anticipado). La formalización del cambio de default y el
+cierre de T-617 quedan sujetos a la ejecución de T-617B y a la aprobación
+normativa de Juan Camilo y del coordinador.
+
+---
+
+## I. Corrección T-617B0 — huecos de instrumentación cerrados
+
+**Aviso normativo:** mostrar por caso la latencia y el costo crudos **no
+equivale** a medir los umbrales de `pruebas.md` §4.2. T-617A emitía tablas
+por caso pero no calculaba p95/promedio ni los comparaba contra RNF-001/009,
+y calculaba `success_rate` sobre los 50 casos (positivos + negativos). Los
+cinco huecos reproducidos contra el código real y su corrección
+(exclusivamente en `backend/eval/`, sin tocar runtime, contratos ni umbrales):
+
+1. **`success_rate` sobre todos los casos, no solo positivos.** CIERTO.
+   `_finalize_eval_record`/`run_suite` dividían `passed` entre `len(results)`
+   (incluidos los 10 negativos). Un 30/40 positivos + 10/10 negativos se
+   reportaba como 80%. **Corregido:** `success_rate` se calcula solo sobre
+   positivos; los negativos se agregan aparte y exigen 100% para la puerta.
+2. **Columnas agregadas sin poblar.** CIERTO. `EvalRun` tenía
+   `socrata_success_rate`, `claims_coverage`, `claims_reproducible`, latencias
+   p50/p95 (global/simple/multipaso) y `avg_cost_usd`, pero `_finalize` solo
+   escribía `success_rate`, `recall_at_10`, `fabrication_count` y
+   `orphan_figures_count`. **Corregido:** todas se calculan y persisten.
+3. **Sin certificación de integridad cuantitativa completa (RF-208/RNF-003).**
+   PARCIAL. `assess_case` validaba `expected_facts` y cifras huérfanas, pero no
+   reejecutaba la fórmula DSL de cada claim ni reproducía `raw_value`/
+   `display_value`/`source_hash` desde la evidencia. **Corregido:**
+   `evaluate_claims_integrity` reejecuta cada claim de forma determinista
+   (evidencia existe, filas/operandos existen, DSL, redondeo, presentación,
+   `source_hash`, cifras huérfanas) sin usar `expected_facts` ni prosa del LLM.
+4. **Latencia/costo crudos sin comparar contra umbrales.** CIERTO. Se
+   imprimían por caso, pero no se calculaba `latency_simple_p95 <= 20 s`,
+   `latency_multistep_p95 <= 75 s` ni `avg_cost_usd <= 0,05`. **Corregido:**
+   percentiles deterministas (nearest-rank), partición simple/multipaso por
+   señales estructuradas y comparación explícita en el veredicto.
+5. **Cláusula "medir tráfico" sin despliegue verificable.** CIERTO. Ver §J.
+
+Además, el **exit code** dependía solo de `success_rate < 80%`. Ahora depende
+del **veredicto de puerta completo**: falla si incumple cualquier condición
+normativa (negativos 100%, fabricaciones 0, cifras huérfanas 0, integridad de
+claims, recall, latencia y costo). El smoke conserva su puerta específica
+(`--gate smoke`), distinta del umbral completo de golden-v2.
+
+**Limitación honesta de `socrata_success_rate`:** el runtime determinista
+(`observe_transition` en `runner.py`) registra los pasos con `tool_output=None`
+y un error de transporte Socrata se traduce en rechazo de candidato sin código
+observable por paso; por tanto la métrica solo es medible cuando el resultado
+crudo de T5 (`ok`/`error.code`) queda persistido (ruta legacy). Cuando no hay
+llamada T5 observable, la métrica es `None` (no se inventa 100%). Hacerla
+medible en el runtime determinista exigiría instrumentar `backend/app/agent/`,
+que está **congelado** y fuera del alcance de este incremento; se reporta como
+conflicto, no se implementa por iniciativa propia.
+
+Evidencia: `tests/test_eval_gate.py` (28 casos, verdes), suite eval relacionada
+(95 verdes), `pytest -m "not integration"` = 897 passed / 0 fallos, `ruff check
+.` limpio, `ruff format --check` limpio sobre archivos modificados.
+`golden-v1`/`golden-v2` intactos (SHA-256 sin cambios).
+
+---
+
+## J. Conflicto operativo pendiente — cláusula "medir tráfico" de T-617
+
+`tasks.md` T-617 exige, al superar la puerta, "medir tráfico". No hay despliegue
+verificable: la Fase 7 (T-701, despliegue del backend) sigue **pendiente**
+(`[ ]`). Las 110 evaluaciones de T-617B (smoke 10 + golden-v1 50 + golden-v2 50)
+son **tráfico de evaluación** contra Gemini/Socrata, **no tráfico de usuarios**
+sobre un servicio desplegado; llamarlas "tráfico" en el sentido de T-617 sería
+cambiar la norma en silencio.
+
+Este incremento **no** modifica la norma. Se proponen dos salidas (sin
+ejecutar ninguna; decisión de Juan Camilo y del coordinador):
+
+1. **Mantener T-617 abierta** hasta medir un canary realmente desplegado
+   (después de T-701), separando "puerta técnica superada" de "tráfico medido".
+2. **Solicitar una enmienda humana** que traslade explícitamente la medición de
+   tráfico a T-701/T-703 (monitoreo con tráfico real, RNF-001/009), dejando a
+   T-617 solo la puerta técnica de migración.

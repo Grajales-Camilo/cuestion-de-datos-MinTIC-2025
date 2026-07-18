@@ -91,8 +91,8 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
 
     finalize_calls = []
 
-    async def fake_finalize(engine, *, record_id, results):
-        finalize_calls.append((record_id, results))
+    async def fake_finalize(engine, *, record_id, aggregate):
+        finalize_calls.append((record_id, aggregate))
 
     monkeypatch.setattr(run_module, "_finalize_eval_record", fake_finalize)
     monkeypatch.setattr(run_module, "_write_report", lambda *a, **k: None)
@@ -126,8 +126,11 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
 
     # La corrida se cierra (finaliza) aunque un caso haya reventado.
     assert len(finalize_calls) == 1
-    _, results = finalize_calls[0]
-    assert len(results) == 2
+    _, aggregate = finalize_calls[0]
+    # Ambos casos son positivos: uno reventó, el otro pasó => 1/2 sobre positivos.
+    assert aggregate.positive_total == 2
+    assert aggregate.positive_passed == 1
+    assert aggregate.success_rate == 0.5
 
 
 async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_going(
@@ -250,6 +253,17 @@ def test_report_renders_stage_reason_and_retrieval_tables(tmp_path: Path) -> Non
     }
     target = tmp_path / "report.md"
 
+    case = GoldenCase("case-1", "positive", "q", ("abcd-1234",), (), 1, "n")
+    outcome = run_module._build_case_outcome(
+        case,
+        assessment,
+        diagnostics,
+        run_module.evaluate_claims_integrity({"status": "no_evidence"}),
+        (),
+    )
+    aggregate = run_module.aggregate_metrics([outcome])
+    verdict = run_module.evaluate_full_gate(aggregate)
+
     run_module._write_report(
         target,
         record=SimpleNamespace(
@@ -263,6 +277,8 @@ def test_report_renders_stage_reason_and_retrieval_tables(tmp_path: Path) -> Non
         ),
         suite_name="golden-v2",
         results=[("case-1", assessment, diagnostics)],
+        aggregate=aggregate,
+        verdict=verdict,
     )
 
     report = target.read_text(encoding="utf-8")
@@ -271,3 +287,5 @@ def test_report_renders_stage_reason_and_retrieval_tables(tmp_path: Path) -> Non
     assert "expected_dataset_not_retrieved" in report
     assert "## Recuperación" in report
     assert "other-id" in report
+    assert "## Veredicto de puerta" in report
+    assert "Positivos aprobados: 0/1" in report

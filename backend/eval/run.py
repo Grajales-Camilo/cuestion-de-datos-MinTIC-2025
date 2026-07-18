@@ -12,6 +12,7 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -24,6 +25,18 @@ from app.config import get_settings
 from app.db.engine import create_app_async_engine
 from app.db.models import AgentRunEvent, AgentStep, EvalCaseResult, EvalRun
 from eval.diagnostics import StageObservation, build_stage_diagnostics
+from eval.gate import (
+    AggregateMetrics,
+    CaseOutcome,
+    ClaimsIntegrityAssessment,
+    GateVerdict,
+    aggregate_metrics,
+    classify_run_complexity,
+    evaluate_claims_integrity,
+    evaluate_full_gate,
+    evaluate_smoke_gate,
+    socrata_success_rate,
+)
 from eval.loader import default_suite_path, load_golden_suite
 from eval.metrics import (
     CaseAssessment,
@@ -33,15 +46,15 @@ from eval.metrics import (
 )
 from eval.persistence import PersistedGoldenSuite, sync_golden_suite
 
-# Hallazgo (2026-07-12, diagnostico real): main() siempre devolvia 0 tras
-# una corrida sin excepciones, sin comparar success_rate contra el umbral de
-# RNF-002 (>= 80%) -- un 0/8 real (backend/eval/reports/994e0730-...) salia
-# como "exito" para cualquier automatizacion que solo mirara el exit code.
-# El propio runner ahora traduce el umbral a exit code no-cero; la decision
-# de si eso bloquea un release o solo abre una alerta semanal (Art. IV.2)
-# es responsabilidad del workflow de CI que invoca este script, no de este
-# modulo.
-SUCCESS_RATE_THRESHOLD = 0.80
+# Hallazgo (2026-07-12, diagnostico real): main() siempre devolvia 0 tras una
+# corrida sin excepciones -- un 0/8 real (backend/eval/reports/994e0730-...)
+# salia como "exito" para cualquier automatizacion que solo mirara el exit
+# code. Corregido primero comparando success_rate contra RNF-002 y, desde
+# T-617B0, con el VEREDICTO DE PUERTA completo (eval.gate): el exit code
+# no-cero refleja el incumplimiento de CUALQUIER condicion normativa, no solo
+# el umbral de positivos. Los umbrales viven en eval.gate (fuente unica); la
+# decision de si el fallo bloquea un release o solo abre una alerta semanal
+# (Art. IV.2) es del workflow de CI que invoca este script, no de este modulo.
 
 
 def _select_cases(cases, *, limit: int | None, case_ids: list[str] | None):
@@ -171,6 +184,7 @@ async def _persist_case_result(
     final: dict,
     assessment: CaseAssessment,
     stage_diagnostics: dict[str, object],
+    claims_integrity: ClaimsIntegrityAssessment | None = None,
     error_code: str | None = None,
 ) -> None:
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -183,6 +197,7 @@ async def _persist_case_result(
                 final=final,
                 assessment=assessment,
                 stage_diagnostics=stage_diagnostics,
+                claims_integrity=claims_integrity,
                 error_code=error_code,
             )
         )
@@ -196,6 +211,7 @@ def _case_result_model(
     final: dict,
     assessment: CaseAssessment,
     stage_diagnostics: dict[str, object],
+    claims_integrity: ClaimsIntegrityAssessment | None = None,
     error_code: str | None = None,
 ) -> EvalCaseResult:
     """Construye la fila sin I/O para probar el contrato JSONB de T-613."""
@@ -215,6 +231,12 @@ def _case_result_model(
             "recall_hit": assessment.recall_hit,
             "usage": final.get("usage", {}),
             "stage_diagnostics": stage_diagnostics,
+            # Solo conteos/booleanos/códigos: sin valores mostrados ni narrativa.
+            **(
+                {"claims_integrity": claims_integrity.snapshot()}
+                if claims_integrity is not None
+                else {}
+            ),
             **(
                 {"textual_integrity": assessment.textual_integrity.snapshot()}
                 if assessment.textual_integrity is not None
@@ -275,30 +297,84 @@ async def _create_eval_record(
     return record
 
 
-async def _finalize_eval_record(
-    engine, *, record_id: uuid.UUID, results: list[tuple[str, CaseAssessment, dict[str, object]]]
-) -> None:
-    """Cierra la corrida OE3 con los agregados disponibles del smoke/completo."""
+def _decimal_or_none(value: float | None) -> Decimal | None:
+    return Decimal(str(value)) if value is not None else None
 
-    total = len(results)
-    passed = sum(assessment.passed for _, assessment, _ in results)
-    positive = [item for item in results if item[1].recall_hit is not None]
-    recall_hits = sum(bool(assessment.recall_hit) for _, assessment, _ in positive)
+
+def _int_or_none(value: float | None) -> int | None:
+    return int(round(value)) if value is not None else None
+
+
+def apply_aggregate_metrics(record: Any, aggregate: AggregateMetrics) -> None:
+    """Mapea los agregados de puerta a las columnas de ``EvalRun`` (puro,
+    sin I/O, para probar la persistencia sin base de datos).
+
+    ``success_rate`` se calcula exclusivamente sobre positivos (RNF-002); los
+    negativos se agregan por separado. Completa además las columnas que antes
+    quedaban en ``NULL``: socrata, cobertura/reproducibilidad de claims,
+    latencias p50/p95 (global, simple y multipaso) y costo promedio.
+    """
+
+    record.success_rate = _decimal_or_none(aggregate.success_rate)
+    record.recall_at_10 = _decimal_or_none(aggregate.recall_at_10)
+    record.fabrication_count = aggregate.fabrication_count
+    record.orphan_figures_count = aggregate.orphan_figures_count
+    record.socrata_success_rate = _decimal_or_none(aggregate.socrata_success_rate)
+    record.claims_coverage = _decimal_or_none(aggregate.claims_coverage)
+    record.claims_reproducible = _decimal_or_none(aggregate.claims_reproducible)
+    record.latency_p50_ms = _int_or_none(aggregate.latency_p50_ms)
+    record.latency_p95_ms = _int_or_none(aggregate.latency_p95_ms)
+    record.latency_simple_p95_ms = _int_or_none(aggregate.latency_simple_p95_ms)
+    record.latency_multistep_p95_ms = _int_or_none(aggregate.latency_multistep_p95_ms)
+    record.avg_cost_usd = aggregate.avg_cost_usd
+
+
+async def _finalize_eval_record(
+    engine, *, record_id: uuid.UUID, aggregate: AggregateMetrics
+) -> None:
+    """Cierra la corrida OE3 con TODOS los agregados de la puerta."""
+
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session, session.begin():
         record = await session.get(EvalRun, record_id)
         assert record is not None
         record.finished_at = datetime.now(UTC)
-        record.success_rate = Decimal(passed) / Decimal(total) if total else None
-        record.recall_at_10 = Decimal(recall_hits) / Decimal(len(positive)) if positive else None
-        record.fabrication_count = sum(assessment.fabrication for _, assessment, _ in results)
-        record.orphan_figures_count = sum(
-            len(assessment.orphan_figures) for _, assessment, _ in results
-        )
+        apply_aggregate_metrics(record, aggregate)
 
 
 def _md(value: object) -> str:
     return str(value if value is not None else "").replace("|", "\\|").replace("\n", " ")
+
+
+def _pct(value: float | None) -> str:
+    return f"{value:.1%}" if value is not None else "no aplica"
+
+
+def _gate_summary_lines(aggregate: AggregateMetrics, verdict: GateVerdict) -> list[str]:
+    """Resumen mecánico de puerta: numerador/denominador, umbral, valor y
+    PASS/FAIL con razones bloqueantes."""
+
+    lines = [
+        "",
+        f"## Veredicto de puerta ({verdict.mode})",
+        "",
+        f"- Positivos aprobados: {aggregate.positive_passed}/{aggregate.positive_total} "
+        f"({_pct(aggregate.success_rate)})",
+        f"- Negativos aprobados: {aggregate.negative_passed}/{aggregate.negative_total} "
+        f"({_pct(aggregate.negative_success_rate)})",
+        f"- socrata_success_rate: {_pct(aggregate.socrata_success_rate)} "
+        f"({aggregate.socrata_successes}/{aggregate.socrata_attempts} llamadas T5 observables)",
+        f"- **Resultado: {'PASS' if verdict.passed else 'FAIL'}**",
+        "",
+        "| Métrica | Umbral | Observado | Estado | Razón bloqueante |",
+        "|---|---|---|---|---|",
+    ]
+    lines.extend(
+        f"| {_md(m.name)} | {_md(m.threshold)} | {_md(m.observed)} | "
+        f"{'PASS' if m.passed else 'FAIL'} | {_md(m.reason)} |"
+        for m in verdict.metrics
+    )
+    return lines
 
 
 def _write_report(
@@ -306,6 +382,8 @@ def _write_report(
     *,
     record: EvalRun,
     results: list[tuple[str, CaseAssessment, dict[str, object]]],
+    aggregate: AggregateMetrics,
+    verdict: GateVerdict,
     suite_name: str = "golden-v1",
 ) -> None:
     passed = sum(item.passed for _, item, _ in results)
@@ -320,15 +398,39 @@ def _write_report(
         f"- Semilla: {record.eval_seed}",
         f"- Commit: {_md(record.git_commit)}",
         f"- Casos ejecutados: {len(results)}",
-        f"- Casos aprobados: {passed}",
-        f"- Éxito: {passed / len(results):.1%}" if results else "- Éxito: no aplica",
-        "",
-        "## Resultado por caso",
-        "",
-        "| Caso | Agent run | Aprobó | Última etapa | Etapa de fallo | Código | "
-        "Responsable | Motivo humano |",
-        "|---|---|---:|---|---|---|---|---|",
+        f"- Casos aprobados (todos): {passed}",
+        f"- Éxito de positivos (RNF-002): {_pct(aggregate.success_rate)}",
     ]
+    lines.extend(_gate_summary_lines(aggregate, verdict))
+    lines.extend(
+        [
+            "",
+            "## Métricas agregadas",
+            "",
+            "| Métrica | Valor |",
+            "|---|---|",
+            f"| latency_p50_ms | {_md(aggregate.latency_p50_ms)} |",
+            f"| latency_p95_ms | {_md(aggregate.latency_p95_ms)} |",
+            f"| latency_simple_p95_ms | {_md(aggregate.latency_simple_p95_ms)} |",
+            f"| latency_multistep_p95_ms | {_md(aggregate.latency_multistep_p95_ms)} |",
+            f"| avg_cost_usd | {_md(aggregate.avg_cost_usd)} |",
+            f"| recall_at_10 | {_pct(aggregate.recall_at_10)} |",
+            f"| claims_coverage | {_pct(aggregate.claims_coverage)} |",
+            f"| claims_reproducible | {_pct(aggregate.claims_reproducible)} |",
+            f"| orphan_figures_count | {aggregate.orphan_figures_count} |",
+            f"| fabrication_count | {aggregate.fabrication_count} |",
+        ]
+    )
+    lines.extend(
+        [
+            "",
+            "## Resultado por caso",
+            "",
+            "| Caso | Agent run | Aprobó | Última etapa | Etapa de fallo | Código | "
+            "Responsable | Motivo humano |",
+            "|---|---|---:|---|---|---|---|---|",
+        ]
+    )
     lines.extend(
         f"| {_md(case_id)} | {_md(diag.get('agent_run_id'))} | {'sí' if item.passed else 'no'} | "
         f"{_md(diag['last_successful_stage'])} | {_md(diag['failure_stage'])} | "
@@ -412,6 +514,37 @@ def _write_report(
 class RunSuiteResult:
     report_path: Path
     success_rate: float | None
+    aggregate: AggregateMetrics | None = None
+    verdict: GateVerdict | None = None
+
+
+def _build_case_outcome(
+    case,
+    assessment: CaseAssessment,
+    stage_diagnostics: dict[str, object],
+    claims_integrity: ClaimsIntegrityAssessment,
+    observations: tuple[StageObservation, ...],
+) -> CaseOutcome:
+    """Reúne las señales por caso para agregación y veredicto (sin I/O)."""
+
+    latency_raw = stage_diagnostics.get("latency_ms")
+    cost_raw = stage_diagnostics.get("estimated_cost_usd")
+    socrata = socrata_success_rate(observations)
+    return CaseOutcome(
+        case_id=case.case_id,
+        case_type=case.case_type,
+        passed=assessment.passed,
+        fabrication=assessment.fabrication,
+        recall_hit=assessment.recall_hit,
+        failure_stage=stage_diagnostics.get("failure_stage"),
+        failure_code=stage_diagnostics.get("failure_code"),
+        complexity=classify_run_complexity(stage_diagnostics),
+        latency_ms=int(latency_raw) if isinstance(latency_raw, (int, float)) else None,
+        cost_usd=Decimal(str(cost_raw)) if isinstance(cost_raw, (int, float)) else None,
+        claims_integrity=claims_integrity,
+        socrata_successes=socrata[0] if socrata else 0,
+        socrata_attempts=socrata[1] if socrata else 0,
+    )
 
 
 async def run_suite(
@@ -422,6 +555,7 @@ async def run_suite(
     seed: int,
     limit: int | None,
     case_ids: list[str] | None = None,
+    gate_mode: str = "full",
 ) -> RunSuiteResult:
     settings = get_settings()
     if not settings.eval_mode:
@@ -441,6 +575,7 @@ async def run_suite(
         record = await _create_eval_record(engine, persisted, settings, seed)
         worker_id = await register_worker_instance(engine, settings.worker_lease_ttl_s)
         results: list[tuple[str, CaseAssessment, dict[str, object]]] = []
+        outcomes: list[CaseOutcome] = []
         for case in selected_cases:
             agent_run_id: uuid.UUID | None = None
             error_code: str | None = None
@@ -517,6 +652,7 @@ async def run_suite(
             stage_diagnostics["agent_run_id"] = (
                 str(agent_run_id) if agent_run_id is not None else None
             )
+            claims_integrity = evaluate_claims_integrity(final)
             try:
                 await _persist_case_result(
                     engine,
@@ -526,6 +662,7 @@ async def run_suite(
                     final=final,
                     assessment=assessment,
                     stage_diagnostics=stage_diagnostics,
+                    claims_integrity=claims_integrity,
                     error_code=error_code,
                 )
             except Exception as exc:  # noqa: BLE001
@@ -542,17 +679,37 @@ async def run_suite(
                         final=final,
                         assessment=assessment,
                         stage_diagnostics=stage_diagnostics,
+                        claims_integrity=claims_integrity,
                         error_code=type(exc).__name__,
                     )
                 except Exception:  # noqa: BLE001
                     pass
             results.append((case.case_id, assessment, stage_diagnostics))
-        await _finalize_eval_record(engine, record_id=record.id, results=results)
+            outcomes.append(
+                _build_case_outcome(
+                    case, assessment, stage_diagnostics, claims_integrity, observations
+                )
+            )
+        aggregate = aggregate_metrics(outcomes)
+        verdict = (
+            evaluate_smoke_gate(outcomes) if gate_mode == "smoke" else evaluate_full_gate(aggregate)
+        )
+        await _finalize_eval_record(engine, record_id=record.id, aggregate=aggregate)
         report_path = Path("eval/reports") / f"{record.id}.md"
-        _write_report(report_path, record=record, suite_name=suite.name, results=results)
-        passed = sum(assessment.passed for _, assessment, _ in results)
-        success_rate = passed / len(results) if results else None
-        return RunSuiteResult(report_path=report_path, success_rate=success_rate)
+        _write_report(
+            report_path,
+            record=record,
+            suite_name=suite.name,
+            results=results,
+            aggregate=aggregate,
+            verdict=verdict,
+        )
+        return RunSuiteResult(
+            report_path=report_path,
+            success_rate=aggregate.success_rate,
+            aggregate=aggregate,
+            verdict=verdict,
+        )
     finally:
         if worker_id is not None:
             await mark_worker_shutdown(engine, worker_id)
@@ -572,6 +729,17 @@ def main() -> int:
         action="append",
         help="Ejecuta sólo el case_id indicado; puede repetirse.",
     )
+    parser.add_argument(
+        "--gate",
+        dest="gate_mode",
+        choices=["full", "smoke"],
+        default="full",
+        help=(
+            "Puerta a aplicar: 'full' es el umbral completo de golden (RNF-001…005/009); "
+            "'smoke' es la puerta dirigida de pruebas.md §4.4 (negativos 100%, ningún "
+            "positivo sólido retrocede, todo fallo con etapa+código)."
+        ),
+    )
     args = parser.parse_args()
     if args.limit is not None and args.limit < 1:
         parser.error("--limit debe ser mayor que cero")
@@ -586,22 +754,27 @@ def main() -> int:
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    verdict = result.verdict
     print(
         json.dumps(
-            {"report": str(result.report_path), "success_rate": result.success_rate},
+            {
+                "report": str(result.report_path),
+                "success_rate": result.success_rate,
+                "gate_mode": verdict.mode if verdict else None,
+                "gate_passed": verdict.passed if verdict else None,
+                "blocking_reasons": list(verdict.blocking_reasons) if verdict else [],
+            },
             ensure_ascii=False,
         )
     )
-    # RNF-002: success_rate < 80% es una corrida fallida a efectos de puerta
-    # de CI, aunque el proceso haya corrido sin excepciones (exit 0 antes de
-    # este hallazgo hacia indistinguible un 0/8 real de una corrida exitosa
-    # para cualquier automatizacion que solo mirara el exit code).
-    if result.success_rate is not None and result.success_rate < SUCCESS_RATE_THRESHOLD:
-        print(
-            f"success_rate {result.success_rate:.1%} por debajo del umbral "
-            f"{SUCCESS_RATE_THRESHOLD:.0%} (RNF-002).",
-            file=sys.stderr,
-        )
+    # El exit code depende del VEREDICTO DE PUERTA completo, no solo de
+    # success_rate: una corrida golden-v2 debe fallar si incumple cualquier
+    # condición normativa (negativos 100%, fabricaciones 0, cifras huérfanas 0,
+    # integridad de claims, recall, latencia y costo), no solo el umbral de
+    # positivos (RNF-002). El smoke usa su propia puerta.
+    if verdict is not None and not verdict.passed:
+        for reason in verdict.blocking_reasons:
+            print(f"PUERTA {verdict.mode} FAIL: {reason}", file=sys.stderr)
         return 1
     return 0
 
