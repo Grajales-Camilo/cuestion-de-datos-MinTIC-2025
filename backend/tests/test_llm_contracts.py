@@ -238,6 +238,157 @@ def test_materialization_rejects_operation_different_from_intent() -> None:
         )
 
 
+def _entity_context() -> EnumeratedPlanningContext:
+    return EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="ent1-2345",
+                title="Planta de personal",
+                publisher="Entidad oficial",
+                columns=(
+                    ColumnOption(
+                        index=0,
+                        field_name="nombre_de_la_entidad",
+                        display_name="Nombre de la entidad",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=1,
+                        field_name="genero_hombre",
+                        display_name="Género hombre",
+                        data_type=ColumnDataType.INTEGER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=2,
+                        field_name="mes",
+                        display_name="Mes",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                ),
+            ),
+        )
+    )
+
+
+def _entity_intent(entity: str | None) -> IntentExtraction:
+    return IntentExtraction(
+        topic="composición por sexo de la planta",
+        operation=QueryOperation.LOOKUP,
+        entity=entity,
+    )
+
+
+def test_materialization_rejects_plan_that_omits_explicit_entity_filter() -> None:
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1,),
+        order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=0),),
+        limit=1,
+    )
+    with pytest.raises(ValueError, match="omite la restricción de entidad"):
+        materialize_query_plan(
+            selection,
+            intent=_entity_intent("Ministerio de Relaciones Exteriores"),
+            context=_entity_context(),
+        )
+
+
+def test_materialization_accepts_plan_with_equivalent_entity_filter() -> None:
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("MINISTERIO DE RELACIONES EXTERIORES",),
+            ),
+        ),
+        order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=0),),
+        limit=1,
+    )
+    plan = materialize_query_plan(
+        selection,
+        intent=_entity_intent("Ministerio de Relaciones Exteriores"),
+        context=_entity_context(),
+    )
+    assert plan.filters[0].column.column_index == 0
+
+
+def test_materialization_rejects_plan_that_contradicts_entity_filter() -> None:
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("INPEC",),
+            ),
+        ),
+        order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=0),),
+        limit=1,
+    )
+    with pytest.raises(ValueError, match="contradice la entidad solicitada"):
+        materialize_query_plan(
+            selection,
+            intent=_entity_intent("Ministerio de Relaciones Exteriores"),
+            context=_entity_context(),
+        )
+
+
+def test_materialization_does_not_require_entity_filter_when_intent_has_no_entity() -> None:
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1,),
+        order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=0),),
+        limit=1,
+    )
+    plan = materialize_query_plan(
+        selection,
+        intent=_entity_intent(None),
+        context=_entity_context(),
+    )
+    assert plan.filters == ()
+
+
+def test_materialization_does_not_block_suboptimal_temporal_selection_with_entity() -> None:
+    """Una selección temporal mejorable (sin filtro de mes) no debe bloquearse:
+    esta corrección solo protege la entidad, no la optimalidad del periodo."""
+
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1, 2),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("Ministerio de Relaciones Exteriores",),
+            ),
+        ),
+        order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=1),),
+        limit=1,
+    )
+    plan = materialize_query_plan(
+        selection,
+        intent=_entity_intent("Ministerio de Relaciones Exteriores"),
+        context=_entity_context(),
+    )
+    assert len(plan.filters) == 1
+
+
 def test_structured_outputs_forbid_extra_free_text_fields() -> None:
     with pytest.raises(ValidationError, match="Extra inputs"):
         EnumeratedPlanSelection.model_validate(
@@ -421,9 +572,7 @@ def test_latest_lookup_orders_by_year_and_month_not_indicator() -> None:
                         data_type=ColumnDataType.TEXT,
                         pii_risk_level=PiiRiskLevel.LOW,
                     )
-                    for index, name in enumerate(
-                        ("genero_hombre", "genero_mujer", "a_o", "mes")
-                    )
+                    for index, name in enumerate(("genero_hombre", "genero_mujer", "a_o", "mes"))
                 ),
             ),
         )

@@ -756,6 +756,71 @@ def normalize_lookup_filters(
     return selection.model_copy(update={"filters": filters})
 
 
+_ENTITY_COLUMN_TOKENS = {"entidad", "empresa", "institucion", "organismo", "nombre"}
+
+
+def _entity_grounded_in_value(entity: str, value: str) -> bool:
+    entity_norm = _normalized_phrase(entity)
+    value_norm = _normalized_phrase(value)
+    if not entity_norm or not value_norm:
+        return False
+    if entity_norm in value_norm or value_norm in entity_norm:
+        return True
+    entity_tokens = _semantic_tokens(entity)
+    value_tokens = _semantic_tokens(value)
+    if not entity_tokens or not value_tokens:
+        return False
+    return entity_tokens <= value_tokens or value_tokens <= entity_tokens
+
+
+def _require_entity_constraint_preserved(
+    plan: QueryPlan,
+    *,
+    intent: IntentExtraction,
+    context: EnumeratedPlanningContext,
+) -> None:
+    """Impide perder o contradecir una entidad explícita de alta confianza.
+
+    Si la intención identifica una entidad específica y el dataset seleccionado
+    tiene al menos una columna que semánticamente designa entidades, el plan
+    final debe restringir esa columna a un valor equivalente a la entidad
+    solicitada. Preguntas sin entidad explícita o datasets sin columna de
+    entidad no activan esta comprobación: no es una regla de pilot-005, es la
+    misma frontera determinista que ya impide operation != intent.operation.
+    """
+
+    entity = (intent.entity or "").strip()
+    if not entity:
+        return
+    candidate = context.candidates[plan.dataset_index]
+    entity_column_indexes = {
+        column.index
+        for column in candidate.columns
+        if _semantic_tokens(f"{column.field_name} {column.display_name}").intersection(
+            _ENTITY_COLUMN_TOKENS
+        )
+    }
+    if not entity_column_indexes:
+        return
+    matching_values = [
+        value.value
+        for item in plan.filters
+        if item.column.column_index in entity_column_indexes
+        and item.operator in {FilterOperator.EQ, FilterOperator.IN}
+        for value in item.values
+    ]
+    if not matching_values:
+        raise ValueError(
+            "el plan omite la restricción de entidad requerida por la intención: "
+            f"{entity!r} no aparece filtrado en ninguna columna de entidad del dataset"
+        )
+    if not any(_entity_grounded_in_value(entity, value) for value in matching_values):
+        raise ValueError(
+            "el plan contradice la entidad solicitada por la intención: "
+            f"el filtro de entidad no corresponde a {entity!r}"
+        )
+
+
 def materialize_query_plan(
     selection: EnumeratedPlanSelection,
     *,
@@ -820,4 +885,5 @@ def materialize_query_plan(
         purpose=f"{intent.operation.value}: {intent.topic}",
     )
     context.validate_references(plan)
+    _require_entity_constraint_preserved(plan, intent=intent, context=context)
     return plan
