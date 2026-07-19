@@ -390,6 +390,13 @@ class CaseOutcome:
     claims_integrity: ClaimsIntegrityAssessment
     socrata_successes: int
     socrata_attempts: int
+    # T-617B0-R3: transporta de forma estructurada (booleano, no texto) si la
+    # corrida terminó por una falla de infraestructura/proveedor
+    # (`failure_owner="infrastructure"`, eval.diagnostics). Una corrida así
+    # nunca cuenta como regresión semántica en `positivos_sólidos`, pero
+    # bloquea la puerta por su propia métrica de infraestructura, sin
+    # excluirse de ningún denominador.
+    infrastructure_failure: bool = False
 
 
 @dataclass(frozen=True)
@@ -422,6 +429,12 @@ class AggregateMetrics:
     socrata_success_rate: float | None
     socrata_successes: int
     socrata_attempts: int
+    # T-617B0-R3: cuenta y case_ids de corridas con falla de infraestructura o
+    # proveedor. Nunca se excluyen de ningún otro denominador de esta
+    # estructura (positivos/negativos/latencia/costo siguen incluyéndolas);
+    # esto solo expone la señal para que la puerta bloquee explícitamente.
+    infrastructure_failure_count: int
+    infrastructure_failure_case_ids: tuple[str, ...]
 
 
 def aggregate_metrics(outcomes: Sequence[CaseOutcome]) -> AggregateMetrics:
@@ -466,6 +479,8 @@ def aggregate_metrics(outcomes: Sequence[CaseOutcome]) -> AggregateMetrics:
     socrata_successes = sum(o.socrata_successes for o in outcomes)
     socrata_attempts = sum(o.socrata_attempts for o in outcomes)
 
+    infra_failures = tuple(o.case_id for o in outcomes if o.infrastructure_failure)
+
     return AggregateMetrics(
         measured_total=len(outcomes),
         distinct_case_id_count=len({o.case_id for o in outcomes}),
@@ -495,6 +510,8 @@ def aggregate_metrics(outcomes: Sequence[CaseOutcome]) -> AggregateMetrics:
         socrata_success_rate=((socrata_successes / socrata_attempts) if socrata_attempts else None),
         socrata_successes=socrata_successes,
         socrata_attempts=socrata_attempts,
+        infrastructure_failure_count=len(infra_failures),
+        infrastructure_failure_case_ids=infra_failures,
     )
 
 
@@ -572,6 +589,23 @@ def evaluate_full_gate(aggregate: AggregateMetrics) -> GateVerdict:
         not cardinality_parts,
         "selección incompatible con la puerta completa: " + "; ".join(cardinality_parts)
         if cardinality_parts
+        else None,
+    )
+
+    # T-617B0-R3: cero corridas no evaluables por infraestructura/proveedor.
+    # Se exige ANTES de cualquier umbral de calidad, igual que la
+    # cardinalidad: una corrida con infraestructura incompleta NUNCA puede
+    # certificar la puerta completa, aunque el resto de métricas observadas
+    # sea perfecto.
+    infra_failed = list(aggregate.infrastructure_failure_case_ids)
+    add(
+        "infraestructura",
+        "0 corridas no evaluables por infraestructura/proveedor",
+        f"{len(infra_failed)} corridas no evaluables"
+        + (f" ({', '.join(infra_failed)})" if infra_failed else ""),
+        not infra_failed,
+        "falla de infraestructura/proveedor bloquea la puerta: " + ", ".join(infra_failed)
+        if infra_failed
         else None,
     )
 
@@ -735,8 +769,13 @@ def evaluate_smoke_gate(
         )
     )
 
+    # T-617B0-R3: un sólido que falló por infraestructura/proveedor (p. ej.
+    # 504 del LLM en `build_plan`, `failure_owner="infrastructure"`) NO es una
+    # regresión semántica del agente: se excluye de esta lista para no
+    # atribuirle al agente un fallo que no le pertenece. Sigue bloqueando la
+    # puerta, pero por la métrica "infraestructura" de abajo.
     solid = [o for o in outcomes if o.case_id in solid_positive_ids]
-    regressed = [o.case_id for o in solid if not o.passed]
+    regressed = [o.case_id for o in solid if not o.passed and not o.infrastructure_failure]
     metrics.append(
         GateMetric(
             "positivos_sólidos",
@@ -744,6 +783,23 @@ def evaluate_smoke_gate(
             f"{len(regressed)} retrocesos",
             not regressed,
             None if not regressed else f"positivos sólidos que retroceden: {', '.join(regressed)}",
+        )
+    )
+
+    # T-617B0-R3: cero corridas no evaluables por infraestructura/proveedor,
+    # canónicas o no. Un caso así nunca puede producir PASS en el smoke,
+    # aunque el resto de la puerta esté verde.
+    infra_failed = [o.case_id for o in outcomes if o.infrastructure_failure]
+    metrics.append(
+        GateMetric(
+            "infraestructura",
+            "0 corridas no evaluables por infraestructura/proveedor",
+            f"{len(infra_failed)} corridas no evaluables"
+            + (f" ({', '.join(infra_failed)})" if infra_failed else ""),
+            not infra_failed,
+            None
+            if not infra_failed
+            else "falla de infraestructura/proveedor bloquea la puerta: " + ", ".join(infra_failed),
         )
     )
 

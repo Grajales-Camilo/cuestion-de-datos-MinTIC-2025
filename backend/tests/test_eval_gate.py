@@ -570,6 +570,117 @@ def test_smoke_gate_passes_with_exactly_the_ten_canonical() -> None:
     assert smoke.blocking_reasons == ()
 
 
+# --- H. Regresiones T-617B0-R3 (falla de proveedor vs regresión semántica) --
+
+
+def _infra_outcome(case_id: str, case_type: str = "positive") -> CaseOutcome:
+    """Un CaseOutcome fallido cuya causa es infraestructura/proveedor, no una
+    regresión semántica (eval.diagnostics failure_owner='infrastructure')."""
+
+    return CaseOutcome(
+        case_id=case_id,
+        case_type=case_type,
+        passed=False,
+        fabrication=False,
+        recall_hit=False if case_type == "positive" else None,
+        failure_stage="planning",
+        failure_code="provider_error",
+        complexity="multistep",
+        latency_ms=1000,
+        cost_usd=Decimal("0.01"),
+        claims_integrity=_trivial_integrity(),
+        socrata_successes=0,
+        socrata_attempts=0,
+        infrastructure_failure=True,
+    )
+
+
+def test_smoke_gate_blocks_on_infra_failure_without_counting_it_as_semantic_regression() -> None:
+    """T-617B0-R3 #2: los 10 canónicos con un sólido afectado por
+    provider_error NUNCA pasan, pero ese caso no aparece como retroceso
+    semántico si el resto de sólidos sigue en verde; el bloqueo viene de la
+    métrica de infraestructura."""
+
+    outcomes = _smoke_canonical_outcomes()
+    for i, o in enumerate(outcomes):
+        if o.case_id == "pilot-005-empleo-publico":
+            outcomes[i] = _infra_outcome(o.case_id)
+    smoke = evaluate_smoke_gate(outcomes)
+
+    assert smoke.passed is False
+    solid_metric = next(m for m in smoke.metrics if m.name == "positivos_sólidos")
+    assert solid_metric.passed is True  # el sólido afectado no cuenta como retroceso
+    assert not any("sólidos" in reason for reason in smoke.blocking_reasons)
+    infra_metric = next(m for m in smoke.metrics if m.name == "infraestructura")
+    assert infra_metric.passed is False
+    assert any("infraestructura" in reason for reason in smoke.blocking_reasons)
+    assert any("pilot-005-empleo-publico" in reason for reason in smoke.blocking_reasons)
+
+
+def test_full_gate_blocks_on_any_infrastructure_failure_even_with_perfect_metrics() -> None:
+    """T-617B0-R3 #3: una puerta full con cualquier corrida de infraestructura
+    tampoco puede PASS, aunque el resto de la puerta sea perfecto (40/40
+    positivos, 10/10 negativos, cardinalidad completa)."""
+
+    outcomes = _suite(40, 10)
+    object.__setattr__(outcomes[0], "infrastructure_failure", True)
+    aggregate = aggregate_metrics(outcomes)
+    verdict = evaluate_full_gate(aggregate)
+
+    assert aggregate.success_rate == 1.0
+    assert aggregate.negative_success_rate == 1.0
+    assert aggregate.infrastructure_failure_count == 1
+    assert verdict.passed is False
+    infra_metric = next(m for m in verdict.metrics if m.name == "infraestructura")
+    assert infra_metric.passed is False
+    assert any("infraestructura" in reason for reason in verdict.blocking_reasons)
+
+
+def test_full_gate_passes_with_zero_infrastructure_failures_and_all_conditions_met() -> None:
+    """Complemento del anterior: sin fallas de infraestructura, la puerta
+    completa sigue aprobando igual que antes de T-617B0-R3 (no-daño)."""
+
+    aggregate = aggregate_metrics(_suite(40, 10))
+    verdict = evaluate_full_gate(aggregate)
+
+    assert aggregate.infrastructure_failure_count == 0
+    infra_metric = next(m for m in verdict.metrics if m.name == "infraestructura")
+    assert infra_metric.passed is True
+    assert verdict.passed is True
+
+
+def test_smoke_gate_still_blocks_on_genuine_semantic_regression_of_a_solid() -> None:
+    """T-617B0-R3 #4: una falla SEMÁNTICA real de un sólido (sin
+    infrastructure_failure) sigue siendo una regresión bloqueante, distinta
+    de la métrica de infraestructura."""
+
+    outcomes = _smoke_canonical_outcomes()
+    for i, o in enumerate(outcomes):
+        if o.case_id == "pilot-003-salud-vigilancia":
+            outcomes[i] = _outcome(o.case_id, "positive", False)  # regresión semántica genuina
+    smoke = evaluate_smoke_gate(outcomes)
+
+    assert smoke.passed is False
+    solid_metric = next(m for m in smoke.metrics if m.name == "positivos_sólidos")
+    assert solid_metric.passed is False
+    assert any("sólidos" in reason for reason in smoke.blocking_reasons)
+    infra_metric = next(m for m in smoke.metrics if m.name == "infraestructura")
+    assert infra_metric.passed is True  # ninguna falla de infraestructura aquí
+
+
+def test_smoke_gate_passes_cleanly_with_no_infrastructure_field_regression() -> None:
+    """T-617B0-R3 #5: un smoke limpio (comportamiento preexistente) conserva
+    su PASS; el nuevo campo infrastructure_failure por defecto es False y no
+    introduce ninguna razón bloqueante nueva."""
+
+    smoke = evaluate_smoke_gate(_smoke_canonical_outcomes())
+
+    assert smoke.passed is True
+    assert smoke.blocking_reasons == ()
+    infra_metric = next(m for m in smoke.metrics if m.name == "infraestructura")
+    assert infra_metric.passed is True
+
+
 def test_smoke_gate_fails_when_extra_noncanonical_case_present() -> None:
     """Añadir un caso no canónico invalida el smoke antes del veredicto."""
 

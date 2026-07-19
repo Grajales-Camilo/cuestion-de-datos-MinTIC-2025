@@ -612,3 +612,160 @@ las 110 corridas reales ni se consumió cuota.
 resultado duplicado) ya **no** son reproducibles ⇒ **READY_FOR_REAL_T617B**. La
 ejecución de las 110 corridas reales queda sujeta a la autorización de Juan
 Camilo y del coordinador (plan §F).
+
+---
+
+## M. Corrección T-617B0-R3 — falsa atribución de una falla de proveedor al agente
+
+**Contexto:** tras la autorización de la ejecución real escalonada, el
+**smoke real de 10 casos** (`eval run 9bebcb75-53d2-42f6-938f-bfbd45384128`,
+`gemini-2.5-flash`, semilla `601000`, commit `b682332`) terminó con
+`gate_passed=false` por "positivos sólidos que retroceden:
+pilot-005-empleo-publico" (`success_rate=37.5%`, 3/8 positivos, 2/2
+negativos). El reporte real queda **archivado como evidencia histórica, sin
+reescribir**, en
+[`backend/eval/reports/9bebcb75-53d2-42f6-938f-bfbd45384128.md`](9bebcb75-53d2-42f6-938f-bfbd45384128.md).
+El smoke original **no pasó**; esta sección no revierte ese resultado, solo
+corrige cómo se diagnostica su causa.
+
+### M.1 Causa raíz reproducida contra el código real
+
+`agent run 235466d2-a403-4c01-bc8e-817713ca3062` (caso
+`pilot-005-empleo-publico`) terminó con `agent_runs.status="failed"` y
+`agent_runs.terminal_error_code="LLM_PROVIDER_ERROR"` (504 del proveedor
+durante `build_plan`, `app.agent.graph._llm_terminal_error`). El diagnóstico
+de la corrida lo clasificó como `failure_stage="planning"`,
+`failure_code="intent_mismatch"`, `failure_owner="agent"` — atribuyendo al
+agente una falla que fue, en realidad, de infraestructura del proveedor. Dos
+defectos independientes lo causaron, ambos en `backend/eval/`:
+
+1. **`eval/run.py` nunca leía `run.status`/`run.terminal_error_code`.** El
+   bucle por-caso llamaba `await execute_agent_run_async(...)` y luego solo
+   leía `run.final_answer`; cuando el runtime determinista capturaba el error
+   de proveedor internamente y persistía el terminal (sin relanzar la
+   excepción hacia el arnés de evaluación), `error_code` quedaba en `None`.
+   `EvalCaseResult.error_code` se persistía `null` pese a existir un código
+   terminal tipado en `agent_runs`.
+2. **`eval/diagnostics.build_stage_diagnostics` no tenía una rama para
+   códigos terminales tipados de infraestructura/proveedor.** Con
+   `infrastructure_error=None` (por el defecto anterior), la clasificación
+   caía en la rama por defecto (`FailureCode.INTENT_MISMATCH`,
+   `owner="agent"`) al no cumplirse ninguna de las condiciones semánticas
+   anteriores (dataset esperado, plan_errors, zero_rows, etc.).
+
+### M.2 Corrección aplicada
+
+- **Propagación del terminal (`eval/run.py`).** Tras `get_run`, se leen
+  `run.status`/`run.terminal_error_code` (con `getattr` defensivo, sin asumir
+  el tipo del objeto retornado). Si `status=="failed"` y
+  `terminal_error_code` es verdadero, se propaga como `provider_error_code` y
+  como `error_code` persistido — **sin** depender del texto humano del
+  error, solo del código tipado. Las observaciones parciales ya persistidas
+  (`_stage_observations`) se conservan sin cambios.
+- **Diagnóstico fiel (`eval/diagnostics.py`).** Nuevo
+  `FailureCode.PROVIDER_ERROR` y constante
+  `INFRASTRUCTURE_TERMINAL_ERROR_CODES` (`LLM_PROVIDER_ERROR`,
+  `STRUCTURED_OUTPUT_INVALID`, `INTERNAL`, `RUN_TIMEOUT`,
+  `HEARTBEAT_EXPIRED`, `WORKER_LOST`; excluye deliberadamente
+  `RUN_INTERRUPTED`, que es cancelación con `status="interrupted"`, no
+  `"failed"`). Nuevo parámetro `provider_error_code` en
+  `build_stage_diagnostics`: cuando pertenece a ese conjunto, la
+  clasificación es **siempre** `failure_code="provider_error"`,
+  `failure_owner="infrastructure"`, conservando la última etapa observada
+  ANTES del fallo (para este caso: `failure_stage="planning"` con
+  `last_successful_stage="profiling"`, sin cambios respecto al reporte
+  original). El snapshot diagnóstico gana `terminal_error_code` (el código
+  original, siempre presente aunque sea `null`). El comportamiento previo de
+  `infrastructure_error` (nombre de excepción Python del arnés) queda
+  **intacto** para no romper la clasificación de fallos propios del arnés de
+  evaluación (regresión de no-daño verificada).
+- **Puertas smoke y full (`eval/gate.py`).** `CaseOutcome` gana
+  `infrastructure_failure: bool = False`, poblado en `_build_case_outcome`
+  desde `failure_owner=="infrastructure"`. `AggregateMetrics` gana
+  `infrastructure_failure_count`/`infrastructure_failure_case_ids`. Ambas
+  puertas añaden una métrica bloqueante `infraestructura` (0 corridas no
+  evaluables) evaluada junto a la cardinalidad, **antes** de cualquier
+  umbral de calidad: cualquier corrida con `infrastructure_failure=True`
+  produce `verdict.passed=False`, sin excluirla de ningún denominador. En el
+  smoke, `positivos_sólidos` excluye explícitamente los casos con
+  `infrastructure_failure=True` de la lista de retrocesos semánticos (para
+  no atribuirle al agente lo que no le pertenece), pero la puerta sigue
+  bloqueada por la métrica `infraestructura`.
+- **Reporte y configuración (`eval/run.py`).** Nueva tabla "Responsabilidad
+  de fallos" (conteo por `failure_owner`: agente/golden/indeterminado/
+  infraestructura) y "Fallos de infraestructura/proveedor" (caso,
+  `terminal_error_code`, etapa de fallo, última etapa exitosa), separando
+  explícitamente regresiones semánticas, fallos del contrato golden y fallos
+  de infraestructura. `config_snapshot` gana
+  `deterministic_textual_facts_enabled`. Se documenta en el propio código
+  que `eval_seed` es metadata de reproducibilidad del experimento, no una
+  garantía de determinismo de las respuestas de Gemini.
+
+### M.3 Reproducción antes/después (sobre el hallazgo real)
+
+| | Antes (reporte real archivado) | Después (mismo `terminal_error_code`, diagnóstico recalculado) |
+|---|---|---|
+| `EvalCaseResult.error_code` | `null` | `LLM_PROVIDER_ERROR` |
+| `failure_code` | `intent_mismatch` | `provider_error` |
+| `failure_owner` | `agent` | `infrastructure` |
+| `failure_stage` / `last_successful_stage` | `planning` / `profiling` (sin cambio) | `planning` / `profiling` (sin cambio) |
+| ¿Cuenta como retroceso semántico en `positivos_sólidos`? | Sí | No |
+| ¿Bloquea la puerta smoke? | Sí (vía `positivos_sólidos`) | Sí (vía `infraestructura`) |
+
+El smoke real **seguiría sin pasar** con la corrección aplicada (la métrica
+`infraestructura` bloquea igual que antes bloqueaba `positivos_sólidos`);
+lo que cambia es la atribución de responsabilidad, no el veredicto. No se
+reinterpreta el resultado del smoke original como éxito.
+
+### M.4 Límites respetados
+
+Sin cambios en `backend/app/agent/**` (el runtime determinista/legado sigue
+congelado); sin reglas específicas para `pilot-005`/`pilot-022`; sin cambios
+en preguntas, `expected_facts`, `golden-v1`/`golden-v2`, umbrales,
+cardinalidades ni contratos públicos. No se ejecutó ningún otro smoke real ni
+las 100 corridas restantes (golden-v1 50 + golden-v2 50); esas corridas
+quedan sujetas a nueva autorización explícita tras la auditoría de este
+incremento. T-617 sigue **abierta**.
+
+### M.5 Regresiones añadidas
+
+`tests/test_eval_metrics.py`:
+`test_diagnostics_classifies_provider_terminal_error_as_infrastructure`
+(parametrizada `LLM_PROVIDER_ERROR`/`STRUCTURED_OUTPUT_INVALID`/
+`RUN_TIMEOUT`),
+`test_diagnostics_unrecognized_terminal_error_code_does_not_force_infrastructure`,
+`test_diagnostics_harness_exception_keeps_prior_classification_unaffected`
+(no-daño).
+`tests/test_eval_gate.py`:
+`test_smoke_gate_blocks_on_infra_failure_without_counting_it_as_semantic_regression`,
+`test_full_gate_blocks_on_any_infrastructure_failure_even_with_perfect_metrics`,
+`test_full_gate_passes_with_zero_infrastructure_failures_and_all_conditions_met`,
+`test_smoke_gate_still_blocks_on_genuine_semantic_regression_of_a_solid`,
+`test_smoke_gate_passes_cleanly_with_no_infrastructure_field_regression`.
+`tests/test_eval_run_error_handling.py`:
+`test_config_snapshot_registers_deterministic_textual_facts_enabled`.
+
+Ninguna regresión ejecuta red, Gemini, Socrata ni PostgreSQL real: todas
+operan sobre estructuras materializadas y dobles.
+
+### M.6 Verificación (2026-07-18)
+
+`pytest tests/test_eval_metrics.py tests/test_eval_gate.py
+tests/test_eval_run_error_handling.py tests/test_eval_persistence.py
+tests/test_eval_run_creation.py tests/test_eval_loader.py
+tests/test_settings.py` = **114 passed**; `pytest -m "not integration"` =
+**932 passed, 122 deselected, 0 fallos**; `ruff check .` = **All checks
+passed!**; `ruff format --check` sobre los archivos modificados = limpio tras
+un reformateo automático de `eval/run.py` (una línea larga, sin cambio
+semántico); `git diff --check` limpio (solo advertencias de fin de línea
+LF/CRLF, sin errores). `golden-v1`/`golden-v2` con SHA-256 sin cambios
+(`ab546062…4630ff72` / `1c78264c…54e483`). Sin cambios en `backend/app/`,
+`specs/**` ni `tasks.md` (salvo la nota operativa añadida al listado de
+T-617); sin push ni PR; T-617 sigue abierta; no se ejecutó ningún LLM real en
+este incremento.
+
+**Estado T-617B0-R3:** la falsa atribución reproducida en el smoke real ya
+**no** es reproducible ⇒ **READY_FOR_T617B_SMOKE_RETRY**. El reintento del
+smoke real (y, si pasa, la continuación a golden-v1/golden-v2/aceptación
+legacy) queda sujeto a nueva autorización explícita de Juan Camilo y del
+coordinador.

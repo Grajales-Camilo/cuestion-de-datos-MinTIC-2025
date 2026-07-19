@@ -44,6 +44,31 @@ class FailureCode(StrEnum):
     EXPECTED_FACT_NOT_FOUND = "expected_fact_not_found"
     AMBIGUOUS_GOLDEN = "ambiguous_golden"
     BUDGET_EXCEEDED = "budget_exceeded"
+    PROVIDER_ERROR = "provider_error"
+
+
+# Códigos terminales tipados de `agent_runs.terminal_error_code`
+# (`app.agent.graph._terminal_error`/`_llm_terminal_error`,
+# `app.agent.heartbeat_sweep`) que representan una falla de infraestructura o
+# proveedor, NUNCA una regresión semántica del agente. Excluye
+# deliberadamente `RUN_INTERRUPTED` (cancelación, `status="interrupted"`, no
+# "failed") y códigos aplicativos que no terminan la corrida (p. ej.
+# `SOCRATA_TIMEOUT`/`SOCRATA_ERROR`, que ocurren dentro de una corrida que
+# puede seguir y terminar `completed`/`no_evidence`). Distinto de
+# `infrastructure_error` (nombre de excepción de Python capturada por el
+# propio arnés de evaluación): un código de esta lista viene de
+# `agent_runs.status="failed"` + `agent_runs.terminal_error_code`, es
+# estructurado y siempre se diagnostica con `failure_owner="infrastructure"`.
+INFRASTRUCTURE_TERMINAL_ERROR_CODES: frozenset[str] = frozenset(
+    {
+        "LLM_PROVIDER_ERROR",
+        "STRUCTURED_OUTPUT_INVALID",
+        "INTERNAL",
+        "RUN_TIMEOUT",
+        "HEARTBEAT_EXPIRED",
+        "WORKER_LOST",
+    }
+)
 
 
 _NODE_STAGE = {
@@ -117,8 +142,21 @@ def build_stage_diagnostics(
     *,
     infrastructure_error: str | None = None,
     golden_ambiguous: bool | None = None,
+    provider_error_code: str | None = None,
 ) -> dict[str, Any]:
-    """Clasifica un resultado sin convertir texto humano en códigos de control."""
+    """Clasifica un resultado sin convertir texto humano en códigos de control.
+
+    ``provider_error_code`` es el ``terminal_error_code`` tipado y persistido
+    de ``agent_runs`` (T-617B0-R3): cuando pertenece a
+    ``INFRASTRUCTURE_TERMINAL_ERROR_CODES`` la corrida terminó por una falla
+    de infraestructura o proveedor, no por una regresión semántica del
+    agente. Se clasifica SIEMPRE como ``FailureCode.PROVIDER_ERROR`` con
+    ``failure_owner="infrastructure"``, preservando la última etapa
+    observada antes del fallo, y nunca cae en ``intent_mismatch``,
+    ``plan_invalid`` ni ningún otro código semántico. Distinto de
+    ``infrastructure_error`` (nombre de excepción de Python capturada por el
+    arnés de evaluación mismo), que conserva su clasificación previa por
+    etapa."""
 
     observed = tuple(observations)
     if golden_ambiguous is None:
@@ -167,10 +205,22 @@ def build_stage_diagnostics(
     stage: EvalStage | None = None
     owner: str | None = None
 
+    is_provider_error = bool(
+        provider_error_code and provider_error_code in INFRASTRUCTURE_TERMINAL_ERROR_CODES
+    )
+
     if not assessment.passed:
         owner = "agent"
         if golden_ambiguous:
             stage, code, owner = EvalStage.ACCEPTANCE, FailureCode.AMBIGUOUS_GOLDEN, "golden"
+        elif is_provider_error:
+            # Falla terminal de proveedor/infraestructura (T-617B0-R3): nunca
+            # una regresión semántica. Conserva la última etapa observada
+            # ANTES del fallo (p. ej. "planning" con "profiling" como última
+            # etapa exitosa), sin mapear a un código semántico como
+            # `plan_invalid` o `intent_mismatch`.
+            stage = stages[-1] if stages else EvalStage.INTENT
+            code, owner = FailureCode.PROVIDER_ERROR, "infrastructure"
         elif infrastructure_error:
             stage = stages[-1] if stages else EvalStage.QUERY_EXECUTION
             code = {
@@ -225,6 +275,7 @@ def build_stage_diagnostics(
         "failure_stage": stage.value if stage else None,
         "failure_code": code.value if code else None,
         "failure_owner": owner,
+        "terminal_error_code": provider_error_code,
         "stop_reason": stop_reason,
         "retrieved_dataset_ids": list(retrieved),
         "attempted_dataset_ids": list(attempted),

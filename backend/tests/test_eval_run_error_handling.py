@@ -38,6 +38,21 @@ def _fake_suite() -> GoldenSuite:
     )
 
 
+def test_config_snapshot_registers_deterministic_textual_facts_enabled(monkeypatch) -> None:
+    """T-617B0-R3 #6: config_snapshot debe registrar
+    deterministic_textual_facts_enabled porque afecta el contrato del
+    planificador determinista y hoy no quedaba registrado en la corrida de
+    evaluación."""
+
+    monkeypatch.setattr(run_module, "_git_commit", lambda: "abc123")
+    settings = _settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=True)
+
+    snapshot = run_module._config_snapshot(settings, seed=601000)
+
+    assert snapshot["deterministic_textual_facts_enabled"] is True
+    assert snapshot["eval_seed"] == 601000
+
+
 async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch) -> None:
     suite = _fake_suite()
     suite_id = uuid.uuid4()

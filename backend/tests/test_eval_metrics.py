@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from eval.diagnostics import StageObservation, build_stage_diagnostics
 from eval.loader import GoldenCase
 from eval.metrics import assess_case, recall_hit_at_10
@@ -531,3 +533,97 @@ def test_diagnostics_approved_case_has_no_failure() -> None:
     assert diagnostics["last_successful_stage"] == "acceptance"
     assert diagnostics["failure_stage"] is None
     assert diagnostics["failure_code"] is None
+
+
+# --- T-617B0-R3: falla terminal de proveedor separada de la semántica -------
+#
+# Hallazgo del smoke real (eval run 9bebcb75-53d2-42f6-938f-bfbd45384128,
+# agent run 235466d2-a403-4c01-bc8e-817713ca3062, pilot-005-empleo-publico):
+# un 504 del proveedor durante `build_plan` persistió
+# `agent_runs.status="failed"` + `terminal_error_code="LLM_PROVIDER_ERROR"`,
+# pero `eval.run` nunca leía esos campos y `EvalCaseResult.error_code`
+# quedaba en null. El diagnóstico degradaba a `intent_mismatch`/owner=agent:
+# una falla de infraestructura se atribuía falsamente al agente.
+
+
+@pytest.mark.parametrize(
+    "provider_error_code",
+    ["LLM_PROVIDER_ERROR", "STRUCTURED_OUTPUT_INVALID", "RUN_TIMEOUT"],
+)
+def test_diagnostics_classifies_provider_terminal_error_as_infrastructure(
+    provider_error_code: str,
+) -> None:
+    """Un terminal_error_code tipado de infraestructura/proveedor nunca se
+    clasifica como intent_mismatch, plan_invalid ni ningún otro código
+    semántico: siempre failure_code=provider_error, failure_owner=infrastructure,
+    conservando la etapa observada donde ocurrió el fallo y la última etapa
+    exitosa previa."""
+
+    final = {"status": "failed", "evidence": [], "claims": [], "usage": {}}
+    diagnostics = build_stage_diagnostics(
+        _positive_case(),
+        final,
+        assess_case(_positive_case(), final),
+        [
+            StageObservation("profile_dataset", {}, {}),
+            StageObservation("build_plan", {}, {}),
+        ],
+        provider_error_code=provider_error_code,
+    )
+
+    assert diagnostics["failure_code"] == "provider_error"
+    assert diagnostics["failure_owner"] == "infrastructure"
+    assert diagnostics["failure_stage"] == "planning"
+    assert diagnostics["last_successful_stage"] == "profiling"
+    assert diagnostics["terminal_error_code"] == provider_error_code
+    assert diagnostics["failure_code"] != "intent_mismatch"
+    assert diagnostics["failure_code"] != "plan_invalid"
+
+
+def test_diagnostics_unrecognized_terminal_error_code_does_not_force_infrastructure() -> None:
+    """Un terminal_error_code presente pero fuera de
+    INFRASTRUCTURE_TERMINAL_ERROR_CODES (p. ej. RUN_INTERRUPTED, cancelación)
+    no fuerza la clasificación de infraestructura: conserva el
+    comportamiento previo por etapa/observaciones."""
+
+    final = {"status": "eval_error", "evidence": [], "claims": [], "usage": {}}
+    diagnostics = build_stage_diagnostics(
+        _positive_case(),
+        final,
+        _failed_assessment(),
+        [StageObservation("profile_dataset", {}, {})],
+        provider_error_code="RUN_INTERRUPTED",
+    )
+
+    assert diagnostics["failure_code"] != "provider_error"
+    assert diagnostics["failure_owner"] != "infrastructure"
+    assert diagnostics["terminal_error_code"] == "RUN_INTERRUPTED"
+
+
+def test_diagnostics_harness_exception_keeps_prior_classification_unaffected() -> None:
+    """Regresión de no-daño: una excepción del arnés (`infrastructure_error`,
+    nombre de clase Python) sin `provider_error_code` sigue clasificándose
+    igual que antes de T-617B0-R3 (comportamiento de
+    test_diagnostics_classifies_profile_failure_from_last_observed_stage)."""
+
+    diagnostics = build_stage_diagnostics(
+        _positive_case(),
+        {"status": "eval_error", "evidence": [], "claims": [], "usage": {}},
+        _failed_assessment(),
+        [
+            StageObservation(
+                "profile_dataset",
+                {
+                    "retrieved_dataset_ids": ["abcd-1234"],
+                    "attempted_dataset_ids": ["abcd-1234"],
+                },
+                {},
+            )
+        ],
+        infrastructure_error="TimeoutError",
+    )
+
+    assert diagnostics["failure_stage"] == "profiling"
+    assert diagnostics["failure_code"] == "profile_failed"
+    assert diagnostics["failure_owner"] == "agent"
+    assert diagnostics["terminal_error_code"] is None

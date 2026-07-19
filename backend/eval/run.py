@@ -84,10 +84,17 @@ def _config_snapshot(settings, seed: int) -> dict[str, object]:
         "llm_model": settings.llm_model,
         "agent_max_steps": settings.agent_max_steps,
         "embedding_model": settings.embedding_model,
+        # `eval_seed` es metadata registrada para reproducibilidad del
+        # experimento (qué corrida generó qué reporte); NO vuelve
+        # deterministas las respuestas del proveedor Gemini.
         "eval_seed": seed,
         "git_commit": commit,
         "placeholder_min_ratio": settings.placeholder_min_ratio,
         "run_max_duration_s": settings.run_max_duration_s,
+        # T-617B0-R3: afecta el contrato del planificador determinista
+        # (habilita/deshabilita hechos textuales) y no quedaba registrado en
+        # el snapshot de configuración de la corrida de evaluación.
+        "deterministic_textual_facts_enabled": settings.deterministic_textual_facts_enabled,
     }
 
 
@@ -452,6 +459,48 @@ def _write_report(
     lines.extend(f"| {_md(key)} | {count} |" for key, count in sorted(stage_counts.items()))
     lines.extend(["", "## Motivos de fallo", "", "| Código | Casos |", "|---|---:|"])
     lines.extend(f"| {_md(key)} | {count} |" for key, count in sorted(code_counts.items()))
+    # T-617B0-R3: separa explícitamente regresiones semánticas del agente,
+    # fallos atribuibles al contrato golden y fallos de infraestructura o
+    # proveedor. `failure_owner` ya distingue estas tres clases
+    # (eval.diagnostics); esta tabla las agrupa para que el reporte no las
+    # mezcle bajo un solo "Motivos de fallo".
+    owner_labels = {
+        "agent": "Regresión semántica (agente)",
+        "golden": "Fallo del contrato golden",
+        "undetermined": "Indeterminado (revisión humana)",
+        "infrastructure": "Infraestructura/proveedor",
+    }
+    owner_counts: dict[str, int] = {}
+    infra_rows: list[str] = []
+    for case_id, _item, diagnostics in results:
+        owner = diagnostics.get("failure_owner")
+        if not owner:
+            continue
+        owner_counts[str(owner)] = owner_counts.get(str(owner), 0) + 1
+        if owner == "infrastructure":
+            infra_rows.append(
+                f"| {_md(case_id)} | {_md(diagnostics.get('terminal_error_code'))} | "
+                f"{_md(diagnostics.get('failure_stage'))} | "
+                f"{_md(diagnostics.get('last_successful_stage'))} |"
+            )
+    lines.extend(["", "## Responsabilidad de fallos", "", "| Responsable | Casos |", "|---|---:|"])
+    lines.extend(
+        f"| {_md(owner_labels.get(owner, owner))} | {count} |"
+        for owner, count in sorted(owner_counts.items())
+    )
+    lines.extend(
+        [
+            "",
+            "### Fallos de infraestructura/proveedor",
+            "",
+            "No evaluables: no cuentan como regresión semántica del agente pero "
+            "bloquean la puerta (eval.gate, métrica `infraestructura`).",
+            "",
+            "| Caso | terminal_error_code | Etapa de fallo | Última etapa exitosa |",
+            "|---|---|---|---|",
+        ]
+    )
+    lines.extend(infra_rows if infra_rows else ["| — | — | — | — |"])
     lines.extend(
         [
             "",
@@ -545,6 +594,7 @@ def _build_case_outcome(
         claims_integrity=claims_integrity,
         socrata_successes=socrata[0] if socrata else 0,
         socrata_attempts=socrata[1] if socrata else 0,
+        infrastructure_failure=stage_diagnostics.get("failure_owner") == "infrastructure",
     )
 
 
@@ -585,6 +635,7 @@ async def run_suite(
         for case in selected_cases:
             agent_run_id: uuid.UUID | None = None
             error_code: str | None = None
+            provider_error_code: str | None = None
             observations: tuple[StageObservation, ...] = ()
             try:
                 agent_run_id = await create_eval_run(
@@ -596,6 +647,21 @@ async def run_suite(
                 await execute_agent_run_async(settings, agent_run_id)
                 run = await get_run(engine, agent_run_id)
                 final = run.final_answer if run and run.final_answer else {"status": "failed"}
+                # T-617B0-R3: `execute_agent_run_async` no relanza cuando el
+                # agente mismo captura un fallo terminal de proveedor (p. ej.
+                # 504 en `build_plan`) y persiste `agent_runs.status="failed"`
+                # con `terminal_error_code`. Sin esto, `error_code` quedaba en
+                # `None` y el diagnóstico degradaba a una regresión semántica
+                # (`intent_mismatch`) en lugar de una falla de infraestructura.
+                # No se usa el texto humano del error para decidir nada: solo
+                # el código tipado persistido.
+                run_status = getattr(run, "status", None) if run is not None else None
+                run_terminal_error_code = (
+                    getattr(run, "terminal_error_code", None) if run is not None else None
+                )
+                if run_status == "failed" and run_terminal_error_code:
+                    provider_error_code = run_terminal_error_code
+                    error_code = provider_error_code
                 observations = await _stage_observations(engine, agent_run_id)
                 synthesis_plan = next(
                     (
@@ -654,6 +720,7 @@ async def run_suite(
                 assessment,
                 observations,
                 infrastructure_error=error_code,
+                provider_error_code=provider_error_code,
             )
             stage_diagnostics["agent_run_id"] = (
                 str(agent_run_id) if agent_run_id is not None else None
