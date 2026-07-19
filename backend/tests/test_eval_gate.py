@@ -248,12 +248,16 @@ def test_corruption_row_out_of_range_fails() -> None:
 
 
 def test_corruption_unknown_column_fails() -> None:
+    """T-617C-R2: una columna pública que no es clave de las filas NI puede
+    resolverse vía SoQL (sin alias declarado en `_valid_final`) falla con el
+    código específico `column_unresolvable`, no con el genérico anterior."""
+
     final = _valid_final()
     final["claims"][0]["columns"] = ["inexistente"]
     result = evaluate_claims_integrity(final)
 
     assert result.integrity_ok is False
-    assert "not_reproducible" in result.failure_codes
+    assert "column_unresolvable" in result.failure_codes
 
 
 def test_corruption_raw_value_mismatch_fails() -> None:
@@ -299,6 +303,301 @@ def test_claims_integrity_does_not_use_expected_facts() -> None:
 
     result = evaluate_claims_integrity(_valid_final())
     assert result.reproducible_claim_count == 1
+
+
+# --- B2. T-617C-R2: reproducción con nombres públicos reales (RF-212) -------
+#
+# Origen: smoke real fd2da0f1-94b6-47e4-8ddc-30926266f944 (T-617C-R1) obtuvo
+# claims_reproducible=0.0% porque `final_answer.claims[].columns` ya persiste
+# el nombre de columna fuente real (p. ej. "genero_hombre"), pero
+# `evidence.rows` sigue indexada por el alias de ejecución SoQL ("dim_2").
+# `_reproduce_one_claim` no reconstruía esa correspondencia. Estas pruebas
+# fallan contra el baseline 8bfd7501ad9afb7341a1447f925df0c0735b0470 y pasan
+# con T-617C-R2.
+
+
+def _r1_final(
+    *,
+    soql: str = "SELECT genero_hombre AS dim_2 LIMIT 1",
+    rows: tuple[dict, ...] = ({"dim_2": "764"},),
+    execution_columns: tuple[str, ...] = ("dim_2",),
+    column_field_names: dict[str, str] | None = None,
+    claim_type: str = "direct",
+    formula: dict | None = None,
+    unit: str | None = None,
+    rounding: int = 0,
+) -> dict:
+    """`final_answer` con un claim en formato T-617C-R1: `columns` público
+    (nombre real) distinto de las claves de `evidence.rows` (alias de
+    ejecución SoQL), reconstruible solo parseando `soql_query`."""
+
+    mapping = (
+        column_field_names
+        if column_field_names is not None
+        else dict.fromkeys(execution_columns, "genero_hombre")
+    )
+    evidence_id = str(uuid.uuid4())
+    spec = ClaimSpec(
+        claim_type=claim_type,
+        description="Total",
+        source_row_indexes=(0,),
+        columns=execution_columns,
+        column_field_names=mapping,
+        formula=formula,
+        unit=unit,
+        rounding=rounding,
+    )
+    built = build_claims(
+        EvidenceContext(dataset_id="abcd-1234", canonical_soql=soql, rows=rows),
+        (spec,),
+    ).claims[0]
+    claim = {
+        "claim_id": str(uuid.uuid4()),
+        "claim": f"Total: {built.display_value}",
+        "claim_type": claim_type,
+        "evidence_id": evidence_id,
+        "dataset_id": "abcd-1234",
+        "source_row_indexes": list(built.source_row_indexes),
+        "columns": list(built.public_columns),
+        "formula": built.formula,
+        "raw_value": (
+            int(built.raw_value)
+            if built.raw_value == built.raw_value.to_integral_value()
+            else float(built.raw_value)
+        ),
+        "display_value": built.display_value,
+        "unit": built.unit,
+        "rounding": built.rounding,
+        "source_hash": built.source_hash,
+        "label": built.label,
+        "label_status": built.label_status,
+    }
+    evidence = {
+        "evidence_id": evidence_id,
+        "dataset_id": "abcd-1234",
+        "soql_query": soql,
+        "rows": list(rows),
+        "narrative": None,
+    }
+    return {
+        "status": "completed",
+        "claims": [claim],
+        "evidence": [evidence],
+        "summary": f"Total: {built.display_value}.",
+    }
+
+
+def test_r2_reproduces_public_real_column_name_against_alias_keyed_rows() -> None:
+    """Requisito C.1: columns=["genero_hombre"], rows=[{"dim_2": "764"}],
+    SoQL con `AS dim_2` -- reproduce al 100% con el hash v2.0.0."""
+
+    final = _r1_final()
+    result = evaluate_claims_integrity(final)
+
+    assert result.applicable is True
+    assert result.reproducible_claim_count == 1
+    assert result.claims_reproducible == 1.0
+    assert result.integrity_ok is True
+    assert result.failure_codes == ()
+    assert final["claims"][0]["source_hash"].startswith("sha256:")
+
+
+def test_r2_derived_claim_with_alias_formula_and_public_columns_reproduces() -> None:
+    """Requisito C.2: fórmula que referencia el alias interno (como la
+    persiste el pipeline real, nunca traducida) junto con `columns` público
+    real -- reproduce exactamente."""
+
+    final = _r1_final(
+        soql="SELECT matriculados AS dim_1, desertores AS dim_2 LIMIT 1",
+        rows=({"dim_1": "1000", "dim_2": "84"},),
+        execution_columns=("dim_1", "dim_2"),
+        column_field_names={"dim_1": "matriculados", "dim_2": "desertores"},
+        claim_type="derived",
+        formula={"op": "div", "args": [{"col": "dim_2"}, {"col": "dim_1"}]},
+        unit=None,
+        rounding=4,
+    )
+    result = evaluate_claims_integrity(final)
+
+    assert result.integrity_ok is True
+    assert result.claims_reproducible == 1.0
+
+
+def test_r2_count_star_sentinel_reproduces() -> None:
+    """Requisito C.3: `count(*)` público como el centinela estructural
+    (`__count__`, nunca texto inventado) reproduce correctamente."""
+
+    final = _r1_final(
+        soql="SELECT count(*) AS metric_count_1 LIMIT 1",
+        rows=({"metric_count_1": "42"},),
+        execution_columns=("metric_count_1",),
+        column_field_names={"metric_count_1": "__count__"},
+    )
+    assert final["claims"][0]["columns"] == ["__count__"]
+    result = evaluate_claims_integrity(final)
+
+    assert result.integrity_ok is True
+    assert result.claims_reproducible == 1.0
+
+
+def test_r2_direct_path_still_works_when_public_column_is_already_a_row_key() -> None:
+    """Requisito C.4: camino de compatibilidad -- claims persistidos antes de
+    T-617C-R1 (o dobles que ya usan el nombre real como alias) con
+    `columns` ya presente en las claves de `evidence.rows` siguen
+    reproduciéndose sin tocar el SoQL."""
+
+    result = evaluate_claims_integrity(_valid_final())
+
+    assert result.integrity_ok is True
+    assert result.claims_reproducible == 1.0
+
+
+def test_r2_nonexistent_public_column_fails_deterministically() -> None:
+    """Requisito C.5: una columna pública que no es clave de las filas ni
+    tiene alias en el SoQL persistido falla, no se reproduce por accidente."""
+
+    final = _r1_final()
+    final["claims"][0]["columns"] = ["columna_que_no_existe"]
+    result = evaluate_claims_integrity(final)
+
+    assert result.integrity_ok is False
+    assert "column_unresolvable" in result.failure_codes
+
+
+def test_r2_invalid_soql_fails_safely_without_uncontrolled_exception() -> None:
+    """Requisito C.6: un SoQL no parseable produce un código de fallo seguro,
+    nunca una excepción sin controlar que interrumpa la evaluación completa."""
+
+    final = _r1_final()
+    final["evidence"][0]["soql_query"] = "ESTO NO ES SOQL ((("
+    final["claims"][0]["columns"] = ["genero_hombre"]
+
+    result = evaluate_claims_integrity(final)  # no debe lanzar
+
+    assert result.integrity_ok is False
+    assert "soql_unparseable" in result.failure_codes
+
+
+def test_r2_ambiguous_alias_mapping_fails_instead_of_picking_last_silently() -> None:
+    """Requisito C.7: dos alias distintos para el mismo nombre público real
+    (p. ej. la misma columna seleccionada dos veces) deben fallar de forma
+    determinista por ambigüedad, nunca resolverse tomando el último alias
+    encontrado en silencio."""
+
+    final = _r1_final(
+        soql="SELECT genero_hombre AS dim_1, genero_hombre AS dim_2 LIMIT 1",
+        rows=({"dim_1": "764", "dim_2": "764"},),
+        execution_columns=("dim_1",),
+        column_field_names={"dim_1": "genero_hombre"},
+    )
+    # El claim ya reproduce con dim_1; forzamos la ambigüedad estructural
+    # directamente sobre el SoQL persistido, que es lo que _reproduce_one_claim
+    # relee -- ambos alias mapean a "genero_hombre" en ese SoQL.
+    result = evaluate_claims_integrity(final)
+
+    assert result.integrity_ok is False
+    assert "column_mapping_ambiguous" in result.failure_codes
+
+
+def test_r2_tampered_raw_value_display_value_or_hash_still_fail() -> None:
+    """Requisito C.8: manipular `raw_value`/`display_value`/`source_hash` de
+    un claim en formato R1 sigue detectándose, igual que en el formato
+    anterior (test_corruption_* ya cubre el formato directo)."""
+
+    base = _r1_final()
+
+    tampered_raw = json.loads(json.dumps(base))
+    tampered_raw["claims"][0]["raw_value"] = 999
+    assert evaluate_claims_integrity(tampered_raw).integrity_ok is False
+
+    tampered_display = json.loads(json.dumps(base))
+    tampered_display["claims"][0]["display_value"] = "999"
+    assert evaluate_claims_integrity(tampered_display).integrity_ok is False
+
+    tampered_hash = json.loads(json.dumps(base))
+    tampered_hash["claims"][0]["source_hash"] = "sha256:" + "0" * 64
+    assert evaluate_claims_integrity(tampered_hash).integrity_ok is False
+
+
+# --- B3. T-617C-R2: `integridad_claims` bloquea el smoke -----------------------
+
+
+def _smoke_canonical_outcomes_with_broken_claim(broken_case_id: str) -> list[CaseOutcome]:
+    """Los 10 canónicos en verde salvo `broken_case_id`, cuya integridad de
+    claims está rota (formato R1 con columna pública inexistente) aunque el
+    caso siga `passed=True` -- exactamente el escenario real que produjo
+    `claims_reproducible=0.0%` con `gate_passed=true` antes de T-617C-R2."""
+
+    broken_final = _r1_final()
+    broken_final["claims"][0]["columns"] = ["columna_que_no_existe"]
+    broken_integrity = evaluate_claims_integrity(broken_final)
+    assert broken_integrity.integrity_ok is False  # verificación de la propia fixture
+
+    outcomes = []
+    for outcome in _smoke_canonical_outcomes():
+        if outcome.case_id == broken_case_id:
+            outcomes.append(
+                _outcome(
+                    outcome.case_id,
+                    outcome.case_type,
+                    True,
+                    integrity=broken_integrity,
+                )
+            )
+        else:
+            outcomes.append(outcome)
+    return outcomes
+
+
+def test_r2_smoke_with_broken_claims_integrity_cannot_pass() -> None:
+    """Requisito C.9: los 10 canónicos, cardinalidad/negativos/sólidos
+    perfectos, pero un caso con integridad de claims rota -- el smoke NO
+    puede aprobar. Esto es exactamente lo que faltaba: antes de R2, ninguna
+    métrica de `evaluate_smoke_gate` miraba `claims_integrity`."""
+
+    outcomes = _smoke_canonical_outcomes_with_broken_claim("pilot-005-empleo-publico")
+    smoke = evaluate_smoke_gate(outcomes)
+
+    assert smoke.passed is False
+    integrity_metric = next(m for m in smoke.metrics if m.name == "integridad_claims")
+    assert integrity_metric.passed is False
+    assert "pilot-005-empleo-publico" in (integrity_metric.reason or "")
+
+
+def test_r2_smoke_with_full_claims_integrity_can_pass() -> None:
+    """Requisito C.10: el mismo smoke, con integridad de claims completa en
+    todos los casos, sí puede aprobar."""
+
+    smoke = evaluate_smoke_gate(_smoke_canonical_outcomes())
+    assert smoke.passed is True
+    integrity_metric = next(m for m in smoke.metrics if m.name == "integridad_claims")
+    assert integrity_metric.passed is True
+
+
+def test_r2_other_smoke_metrics_remain_intact() -> None:
+    """Requisito C.11: cardinalidad, negativos, positivos sólidos,
+    infraestructura y fallos clasificados no cambiaron de comportamiento --
+    solo se añadió `integridad_claims` como métrica nueva."""
+
+    smoke = evaluate_smoke_gate(_smoke_canonical_outcomes())
+    metric_names = {m.name for m in smoke.metrics}
+    assert metric_names == {
+        "cobertura_canónica",
+        "negativos",
+        "positivos_sólidos",
+        "infraestructura",
+        "fallos_clasificados",
+        "integridad_claims",
+    }
+    for name in (
+        "cobertura_canónica",
+        "negativos",
+        "positivos_sólidos",
+        "infraestructura",
+        "fallos_clasificados",
+    ):
+        metric = next(m for m in smoke.metrics if m.name == name)
+        assert metric.passed is True
 
 
 # --- C. Rendimiento y clasificación ------------------------------------------

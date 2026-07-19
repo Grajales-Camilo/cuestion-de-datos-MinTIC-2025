@@ -41,6 +41,7 @@ from app.quality.claims import (
     build_claims,
     find_figures,
 )
+from app.tools.soql_parser import SoqlGuardError, extract_column_field_names
 from eval.metrics import _collect_orphan_figures
 
 # --- Umbrales normativos (NO se modifican aquí; se leen de pruebas.md §4.2) ---
@@ -166,6 +167,65 @@ def _to_decimal(value: Any) -> Decimal | None:
         return None
 
 
+def _resolve_execution_columns(
+    columns: tuple[str, ...],
+    rows: tuple[Mapping[str, Any], ...],
+    soql_query: str,
+) -> tuple[tuple[str, ...], dict[str, str]] | str:
+    """Resuelve las columnas de ejecución (claves reales en ``rows``) para los
+    nombres públicos persistidos de un claim (RF-212, T-617C-R2).
+
+    Camino directo (compatibilidad): si los nombres públicos ya son claves de
+    ``rows`` -- claims persistidos antes de T-617C-R1, o dobles/fixtures que
+    ya usan el mismo nombre como alias de ejecución -- se usan tal cual, sin
+    tocar el SoQL ni construir ningún mapeo.
+
+    Camino nuevo (T-617C-R1 en adelante): si no, se reconstruye el alias de
+    ejecución real parseando ``soql_query`` con el parser SoQL vigente
+    (``extract_column_field_names``, sin regex improvisada) -- el mismo
+    mecanismo que ya usa ``persistence._reverify_quantitative_synthesis_fact``
+    en la ruta productiva. Una columna pública sin alias correspondiente, o
+    con más de un alias distinto apuntándole, falla de forma determinista en
+    vez de adivinar o tomar el último silenciosamente.
+
+    Devuelve ``(execution_columns, column_field_names)`` o un código de fallo
+    (``str``) listo para ``failure_codes``.
+    """
+
+    row_keys: set[str] = set()
+    for row in rows:
+        if isinstance(row, Mapping):
+            row_keys.update(row.keys())
+
+    if set(columns) <= row_keys:
+        return tuple(columns), {}
+
+    try:
+        alias_to_field = extract_column_field_names(soql_query)
+    except SoqlGuardError:
+        return "soql_unparseable"
+    except (TypeError, ValueError):
+        return "soql_unparseable"
+
+    field_to_aliases: dict[str, list[str]] = {}
+    for alias, field in alias_to_field.items():
+        field_to_aliases.setdefault(field, []).append(alias)
+
+    execution_columns: list[str] = []
+    column_field_names: dict[str, str] = {}
+    for name in columns:
+        aliases = field_to_aliases.get(name, [])
+        if not aliases:
+            return "column_unresolvable"
+        if len(set(aliases)) > 1:
+            return "column_mapping_ambiguous"
+        alias = aliases[0]
+        execution_columns.append(alias)
+        column_field_names[alias] = name
+
+    return tuple(execution_columns), column_field_names
+
+
 def _reproduce_one_claim(
     claim: Mapping[str, Any],
     evidence_by_id: Mapping[str, Mapping[str, Any]],
@@ -192,11 +252,21 @@ def _reproduce_one_claim(
     if not isinstance(columns, (list, tuple)) or not columns:
         return "columns_invalid"
 
+    resolved = _resolve_execution_columns(
+        tuple(str(c) for c in columns),
+        tuple(rows),
+        str(evidence.get("soql_query") or ""),
+    )
+    if isinstance(resolved, str):
+        return resolved
+    execution_columns, column_field_names = resolved
+
     spec = ClaimSpec(
         claim_type=str(claim.get("claim_type")),
         description="",
         source_row_indexes=tuple(int(i) for i in indexes),
-        columns=tuple(str(c) for c in columns),
+        columns=execution_columns,
+        column_field_names=column_field_names,
         unit=claim.get("unit"),
         rounding=claim.get("rounding"),
         formula=claim.get("formula"),
@@ -813,6 +883,33 @@ def evaluate_smoke_gate(
             f"{len(unclassified)} sin clasificar",
             not unclassified,
             None if not unclassified else f"fallos sin etapa/código: {', '.join(unclassified)}",
+        )
+    )
+
+    # T-617C-R2: RF-208/RNF-003 -- toda cifra presentada debe conservar
+    # cobertura de claims=100%, reproducibilidad=100% y cero cifras huérfanas
+    # en TODO caso donde la integridad de claims sea aplicable (tenga claims o
+    # cifras en el texto). No evalúa perfección de respuesta ni coincidencia
+    # con expected_facts: solo trazabilidad y reproducibilidad ya calculadas
+    # por evaluate_claims_integrity. Antes de esta métrica, un fallo de
+    # reproducibilidad (p. ej. el defecto de _reproduce_one_claim que motivó
+    # esta ronda) podía dejar pasar el smoke sin que ninguna métrica lo
+    # bloqueara.
+    broken_integrity = [
+        o.case_id
+        for o in outcomes
+        if o.claims_integrity.applicable and not o.claims_integrity.integrity_ok
+    ]
+    metrics.append(
+        GateMetric(
+            "integridad_claims",
+            "cobertura=100%, reproducibles=100%, huérfanas=0 en todo caso aplicable",
+            f"{len(broken_integrity)} casos con integridad rota"
+            + (f" ({', '.join(broken_integrity)})" if broken_integrity else ""),
+            not broken_integrity,
+            None
+            if not broken_integrity
+            else "integridad de claims rota (RF-208/RNF-003): " + ", ".join(broken_integrity),
         )
     )
 
