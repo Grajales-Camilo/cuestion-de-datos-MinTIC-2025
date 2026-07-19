@@ -199,6 +199,101 @@ materializan ambas listas como vacías y no cargan hechos desde la tabla. Los
 payloads terminales históricos no se reescriben; si sus campos no existen, la
 lectura pública los materializa como `[]`.
 
+### 4c. Etiquetado semántico de claims y advertencias de presentación — T-617C-A aprobada
+
+> **CONTRATO APROBADO, IMPLEMENTACIÓN PENDIENTE (T-617C).** Esta sección
+> describe la forma exacta de los campos; su emisión real por el runtime
+> determinista depende del cierre de T-617C. Decisión y alternativas en
+> `research.md` §29; auditoría de flujo en
+> `backend/eval/reports/t617c-semantic-claim-labels.md`.
+
+Añade dos campos opcionales dentro de cada elemento de `claims[]` (§4) y una
+propiedad raíz nueva, todos aditivos y retrocompatibles:
+
+```text
+claims[].label: string | null = null
+claims[].label_status: "verified" | "ambiguous" | null = null
+presentation_warnings: list[PresentationWarning] = []
+```
+
+`label`/`label_status` **no reemplazan** ningún campo existente de `claims[]`
+(`claim`, `columns`, `display_value`, etc. — §4 — conservan su forma). Un
+histórico o una respuesta emitida antes de cerrar T-617C sin estos campos
+equivale a `label=null`, `label_status=null` y `presentation_warnings=[]`; no
+se infiere ni se reescribe retroactivamente.
+
+Ejemplo (claim con etiqueta verificada; equivalente al caso disparador de
+T-617C, sin usar sus valores concretos como regla):
+
+```json
+{
+  "claim_id": "7c1d...uuid",
+  "claim": "La planta registra 764 hombres en el último mes disponible",
+  "claim_type": "direct",
+  "evidence_id": "9a2b...",
+  "dataset_id": "h8rs-jxum",
+  "source_row_indexes": [0],
+  "columns": ["genero_hombre"],
+  "raw_value": 764,
+  "display_value": "764",
+  "unit": null,
+  "rounding": 0,
+  "source_hash": "sha256:ab12...",
+  "label": "Hombres",
+  "label_status": "verified"
+}
+```
+
+Ejemplo de `presentation_warnings` (claim cuya columna fuente no pudo
+vincularse con una etiqueta inequívoca; la cifra se conserva igualmente
+porque sigue siendo útil y verificable, RF-211):
+
+```json
+"presentation_warnings": [
+  {
+    "claim_id": "e4f0ba87-...uuid",
+    "code": "AMBIGUOUS_LABEL",
+    "message_user": "No se pudo asociar esta cifra con una etiqueta verificable; se conserva por ser útil y verificable, pero su significado exacto no está confirmado."
+  }
+]
+```
+
+**Reglas del contrato:**
+
+- `label_status="verified"` ⇒ `label` fue derivado de metadatos estructurados
+  de la columna fuente (nombre de columna real, nombre visible del plan
+  validado o equivalente, `data-model.md`) y puede vincularse con esa
+  columna. El LLM nunca redacta `label` libremente ni lo infiere del valor
+  numérico.
+- `label_status="ambiguous"` ⇒ `label=null`; el sistema no inventó una
+  etiqueta. El claim permanece en `claims[]` con su `display_value` si sigue
+  siendo útil y verificable (RF-211); la ambigüedad se señala en
+  `presentation_warnings`, no ocultando la cifra.
+- `presentation_warnings` es **distinto** de `evidence[].quality.warnings_user`
+  (§6, `contracts/validacion-calidad.md`): ese campo evalúa la calidad de la
+  evidencia como conjunto (score, elegibilidad, frescura, nulos);
+  `presentation_warnings` evalúa si una cifra individual ya presentada tiene
+  una etiqueta inequívoca. Ambos pueden aparecer simultáneamente sobre el
+  mismo claim/evidencia sin fusionarse.
+- Una entrada en `presentation_warnings` **NUNCA** convierte por sí sola
+  `status="completed"` en `status="no_evidence"`; RF-211 sigue gobernando la
+  entrega de respuestas parciales pero verificables.
+- `code` es un identificador tipado extensible (no enum cerrado en este
+  contrato); el único valor definido en esta enmienda es `AMBIGUOUS_LABEL`.
+  `message_user` sigue el mismo estándar que `quality.warnings_user`
+  (Art. V.5): español claro, sin nombres técnicos de checks.
+- `presentation_warnings` es vacío por defecto y en cualquier respuesta que
+  no presente ambigüedad de etiquetado.
+- **Invariante reforzado sobre `columns`/`columns_used` (§4, RF-212):**
+  representan el nombre de columna fuente real (p. ej. `"genero_hombre"`),
+  nunca el alias interno de la consulta SoQL (`dim_N`/`metric_N`). No es un
+  campo nuevo: aclara una discrepancia código-contrato preexistente — el
+  ejemplo de `columns` en §4 ya usaba nombres reales
+  (`["matriculados", "desertores"]`) antes de esta enmienda.
+- Sin migración: estos campos se sirven desde `agent_runs.final_answer`
+  (JSONB), sin tocar la tabla relacional `quantitative_claims`
+  (`data-model.md`).
+
 ## 5. Objeto `Evidencia`
 ```json
 {

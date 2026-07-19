@@ -634,6 +634,138 @@ en su preflight y ya no está bloqueada por esta decisión de T-615; conserva
 sus propias puertas antes de consumir cuota real o cambiar el runtime
 operativo.
 
+## 28. Decisión de producto: utilidad proporcional a escala — `DECIDIDA`
+
+**Problema.** El catálogo objetivo supera los 8.000 datasets y puede contener
+cientos de miles de variables y millones de filas. Exigir que cada respuesta
+demuestre haber elegido la consulta óptima entre todas las alternativas
+convertiría diferencias de optimización en abstenciones y reduciría la utilidad
+real del sistema sin mejorar necesariamente su honestidad.
+
+**Alternativas consideradas.**
+
+1. Exigir coincidencia técnica perfecta con una consulta canónica para entregar
+   cualquier respuesta.
+2. Entregar cualquier resultado aproximado y delegar toda verificación al
+   usuario.
+3. Mantener reglas duras contra falsedad, fuente incorrecta, falta de
+   trazabilidad y privacidad, pero tratar las mejoras de consulta, cobertura y
+   precisión no materiales como advertencias visibles.
+
+**Decisión.** Se adopta la alternativa 3. El objetivo es una respuesta útil,
+verificable, suficientemente correcta y transparente. La evaluación debe
+separar el veredicto mecánico de los hallazgos cualitativos y distinguir:
+
+- bloqueos por cifras fabricadas, fuente equivocada, contradicción material,
+  ausencia de evidencia verificable, privacidad o fallo sistemático;
+- advertencias por consulta mejorable, selección temporal no óptima cuando no
+  cambia el resultado material, cobertura parcial declarada, menor precisión o
+  existencia de una alternativa superior.
+
+**Consecuencias.** No se relajan RNF-003, las reglas de elegibilidad ni los
+umbrales vigentes de T-617. Tampoco se adapta el runtime a casos individuales.
+Los casos golden siguen midiendo regresión, pero una auditoría no debe convertir
+una imperfección no material en fabricación ni usarla para endurecer el runtime
+hasta provocar abstenciones innecesarias. Una omisión sí es material cuando
+cambia la conclusión, responde otra pregunta o impide verificarla.
+
+## 29. T-617C-A: contrato de etiquetado semántico de cifras y advertencias de presentación — `APROBADA, IMPLEMENTACIÓN PENDIENTE (T-617C)`
+
+**Estado y límite.** Esta sección aprueba únicamente el **contrato** (forma
+de los campos públicos y su ubicación de persistencia). No autoriza código,
+migraciones, cambios de `golden-v1`/`golden-v2`, umbrales, cardinalidades ni
+el contrato de calidad de evidencia (`contracts/validacion-calidad.md`). La
+implementación (T-617C) permanece abierta y sujeta a su propia auditoría y
+puerta antes de cerrar T-617.
+
+**Problema comprobado.** La corrida diagnóstica real
+`agent_run_id=72143e94-2216-471d-95b3-b2b2c090f629`
+(`backend/eval/reports/t617b0-pilot005-directed-retry.md`) preservó
+correctamente la entidad solicitada y produjo evidencia y claims
+reproducibles, pero sintetizó «764, 719, 2.026 y 2» sin indicar cuáles
+cifras eran hombres, mujeres, año o código SIGEP. La auditoría de código
+(`backend/eval/reports/t617c-semantic-claim-labels.md`, Fase A de T-617C)
+confirmó la causa raíz: el alias SoQL interno (`dim_N`/`metric_N`) sustituye
+al nombre de columna real en `BuiltClaim.columns_used` y en el texto que ve
+el sintetizador; la etiqueta humana (`display_name`) nunca se propaga más
+allá de la fase de planificación; y ningún validador existente
+(`find_orphan_figures`) comprueba etiquetas, solo cifras. La misma auditoría
+confirmó que **no existe ningún campo contractual vigente** para persistir y
+exponer una advertencia quando el etiquetado sea ambiguo, distinto de
+`evidence[].quality.warnings_user` (que es calidad de la evidencia como
+conjunto, no del etiquetado de una cifra individual, `contracts/validacion-calidad.md`
+§6).
+
+**Alternativas evaluadas.**
+
+1. Reutilizar `evidence[].quality.warnings_user` para advertencias de
+   etiquetado: rechazada explícitamente — mezclaría dos responsabilidades ya
+   documentadas como separadas (`validacion-calidad.md` §6: "Son
+   complementarias y AMBAS obligatorias" pero distintas).
+2. Agregar una columna nueva a la tabla relacional `quantitative_claims`
+   (p. ej. `label_status`) mediante migración: rechazada para este
+   incremento — exigiría una migración de base de datos, fuera de alcance
+   explícito ("no crear migraciones"); queda documentada como alternativa
+   futura si se decide persistir el estado de etiquetado con la misma
+   granularidad transaccional que el resto del claim.
+3. Persistir la advertencia y la etiqueta únicamente dentro de
+   `agent_runs.final_answer` (JSONB existente, sin migración) y exponerlas en
+   la respuesta pública como campos opcionales y retrocompatibles: **elegida**
+   — no requiere migración, es aditiva (históricos sin el campo equivalen a
+   `label=null`/`label_status` ausente/`presentation_warnings=[]`, mismo
+   patrón ya usado por T-615 para `textual_facts`/`partial_textual_facts`), y
+   mantiene la separación de responsabilidades con la calidad de evidencia.
+
+**Decisión aprobada.**
+
+- En cada claim público (`RespuestaFinal.claims[]`, `contracts/api-rest.md`
+  §4c): dos campos opcionales y retrocompatibles, `label: string | null` y
+  `label_status: "verified" | "ambiguous"`. `verified` significa que la
+  etiqueta fue derivada de metadatos estructurados (columna fuente, nombre
+  visible del plan validado o equivalente) y puede vincularse con la columna
+  fuente real. `ambiguous` significa que el sistema no encontró una
+  asociación inequívoca y **no inventó** una etiqueta; la cifra se conserva
+  si sigue siendo útil y verificable (RF-211), y su ausencia de etiqueta
+  queda señalada, no oculta.
+- En la raíz de `RespuestaFinal` (`contracts/api-rest.md` §4c): campo nuevo,
+  aditivo y opcional, `presentation_warnings: array`, vacío por defecto.
+  Cada elemento: `claim_id`, `code` (inicialmente solo `AMBIGUOUS_LABEL`,
+  extensible), `message_user` en español claro (mismo estándar que
+  `quality.warnings_user`, Art. V.5: sin nombres técnicos de checks).
+- `presentation_warnings` es explícitamente distinto de
+  `evidence[].quality.warnings_user`: uno evalúa la evidencia como conjunto
+  (score, elegibilidad, frescura, nulos); el otro evalúa si una cifra
+  individual ya presentada puede etiquetarse sin ambigüedad. Ambos pueden
+  coexistir sobre el mismo claim/evidencia sin fusionarse.
+- Una advertencia de presentación NUNCA convierte por sí sola una corrida
+  `completed` en `no_evidence`; RF-211 sigue gobernando cuándo una respuesta
+  parcial pero verificable es entregable.
+- `columns_used`/`columns` en cada claim público DEBE representar el nombre
+  de columna fuente real, nunca el alias interno de la consulta SoQL
+  (`dim_N`/`metric_N`). Esto **no es un campo nuevo**: es una aclaración
+  formal de una discrepancia código-contrato preexistente — `data-model.md`
+  §"quantitative_claims" y el ejemplo histórico de `contracts/api-rest.md`
+  §4 (`"columns": ["matriculados", "desertores"]`) ya documentaban nombres de
+  columna reales; el código vigente antes de T-617C no cumple ese contrato
+  ya existente. La corrección de código queda en el alcance de T-617C.
+- Sin migración: `agent_runs.final_answer` es JSONB; los tres campos nuevos
+  (`label`, `label_status`, `presentation_warnings`) se añaden dentro de ese
+  blob y en la serialización de la API pública, sin tocar
+  `quantitative_claims` ni ninguna tabla relacional.
+- La selección de qué claims aparecen en la narrativa principal (relevancia
+  semántica respecto a la intención, exclusión de identificadores/dimensiones
+  auxiliares no solicitados) es responsabilidad de T-617C (código); esta
+  enmienda solo aprueba que dicha selección exista y sea general — nunca
+  condicionada por `case_id`, `dataset_id`, la pregunta literal o valores
+  concretos de un caso.
+
+**Consecuencias.** RNF-003, RF-208 y el contrato de calidad de evidencia
+(`contracts/validacion-calidad.md`) conservan literalmente su alcance,
+métricas y condición bloqueante. `golden-v1`/`golden-v2`, sus cardinalidades
+y umbrales no cambian. T-617C queda autorizada para implementar código y
+pruebas contra este contrato; T-617 y T-701 permanecen bloqueadas hasta que
+T-617C se audite y cierre con evidencia real.
+
 ---
 
 *Para añadir una nueva decisión: sección numerada, estado, problema, alternativas, criterios, decisión y consecuencias. Las decisiones `PENDIENTE` bloquean las tareas que dependan de ellas (ver tasks.md).*

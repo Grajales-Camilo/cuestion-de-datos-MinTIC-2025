@@ -96,6 +96,28 @@ Reglas duras adicionales de calidad (independientes del puntaje):
 - `schema.non_empty_result` fallido ⇒ la evidencia no se presenta como hallazgo; se trata como "consulta sin resultados".
 - D4 `source_complete` fallido ⇒ `no_recomendada` automática (Art. I.2: sin fuente completa no hay evidencia).
 
+### 3.1a Bloqueos y advertencias de suficiencia (RF-211)
+
+La validación protege la confiabilidad de la evidencia; no certifica que la
+consulta sea la mejor entre todas las consultas posibles. Una evidencia
+elegible puede sustentar una respuesta suficientemente correcta aunque exista
+una selección, filtro, orden, agregación o precisión mejorable.
+
+Son bloqueos: cifras no reproducibles o fabricadas; dataset o fuente que no
+sustenta la respuesta; contradicción material entre pregunta, filas y
+conclusión; ausencia de trazabilidad; datos personales prohibidos; y fallos
+sistemáticos que impiden evaluar la respuesta.
+
+Son advertencias no bloqueantes cuando no alteran la conclusión material:
+consulta mejorable; selección temporal no óptima; cobertura parcial declarada;
+precisión menor a la deseable; y existencia de otra consulta potencialmente
+superior. Si cualquiera de ellas cambia la respuesta, oculta un período
+indispensable o impide verificar la afirmación, se considera contradicción u
+omisión material y deja de ser una advertencia.
+
+Esta distinción no cambia pesos, umbrales, `eligibility_status` ni la integridad
+obligatoria de claims. Tampoco autoriza reglas específicas por caso.
+
 ### 3.2 Registro canónico de publicadores oficiales
 
 La validación usa un fixture versionado cargado en `official_publishers` y `official_publisher_aliases`. `official_publishers` usa `id` como identificador estable; los alias viven en tabla separada con unicidad global solo para `alias_normalized` no ambiguos (`ambiguous=false`) mediante índice parcial o mecanismo equivalente. La normalización elimina tildes, convierte a mayúsculas, colapsa espacios y aplica solo alias explícitos del fixture. Universidades públicas, empresas industriales y comerciales del Estado, establecimientos públicos, alcaldías, gobernaciones y demás entidades estatales se aceptan únicamente si están en el registro o en sus alias verificados. Un alias ambiguo produce `publisher_verification_status="unknown"`, nunca asignación automática.
@@ -168,3 +190,20 @@ Esta capa valida la **evidencia** (los datos recuperados como conjunto). La vali
 1. Ninguna evidencia llega al constructor de afirmaciones sin `quality_report` (Art. I.4).
 2. Ningún claim se construye sobre evidencia clasificada `no_recomendada` como sustento principal (§3).
 3. La clasificación de calidad de la evidencia fuente acompaña a cada claim en la presentación: un claim derivado de evidencia `baja` hereda la advertencia correspondiente en `warnings_user`.
+
+**Separación explícita frente a `presentation_warnings` (RF-212, T-617C-A,
+`research.md` §29):** `warnings_user` (este documento) evalúa la **evidencia
+como conjunto** — score, elegibilidad, frescura, proporción de nulos — y se
+hereda por todos los claims derivados de esa evidencia. `presentation_warnings`
+(`contracts/api-rest.md` §4c) evalúa si **una cifra individual ya
+presentada** tiene una etiqueta humana verificable derivada de metadatos
+estructurados de su columna fuente, independientemente de la calidad de la
+evidencia que la sustenta. Un claim puede tener `warnings_user` heredado de
+su evidencia y, al mismo tiempo, `label_status="verified"` sin ninguna
+entrada en `presentation_warnings` — o viceversa: evidencia `alta` sin
+ninguna advertencia de calidad, pero con `label_status="ambiguous"` porque
+su columna fuente no tiene un nombre/`display_name` que permita derivar una
+etiqueta inequívoca. Ninguna implementación de T-617C debe fusionar ambos
+campos, escribir advertencias de etiquetado en `warnings_user`, ni modificar
+este documento (§1-§5, umbrales, checks, `validator_version`) para
+producirlas.

@@ -229,6 +229,26 @@ Antes de repetir 50 casos se ejecutan estos 10:
 
 Puerta: negativos 2/2, ningún caso sólido retrocede, todos los fallos tienen etapa/código y el reporte queda persistido con commit, runtime, modelo, suite y semilla.
 
+#### Interpretación proporcional de resultados (RF-211)
+
+La evaluación busca detectar respuestas falsas o materialmente equivocadas; no
+probar que cada SoQL sea la consulta óptima entre millones de posibilidades.
+El reporte debe conservar por separado:
+
+- el veredicto mecánico de la puerta y sus métricas, sin reescribirlo;
+- los bloqueos reales: fabricación, fuente equivocada, contradicción material,
+  ausencia de evidencia verificable, privacidad o fallo sistemático;
+- las advertencias no bloqueantes: consulta mejorable, selección temporal no
+  óptima sin efecto material, cobertura parcial declarada, menor precisión o
+  una alternativa potencialmente superior.
+
+Una respuesta con datos correctos, claims reproducibles, fuente consultable y
+limitaciones transparentes no falla únicamente porque otro SoQL sería más
+elegante o completo. La prueba sí debe fallar si la diferencia cambia el valor,
+la conclusión o el alcance indispensable de la pregunta. Esta regla no modifica
+las cardinalidades, los umbrales de la puerta ni los contenidos congelados de
+las suites golden.
+
 #### Versionado de suites doradas
 
 - `golden-v1.yaml` está congelado y continúa ejecutándose como regresión histórica.
@@ -408,6 +428,63 @@ La evaluación propuesta reporta
 T-615 no corre Gemini, no repite RNF-010 y no crea `golden-v2`. T-616 debe
 auditar primero los 50 casos y solo con autorización puede materializar
 `acceptable_facts` discriminados. `golden-v1` permanece byte a byte intacto.
+
+### 4.6 Matriz de pruebas para etiquetado semántico y advertencias de presentación (T-617C)
+
+> **CONTRATO APROBADO EN T-617C-A; IMPLEMENTACIÓN PENDIENTE.** Esta matriz
+> define la aceptación mínima obligatoria que T-617C debe satisfacer contra
+> el contrato de `research.md` §29 / `contracts/api-rest.md` §4c. Ninguna de
+> estas pruebas ejecuta Gemini, Socrata ni PostgreSQL real; todas usan dobles
+> deterministas.
+
+#### Unitarias del dominio (etiquetado y relevancia)
+
+| Área | Casos obligatorios | Resultado esperado |
+|---|---|---|
+| Derivación de etiqueta | columna con `field_name`/`display_name` estructurado disponible (equivalente genérico a `genero_hombre`/`genero_mujer`, sin condicionar por nombre de dataset o pregunta concreta) | `label_status="verified"`, `label` no vacío, derivado del metadato, nunca del valor numérico. |
+| Intercambio de etiqueta | dos columnas con valores distintos en la misma fila | Cada `label` permanece asociado a su propio `columns_used`/`raw_value`; invertir el orden de iteración no debe cambiar qué etiqueta corresponde a qué valor. |
+| Ambigüedad | columna sin metadato estructurado suficiente para derivar una etiqueta inequívoca | `label=null`, `label_status="ambiguous"`, entrada correspondiente en `presentation_warnings` con `code="AMBIGUOUS_LABEL"` y `message_user` en español claro; el claim permanece en `claims[]` con su `display_value` intacto. |
+| No invención | igual que el caso anterior | Ningún `label` se rellena con una inferencia libre del LLM ni con una heurística basada solo en `raw_value`/`display_value`. |
+| Relevancia | intención con administrative_terms/tema que corresponde a un subconjunto de columnas devueltas, más columnas auxiliares (identificador técnico, dimensión de contexto no solicitada) usando fixtures genéricos (no `pilot-005`, no nombres de Cancillería) | Solo los claims relacionados con la intención aparecen en la narrativa principal; los auxiliares no solicitados quedan fuera de `summary`/`narrative` (pueden seguir existiendo en `claims[]`). |
+| Solicitud explícita | la pregunta del fixture pide explícitamente el identificador/dimensión auxiliar | Ese claim sí puede aparecer en la narrativa principal, con su etiqueta si es derivable. |
+| Generalidad | ningún test ni código de producción referencia `pilot-005`, `case_id`, `dataset_id` concretos, "Cancillería"/"Ministerio de Relaciones Exteriores" ni los valores 764/719 como condición de selección | Prueba de auditoría (`grep`) confirma ausencia de esos literales fuera de comentarios/fixtures explícitamente marcados como ejemplo. |
+
+#### Contrato y compatibilidad
+
+- `claims[].label`/`claims[].label_status` ausentes en un histórico equivalen
+  a `null`; no se infiere ni se reescribe retroactivamente.
+- `presentation_warnings` ausente en un histórico equivale a `[]`.
+- Snapshot/diff de esquema: `claims[]` conserva todos sus campos previos
+  (§4) sin eliminar ni renombrar ninguno; los dos campos nuevos son
+  estrictamente aditivos.
+- `columns_used`/`columns` de cada claim nuevo contiene nombres de columna
+  reales; una prueba de regresión confirma que ningún claim expone un alias
+  con forma `dim_\d+`/`metric_\w+_\d+`.
+- `presentation_warnings[].claim_id` siempre referencia un `claim_id`
+  presente en `claims[]` de la misma respuesta (sin huérfanos de
+  advertencia).
+
+#### Fallback determinista
+
+- El fallback sin LLM (`grounded-synthesis-fallback-v1` o equivalente)
+  también deriva `label`/`label_status` y produce `presentation_warnings`
+  cuando corresponde; ninguna ruta de fallback puede volver a enumerar
+  cifras con `claim`/`description` como único texto (regresión directa del
+  patrón «764, 719, 2.026 y 2» que originó T-617C).
+
+#### No regresión
+
+1. `RNF-003` (cobertura de claims=100%, reproducibles=100%, huérfanas=0) sin
+   cambios: los campos nuevos no alteran `raw_value`/`display_value`/`source_hash`.
+2. Síntesis puramente textual (T-615) y respuestas mixtas no retroceden:
+   `textual_facts`/`partial_textual_facts` sin cambios de forma.
+3. Casos negativos (`no_evidence`) no adquieren `presentation_warnings` ni
+   `label`/`label_status` — ambos campos solo tienen sentido sobre
+   `claims[]` no vacío.
+4. Una advertencia de presentación por sí sola nunca cambia `status` de
+   `completed` a `no_evidence` (prueba directa del requisito RF-212).
+5. Aceptación determinista relacionada (`test_deterministic_*`) permanece
+   verde sin modificar sus aserciones normativas previas.
 
 ## 5. Pruebas E2E de frontend y accesibilidad (WCAG 2.2 AA)
 

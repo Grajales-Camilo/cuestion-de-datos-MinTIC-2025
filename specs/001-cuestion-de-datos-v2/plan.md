@@ -395,6 +395,24 @@ Cuando el determinista cumpla simultáneamente aceptación E2E verde, integracio
 
 T-701 hace efectivo `AGENT_RUNTIME=deterministic` en el entorno desplegado, comprueba el rollback explícito a `legacy` y el retorno al determinista, y da inicio a la ventana de una versión durante la cual el legado permanece congelado como emergencia. T-703 verifica RNF-001/RNF-009 sobre los primeros siete días consecutivos de tráfico real, separando y excluyendo las corridas sintéticas de evaluación y canary. Una muestra incompleta produce `INSUFFICIENT_EVIDENCE` y extiende la observación; no autoriza a mezclar tráfico controlado con tráfico de usuarios. Solo después de cerrar esa validación operativa se eliminan el selector y el código legado mediante una fase independiente y reversible.
 
+### 13.4 Política de suficiencia y optimización
+
+El runtime implementa RF-211 para operar sobre el catálogo completo sin
+convertir la búsqueda de una consulta ideal en una condición de entrega. El
+pipeline conserva esta prioridad:
+
+1. seguridad, elegibilidad, procedencia y ausencia de fabricación;
+2. correspondencia material entre pregunta, evidencia y respuesta;
+3. transparencia sobre límites, ambigüedad y cobertura;
+4. optimización de dataset, filtros, temporalidad, agregación y precisión.
+
+Los niveles 1 y 2 contienen condiciones bloqueantes. Las oportunidades del
+nivel 4 son advertencias cuando no cambian materialmente el resultado y la
+limitación queda visible. Una mejora de consulta no justifica añadir reglas por
+`case_id`, `dataset_id` o pregunta, ni impedir una respuesta verificable. Si la
+limitación cambia la conclusión, usa una fuente distinta a la afirmada o deja
+la respuesta sin sustento, deja de ser una mejora y pasa a ser un bloqueo.
+
 ## 14. Enmienda T-615 aprobada: arquitectura de hechos fundamentados
 
 > **IMPLEMENTACIÓN INCREMENTAL.** T-615A fue aprobada y T-615B…T-615F están
@@ -496,3 +514,63 @@ regla de secuencia exigía cerrar y aprobar T-615 antes de iniciar T-616, y
 cerrar T-616 antes de T-617. Ambas dependencias quedaron satisfechas el
 2026-07-18; T-617 conserva únicamente sus puertas propias de §13.3 y
 `pruebas.md` §4.4.
+
+## 15. Enmienda T-617C-A aprobada: contrato de etiquetado semántico y advertencias de presentación
+
+> **CONTRATO APROBADO, IMPLEMENTACIÓN PENDIENTE.** Esta sección documenta
+> únicamente la forma y ubicación de los campos públicos aprobados en
+> `research.md` §29. T-617C (código, pruebas, corrección de `columns_used`)
+> permanece abierta; T-617 sigue bloqueada hasta que T-617C se audite y
+> cierre.
+
+### 15.1 Flujo de etiquetas objetivo
+
+El flujo real trazado en `backend/eval/reports/t617c-semantic-claim-labels.md`
+pierde la etiqueta humana en dos puntos: (a) el renderer SoQL sustituye el
+nombre de columna real por un alias posicional (`dim_N`/`metric_N`) sin
+persistir el mapeo, y (b) el constructor de claims
+(`deterministic_pipeline._claim_specs`) itera solo sobre esos alias, sin
+`zip` contra el `field_name` del plan validado. El flujo objetivo que
+T-617C debe implementar es:
+
+```text
+ValidatedQueryPlan (field_name real por dimensión/métrica)
+  → RenderedQuery (alias dim_N/metric_N, mapeo alias→field_name conservado)
+  → EvidenceResult (filas indexadas por alias, Socrata)
+  → constructor de claims: zip(alias, field_name/display_name) por fila
+       → BuiltClaim.columns_used = field_name real (nunca el alias)
+       → etiqueta candidata = display_name (si el plan/candidato lo conserva)
+                                o field_name humanizado determinista
+  → clasificador de relevancia semántica (genérico, sin condicionar por
+    case_id/dataset_id/pregunta literal): claims que responden la intención
+    vs. identificadores/dimensiones auxiliares no solicitados
+  → si la etiqueta no puede vincularse de forma inequívoca:
+       label=null, label_status="ambiguous", presentation_warnings += entrada
+       (la cifra se conserva si sigue siendo útil y verificable, RF-211)
+  → AllowedGroundedFacts / GroundedSynthesisPlan / fallback determinista
+       (deben cubrir también etiquetado y advertencias — ninguna ruta,
+       incluido el fallback sin LLM, puede volver a enumerar cifras sin
+       significado)
+  → final_answer.claims[].label/label_status
+    + final_answer.presentation_warnings[]
+```
+
+### 15.2 Persistencia sin migración
+
+`label`, `label_status` y `presentation_warnings` viven exclusivamente
+dentro de `agent_runs.final_answer` (JSONB ya existente, plan.md §11/§12) y
+en la serialización de `RespuestaFinal` (`contracts/api-rest.md` §4c). No se
+añade ninguna columna a `quantitative_claims` ni a ninguna otra tabla
+relacional; no hay migración de Alembic asociada a esta enmienda. Un
+histórico sin estos campos equivale a `label=null`/`label_status` ausente en
+cada claim y `presentation_warnings=[]` a nivel raíz — mismo patrón aditivo
+ya usado por T-615 para `textual_facts`/`partial_textual_facts` (§14.3).
+
+### 15.3 Relación con la calidad de evidencia
+
+`presentation_warnings` (etiquetado de una cifra individual) y
+`evidence[].quality.warnings_user` (calidad de la evidencia como conjunto,
+`contracts/validacion-calidad.md`) son capas independientes que pueden
+coexistir sobre el mismo claim/evidencia sin fusionarse ni sustituirse. La
+implementación de T-617C no debe modificar `app/quality/validator.py` ni el
+contrato de calidad de evidencia para producir `presentation_warnings`.

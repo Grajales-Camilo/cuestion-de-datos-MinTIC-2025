@@ -283,7 +283,7 @@ Afirmaciones cuantitativas trazables (RF-208). Toda cifra presentada al usuario 
 | `claim_text` | text NOT NULL | Enunciado en lenguaje natural ("La tasa fue 8,4 %"). |
 | `claim_type` | text NOT NULL | `direct` (valor tomado tal cual de una celda) \| `derived` (calculado con fórmula). |
 | `source_row_indexes` | int[] NOT NULL | Índices de las filas de `evidence_results.rows` usadas (o `[-1]` si opera sobre el agregado completo). |
-| `columns_used` | text[] NOT NULL | Columnas utilizadas. |
+| `columns_used` | text[] NOT NULL | Columnas fuente utilizadas, identificadas por su **nombre de columna real** (p. ej. `genero_hombre`), NUNCA por el alias interno posicional que el renderer SoQL asigna para el `SELECT` (`dim_N`/`metric_N`, ver `contracts/agent-tools.md` T5). El alias es un detalle de implementación de la consulta y no debe filtrarse a este campo ni a ningún campo público derivado de él (RF-212, T-617C-A). Esta regla ya estaba implícita en los ejemplos previos de `contracts/api-rest.md` §4 (`"columns": ["matriculados", "desertores"]`); T-617C-A la hace explícita porque el código vigente antes de esa enmienda no la cumplía (`backend/eval/reports/t617c-semantic-claim-labels.md`). |
 | `formula` | jsonb | DSL reproducible de fórmula (ver `contracts/agent-tools.md` T7). NULL solo si `claim_type = direct`. |
 | `raw_value` | numeric NOT NULL | Valor bruto sin redondear (`8.3721`). |
 | `display_value` | text NOT NULL | Valor exactamente como se presenta ("8,4 %"). |
@@ -292,6 +292,20 @@ Afirmaciones cuantitativas trazables (RF-208). Toda cifra presentada al usuario 
 | `source_hash` | text NOT NULL | Hash SHA-256 canónico de contenido: JSON con versión de algoritmo, `dataset_id`, `soql_query` canonicalizada, filas fuente seleccionadas y ordenadas por regla determinista, columnas usadas, DSL de fórmula normalizada, `raw_value`, `unit` y `rounding`. No incluye `evidence_id`, `claim_id`, `run_id` ni timestamps. |
 
 **Reglas:** `raw_value` DEBE ser reproducible re-aplicando `formula` sobre las filas referenciadas (verificado en pruebas.md §4.2); `display_value` DEBE derivarse de `raw_value` + `rounding` + `unit`; el verificador de groundedness comprueba que ninguna cifra del texto final carece de claim. La canonicalización de filas debe ser explícita: usa `source_row_indexes` ordenados de forma ascendente sobre el arreglo de `evidence_results.rows`, que a su vez proviene de una consulta SoQL canonicalizada con orden determinista cuando el orden afecte el claim. Cambiar contenido de fila, fórmula, columnas, `raw_value`, unidad o redondeo cambia el hash; cambiar únicamente UUIDs de corrida/evidencia/claim no lo cambia.
+
+**Etiquetado semántico y advertencias de presentación (RF-212, T-617C-A) —
+SIN MIGRACIÓN DE ESTA TABLA.** `label`, `label_status` y
+`presentation_warnings` (contrato completo en `contracts/api-rest.md` §4c,
+decisión en `research.md` §29) **no son columnas de `quantitative_claims`**.
+Se persisten y se sirven exclusivamente dentro del JSONB `agent_runs.final_answer`
+(tabla `agent_runs`, ya existente) y en la serialización pública de
+`RespuestaFinal.claims[]`/`RespuestaFinal.presentation_warnings`. Esta tabla
+relacional no gana columnas nuevas por esta enmienda; `source_hash` y el
+resto de campos anteriores no cambian de significado ni de cálculo. Si una
+futura ronda decide persistir el estado de etiquetado con la misma
+granularidad transaccional que el resto del claim (alternativa 2 evaluada en
+`research.md` §29), eso requerirá una migración explícita, versionada y
+reversible, fuera del alcance de T-617C-A.
 
 ### `textual_facts` — PROPUESTA T-615
 
