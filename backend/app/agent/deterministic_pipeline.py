@@ -23,6 +23,7 @@ from app.agent.plan_validator import (
 )
 from app.agent.query_plan import PiiRiskLevel, QueryOperation, SortTargetKind
 from app.agent.soql_renderer import RenderedQuery, render_soql
+from app.quality.claim_labels import COUNT_FIELD_SENTINEL
 from app.quality.claims import (
     ClaimsBuildResult,
     ClaimSpec,
@@ -123,6 +124,23 @@ def _selected_columns(rendered: RenderedQuery) -> tuple[SelectedColumn, ...]:
     return tuple(selected)
 
 
+def _column_field_names(plan: ValidatedQueryPlan, rendered: RenderedQuery) -> dict[str, str]:
+    """Mapea cada alias de ejecución (`dim_N`/`metric_<op>_N`/`group_count`) al
+    nombre de columna fuente real, o al centinela `COUNT_FIELD_SENTINEL`
+    cuando el alias representa `count(*)` sin columna propia (RF-212)."""
+
+    mapping: dict[str, str] = {}
+    for dimension, alias in zip(plan.dimensions, rendered.dimension_aliases, strict=True):
+        mapping[alias] = dimension.field_name
+    for metric, alias in zip(plan.metrics, rendered.metric_aliases, strict=True):
+        mapping[alias] = (
+            metric.field_name if metric.field_name is not None else COUNT_FIELD_SENTINEL
+        )
+    if rendered.group_count_alias is not None:
+        mapping[rendered.group_count_alias] = COUNT_FIELD_SENTINEL
+    return mapping
+
+
 def _claim_specs(
     plan: ValidatedQueryPlan, rendered: RenderedQuery, rows: tuple[dict, ...]
 ) -> tuple[ClaimSpec, ...]:
@@ -132,6 +150,7 @@ def _claim_specs(
         if plan.operation is QueryOperation.LOOKUP
         else rendered.metric_aliases
     )
+    column_field_names = _column_field_names(plan, rendered)
     for row_index, row in enumerate(rows):
         for alias in aliases:
             if row.get(alias) is None:
@@ -142,6 +161,7 @@ def _claim_specs(
                     description=f"{plan.purpose} ({alias}, fila {row_index})",
                     source_row_indexes=(row_index,),
                     columns=(alias,),
+                    column_field_names=column_field_names,
                 )
             )
     return tuple(specs)
@@ -162,6 +182,7 @@ def _lookup_presence_specs(
             strict=True,
         )
     )
+    column_field_names = _column_field_names(plan, rendered)
     for row_index, row in enumerate(rows[:12]):
         observed = tuple(
             (field_name, alias, row.get(alias))
@@ -181,6 +202,7 @@ def _lookup_presence_specs(
                 source_row_indexes=(row_index,),
                 columns=(count_alias,),
                 formula={"agg": "count", "col": count_alias},
+                column_field_names=column_field_names,
             )
         )
     return tuple(specs)

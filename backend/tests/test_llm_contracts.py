@@ -639,6 +639,73 @@ def test_grounded_synthesis_accepts_only_existing_claims_and_supported_figures()
         )
 
 
+def _labeled_claim(display_value: str, label: str, label_status: str = "verified") -> BuiltClaim:
+    return BuiltClaim(
+        claim_type="direct",
+        description="Total",
+        raw_value=Decimal(display_value.replace(".", "").replace(",", "")),
+        display_value=display_value,
+        unit=None,
+        rounding=0,
+        formula=None,
+        source_row_indexes=(0,),
+        columns_used=("dim_1",),
+        source_hash="sha256:test",
+        public_columns=("columna_real",),
+        label=label,
+        label_status=label_status,
+    )
+
+
+def test_grounded_synthesis_accepts_verified_label_next_to_its_own_value() -> None:
+    claim = _labeled_claim("764", "Hombres")
+    synthesis = GroundedSynthesis(
+        answer="La planta está compuesta por Hombres: 764.",
+        cited_claim_indexes=(0,),
+    )
+    validate_grounded_synthesis(synthesis, (claim,))
+
+
+def test_grounded_synthesis_rejects_swapped_label_between_two_cited_claims() -> None:
+    """RF-212: no debe bastar con que la etiqueta y la cifra existan en el
+    texto en cualquier parte; deben corresponder al MISMO claim citado."""
+
+    hombres = _labeled_claim("764", "Hombres")
+    mujeres = _labeled_claim("719", "Mujeres")
+    swapped_answer = (
+        "En la categoría reportada como Mujeres se observó un total "
+        "consolidado que asciende a 764, mientras que en la categoría "
+        "identificada por separado como Hombres el resultado fue distinto: "
+        "solamente 719."
+    )
+    synthesis = GroundedSynthesis(answer=swapped_answer, cited_claim_indexes=(0, 1))
+    with pytest.raises(ValueError, match="no asocia la etiqueta"):
+        validate_grounded_synthesis(synthesis, (hombres, mujeres))
+
+
+def test_grounded_synthesis_skips_label_check_for_ambiguous_claims() -> None:
+    ambiguous = BuiltClaim(
+        claim_type="derived",
+        description="Tasa",
+        raw_value=Decimal("8.4"),
+        display_value="8,4 %",
+        unit="%",
+        rounding=1,
+        formula={"op": "div", "args": [{"col": "a"}, {"col": "b"}]},
+        source_row_indexes=(0,),
+        columns_used=("dim_1", "dim_2"),
+        source_hash="sha256:test",
+        public_columns=("columna_a", "columna_b"),
+        label=None,
+        label_status="ambiguous",
+    )
+    synthesis = GroundedSynthesis(
+        answer="Resultado observado: 8,4 % (sin etiqueta verificable).",
+        cited_claim_indexes=(0,),
+    )
+    validate_grounded_synthesis(synthesis, (ambiguous,))
+
+
 def test_normalizes_explicit_year_only_for_observed_temporal_column() -> None:
     temporal_context = context().model_copy(
         update={

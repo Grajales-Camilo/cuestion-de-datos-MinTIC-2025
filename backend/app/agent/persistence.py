@@ -292,7 +292,11 @@ async def persist_claims(
                     "evidence_id": str(evidence_id),
                     "dataset_id": dataset_id,
                     "source_row_indexes": list(claim.source_row_indexes),
-                    "columns": list(claim.columns_used),
+                    # RF-212 (T-617C-A §4c): nombre de columna fuente real,
+                    # nunca el alias de ejecución `dim_N`/`metric_N` -- ese
+                    # alias sigue viviendo en `columns_used`/DB para
+                    # reproducir `source_hash`, pero nunca se expone aquí.
+                    "columns": list(claim.public_columns),
                     "formula": claim.formula,
                     "raw_value": (
                         int(claim.raw_value)
@@ -303,6 +307,8 @@ async def persist_claims(
                     "unit": claim.unit,
                     "rounding": claim.rounding,
                     "source_hash": claim.source_hash,
+                    "label": claim.label,
+                    "label_status": claim.label_status,
                 }
             )
     return records

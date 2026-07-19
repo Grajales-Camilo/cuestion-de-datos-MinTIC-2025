@@ -48,6 +48,7 @@ from app.llm.factory import (
     get_structured_chat_model,
     usage_from_message,
 )
+from app.quality.claim_labels import claim_is_relevant_to_narrative, intent_relevance_tokens
 from app.quality.grounded_facts import GroundedSynthesisPlan
 from app.quality.grounded_synthesis import AllowedGroundedFacts
 from app.tools.catalog_lookup import fetch_columns_catalog
@@ -439,14 +440,26 @@ def build_real_runtime_dependencies(
         )
 
     async def synthesize(intent, claims):
+        requested_tokens = intent_relevance_tokens(intent.topic, intent.administrative_terms)
+        indexed = list(enumerate(claims.claims))
+        relevant = [
+            (index, claim)
+            for index, claim in indexed
+            if claim_is_relevant_to_narrative(
+                claim.public_columns, requested_tokens=requested_tokens
+            )
+        ]
+        pool = relevant if relevant else indexed
         claim_view = [
             {
                 "claim_index": index,
                 "description": claim.description,
                 "display_value": claim.display_value,
                 "unit": claim.unit,
+                "label": claim.label,
+                "label_status": claim.label_status,
             }
-            for index, claim in enumerate(claims.claims)
+            for index, claim in pool
         ]
         return await _invoke(
             synthesis_model,
@@ -456,9 +469,13 @@ def build_real_runtime_dependencies(
                     content=(
                         "Redacta una respuesta clara usando solo los claims enumerados. Toda "
                         "respuesta debe citar como máximo 12 claims y priorizar los que contestan "
-                        "directamente la pregunta. "
-                        "cifra debe copiar un display_value citado. No agregues cálculos, fechas, "
-                        "porcentajes ni cantidades que no estén en esos claims."
+                        "directamente la pregunta. Cada "
+                        "cifra debe copiar un display_value citado. Usa exactamente el texto de "
+                        "'label' para describir cada cifra citada cuando 'label_status' sea "
+                        "'verified', colocando la etiqueta junto a su propio valor sin "
+                        "intercambiarla con la de otro claim. Si 'label_status' es 'ambiguous', "
+                        "menciona la cifra sin inventar una categoría para ella. No agregues "
+                        "cálculos, fechas, porcentajes ni cantidades que no estén en esos claims."
                     )
                 ),
                 HumanMessage(

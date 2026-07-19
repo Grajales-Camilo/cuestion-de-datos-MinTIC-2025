@@ -63,7 +63,8 @@ from app.agent.query_plan import (
     ScalarType,
 )
 from app.llm.factory import LLMProviderError
-from app.quality.claims import ClaimsBuildResult
+from app.quality.claim_labels import claim_is_relevant_to_narrative, intent_relevance_tokens
+from app.quality.claims import BuiltClaim, ClaimsBuildResult
 from app.quality.grounded_facts import GroundedSynthesisPlan
 from app.quality.grounded_synthesis import AllowedGroundedFacts
 
@@ -242,17 +243,41 @@ def _fold_text(value: str) -> str:
     )
 
 
-def _deterministic_synthesis(claims: ClaimsBuildResult) -> GroundedSynthesis:
-    selected = claims.claims[:8]
-    values = "; ".join(
-        f"{claim.display_value}{f' {claim.unit}' if claim.unit else ''}" for claim in selected
-    )
+def _render_claim_clause(claim: BuiltClaim) -> str:
+    """Redacta una cláusula etiquetada sin inventar la etiqueta ausente
+    (RF-212). `label_status="ambiguous"` se señala explícitamente en vez de
+    enumerar la cifra sin contexto."""
+
+    unit_suffix = f" {claim.unit}" if claim.unit else ""
+    if claim.label_status == "verified" and claim.label:
+        return f"{claim.label}: {claim.display_value}{unit_suffix}"
+    return f"{claim.display_value}{unit_suffix} (sin etiqueta verificable)"
+
+
+def _deterministic_synthesis(
+    claims: ClaimsBuildResult, intent: IntentExtraction
+) -> GroundedSynthesis:
+    """Fallback determinista (sin LLM) con las mismas garantías de
+    etiquetado y relevancia que la ruta normal (RF-212): prioriza claims
+    relevantes para la intención, excluye auxiliares/temporales no
+    solicitados y nunca enumera cifras sin significado."""
+
+    requested_tokens = intent_relevance_tokens(intent.topic, intent.administrative_terms)
+    indexed = list(enumerate(claims.claims))
+    relevant = [
+        (index, claim)
+        for index, claim in indexed
+        if claim_is_relevant_to_narrative(claim.public_columns, requested_tokens=requested_tokens)
+    ]
+    pool = relevant if relevant else indexed
+    selected = pool[:8]
+    values = "; ".join(_render_claim_clause(claim) for _index, claim in selected)
     suffix = (
         " Hay resultados adicionales en la evidencia adjunta." if len(claims.claims) > 8 else ""
     )
     return GroundedSynthesis(
         answer=f"Resultados calculados con la evidencia consultada: {values}.{suffix}",
-        cited_claim_indexes=tuple(range(len(selected))),
+        cited_claim_indexes=tuple(index for index, _claim in selected),
     )
 
 
@@ -590,11 +615,11 @@ async def run_deterministic_agent(
                 llm_calls += 1
             except LLMProviderError:
                 llm_calls += 1
-                synthesis = _deterministic_synthesis(execution.claims)
+                synthesis = _deterministic_synthesis(execution.claims, intent)
             try:
                 validate_grounded_synthesis(synthesis, execution.claims.claims)
             except ValueError:
-                synthesis = _deterministic_synthesis(execution.claims)
+                synthesis = _deterministic_synthesis(execution.claims, intent)
                 validate_grounded_synthesis(synthesis, execution.claims.claims)
             assert current is not None
             _replace_status(candidates, current, CandidateStatus.ACCEPTED)

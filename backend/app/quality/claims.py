@@ -68,8 +68,10 @@ import hashlib
 import json
 import re
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal, DecimalException
+
+from app.quality.claim_labels import LabelStatus, derive_claim_label
 
 CLAIMS_ALGORITHM_VERSION = "1.0.0"
 
@@ -89,6 +91,14 @@ class ClaimSpec:
     unit: str | None = None
     rounding: int | None = None
     formula: dict | None = None
+    #: Mapeo del alias de ejecución (p. ej. `dim_2`) usado en `columns` hacia
+    #: el nombre de columna fuente real (p. ej. `genero_hombre`). `columns`
+    #: sigue siendo el alias interno necesario para leer `EvidenceContext.rows`
+    #: y reproducir `source_hash`; este mapeo solo alimenta los campos
+    #: públicos `public_columns`/`label` (RF-212). Sin entrada para un alias
+    #: dado, ese alias se usa tal cual como nombre público (compatibilidad
+    #: retroactiva con specs que ya declaran nombres reales directamente).
+    column_field_names: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -108,8 +118,20 @@ class BuiltClaim:
     rounding: int
     formula: dict | None
     source_row_indexes: tuple[int, ...]
+    #: Alias de ejecución interno (p. ej. `dim_2`); NUNCA se expone tal cual
+    #: en un campo público (RF-212). Se conserva porque `compute_source_hash`
+    #: y la reverificación de hechos fundamentados dependen de que coincida
+    #: con las claves de `EvidenceContext.rows`/`evidence_results.rows`.
     columns_used: tuple[str, ...]
     source_hash: str
+    #: Nombre(s) de columna fuente real(es) usados por el claim, derivados de
+    #: `ClaimSpec.column_field_names` (RF-212). Este es el campo que debe
+    #: exponerse públicamente como `columns`/`columns_used`, nunca `columns_used`.
+    public_columns: tuple[str, ...] = ()
+    #: Etiqueta humana verificable (RF-212, `contracts/api-rest.md` §4c) o
+    #: `None` si `label_status="ambiguous"`.
+    label: str | None = None
+    label_status: LabelStatus = "ambiguous"
 
 
 @dataclass(frozen=True)
@@ -358,6 +380,12 @@ def _build_one_claim(evidence: EvidenceContext, spec: ClaimSpec) -> BuiltClaim:
         rounding=rounding,
     )
 
+    sorted_alias_columns = tuple(sorted(used_columns))
+    public_columns = tuple(
+        spec.column_field_names.get(alias, alias) for alias in sorted_alias_columns
+    )
+    label, label_status = derive_claim_label(public_columns)
+
     return BuiltClaim(
         claim_type=spec.claim_type,
         description=spec.description,
@@ -367,8 +395,11 @@ def _build_one_claim(evidence: EvidenceContext, spec: ClaimSpec) -> BuiltClaim:
         rounding=rounding,
         formula=spec.formula,
         source_row_indexes=sorted_indexes,
-        columns_used=tuple(sorted(used_columns)),
+        columns_used=sorted_alias_columns,
         source_hash=source_hash,
+        public_columns=public_columns,
+        label=label,
+        label_status=label_status,
     )
 
 
@@ -468,9 +499,22 @@ _LONG_DATE_RE = re.compile(
 )
 
 _SECTION_WORDS = (
-    "sección", "seccion", "artículo", "articulo", "numeral", "literal",
-    "capítulo", "capitulo", "anexo", "página", "pagina", "pág", "pag",
-    "núm", "num", "no.",
+    "sección",
+    "seccion",
+    "artículo",
+    "articulo",
+    "numeral",
+    "literal",
+    "capítulo",
+    "capitulo",
+    "anexo",
+    "página",
+    "pagina",
+    "pág",
+    "pag",
+    "núm",
+    "num",
+    "no.",
 )
 
 _RANGE_RE = re.compile(r"\b(\d+(?:[.,]\d+)?)\s*(?:-|a)\s*(\d+(?:[.,]\d+)?)\b")
@@ -549,6 +593,4 @@ def find_orphan_figures(text: str, accepted_display_values: Iterable[str]) -> tu
         for display_value in accepted_display_values
         for token in find_figures(display_value)
     }
-    return tuple(
-        token for token in find_figures(text) if _numeric_core(token) not in allowed_cores
-    )
+    return tuple(token for token in find_figures(text) if _numeric_core(token) not in allowed_cores)

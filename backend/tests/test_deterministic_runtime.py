@@ -114,6 +114,9 @@ def _claim() -> BuiltClaim:
         source_row_indexes=(0,),
         columns_used=("metric_0",),
         source_hash="sha256:test",
+        public_columns=("total",),
+        label="Total",
+        label_status="verified",
     )
 
 
@@ -362,7 +365,9 @@ async def test_runtime_retries_synthesis_with_orphan_figures() -> None:
     assert result.status == "completed"
     assert result.usage.llm_calls == 3
     assert result.synthesis is not None
-    assert result.synthesis.answer == "Resultados calculados con la evidencia consultada: 42."
+    assert (
+        result.synthesis.answer == "Resultados calculados con la evidencia consultada: Total: 42."
+    )
 
 
 @pytest.mark.asyncio
@@ -374,7 +379,9 @@ async def test_runtime_falls_back_to_grounded_synthesis_on_provider_error() -> N
     assert result.status == "completed"
     assert result.usage.llm_calls == 3
     assert result.synthesis is not None
-    assert result.synthesis.answer == "Resultados calculados con la evidencia consultada: 42."
+    assert (
+        result.synthesis.answer == "Resultados calculados con la evidencia consultada: Total: 42."
+    )
 
 
 @pytest.mark.asyncio
@@ -539,3 +546,140 @@ async def test_runtime_honors_cooperative_cancellation_between_transitions() -> 
             observe_transition=observer,
             is_cancelled=lambda: cancelled,
         )
+
+
+# --- RF-212: etiquetado y relevancia en el fallback determinista (T-617C) ----
+#
+# Fixture genérico (composición de personal por categoría, no pilot-005):
+# ninguna prueba de esta sección condiciona por case_id, dataset_id ni los
+# valores/entidad de pilot-005-empleo-publico.
+
+
+def _labeled_claim(
+    *,
+    display_value: str,
+    public_columns: tuple[str, ...],
+    label: str | None,
+    label_status: str,
+) -> BuiltClaim:
+    return BuiltClaim(
+        claim_type="direct",
+        description="Total",
+        raw_value=Decimal(display_value.replace(".", "")),
+        display_value=display_value,
+        unit=None,
+        rounding=0,
+        formula=None,
+        source_row_indexes=(0,),
+        columns_used=("dim_1",),
+        source_hash="sha256:test",
+        public_columns=public_columns,
+        label=label,
+        label_status=label_status,
+    )
+
+
+def _mixed_claims() -> ClaimsBuildResult:
+    return ClaimsBuildResult(
+        claims=(
+            _labeled_claim(
+                display_value="30",
+                public_columns=("categoria_a",),
+                label="Categoria a",
+                label_status="verified",
+            ),
+            _labeled_claim(
+                display_value="12",
+                public_columns=("categoria_b",),
+                label="Categoria b",
+                label_status="verified",
+            ),
+            _labeled_claim(
+                display_value="2025",
+                public_columns=("anio_reporte",),
+                label="Anio reporte",
+                label_status="verified",
+            ),
+            _labeled_claim(
+                display_value="00042",
+                public_columns=("codigo_interno",),
+                label="Codigo interno",
+                label_status="verified",
+            ),
+        ),
+        rejected=(),
+    )
+
+
+def test_deterministic_fallback_labels_each_verified_claim() -> None:
+    from app.agent.deterministic_runtime import _deterministic_synthesis
+
+    intent = IntentExtraction(
+        topic="composición del personal por categoría", operation=QueryOperation.SUM
+    )
+    synthesis = _deterministic_synthesis(_mixed_claims(), intent)
+
+    assert "Categoria a: 30" in synthesis.answer
+    assert "Categoria b: 12" in synthesis.answer
+
+
+def test_deterministic_fallback_excludes_temporal_and_auxiliary_by_default() -> None:
+    from app.agent.deterministic_runtime import _deterministic_synthesis
+
+    intent = IntentExtraction(
+        topic="composición del personal por categoría", operation=QueryOperation.SUM
+    )
+    synthesis = _deterministic_synthesis(_mixed_claims(), intent)
+
+    assert "2025" not in synthesis.answer
+    assert "00042" not in synthesis.answer
+    assert 0 in synthesis.cited_claim_indexes
+    assert 1 in synthesis.cited_claim_indexes
+    assert 2 not in synthesis.cited_claim_indexes
+    assert 3 not in synthesis.cited_claim_indexes
+
+
+def test_deterministic_fallback_includes_temporal_when_explicitly_requested() -> None:
+    from app.agent.deterministic_runtime import _deterministic_synthesis
+
+    intent = IntentExtraction(
+        topic="composición del personal por categoría",
+        operation=QueryOperation.SUM,
+        administrative_terms=("año",),
+    )
+    synthesis = _deterministic_synthesis(_mixed_claims(), intent)
+
+    assert 2 in synthesis.cited_claim_indexes
+
+
+def test_deterministic_fallback_marks_ambiguous_claim_without_inventing_label() -> None:
+    from app.agent.deterministic_runtime import _deterministic_synthesis
+
+    claims = ClaimsBuildResult(
+        claims=(
+            BuiltClaim(
+                claim_type="derived",
+                description="Tasa",
+                raw_value=Decimal("8.4"),
+                display_value="8,4 %",
+                unit="%",
+                rounding=1,
+                formula={"op": "div", "args": [{"col": "a"}, {"col": "b"}]},
+                source_row_indexes=(0,),
+                columns_used=("dim_1", "dim_2"),
+                source_hash="sha256:test",
+                public_columns=("categoria_a", "categoria_b"),
+                label=None,
+                label_status="ambiguous",
+            ),
+        ),
+        rejected=(),
+    )
+    intent = IntentExtraction(topic="tasa combinada", operation=QueryOperation.SUM)
+    synthesis = _deterministic_synthesis(claims, intent)
+
+    assert "8,4 %" in synthesis.answer
+    assert "sin etiqueta verificable" in synthesis.answer
+    # Nunca inventa una categoría combinando "categoria_a"/"categoria_b".
+    assert "categoria_a" not in synthesis.answer
+    assert "categoria_b" not in synthesis.answer

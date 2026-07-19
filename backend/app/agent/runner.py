@@ -72,6 +72,7 @@ from app.llm.factory import (
     LLMProviderError,
     get_structured_chat_model,
 )
+from app.quality.claim_labels import build_presentation_warnings
 from app.quality.grounded_facts import QuantitativeFactKind
 from app.quality.grounded_synthesis import (
     GroundedSynthesisValidationError,
@@ -434,6 +435,7 @@ async def execute_deterministic_agent_run_async(
         latency_ms = round((time.monotonic() - started) * 1000)
         evidence: list[dict] = []
         claims: list[dict] = []
+        presentation_warnings: list[dict] = []
         persisted = None
         has_internal_textual_result = result.execution is not None and bool(
             getattr(result.execution, "textual_facts", ())
@@ -572,6 +574,11 @@ async def execute_deterministic_agent_run_async(
                     if settings.deterministic_textual_facts_enabled
                     else list(persisted.claims)
                 )
+                # RF-212 (contracts/api-rest.md §4c): advertencia de
+                # presentación por claim con etiquetado ambiguo, distinta de
+                # evidence[].quality.warnings_user. Vacía si no hay ninguna;
+                # nunca convierte por sí sola `completed` en `no_evidence`.
+                presentation_warnings = build_presentation_warnings(claims)
 
         final_answer = {
             "run_id": str(run_id),
@@ -599,6 +606,7 @@ async def execute_deterministic_agent_run_async(
             ),
             "evidence": evidence,
             "claims": claims,
+            "presentation_warnings": presentation_warnings,
             "textual_facts": textual_facts,
             "partial_textual_facts": [],
             "no_evidence_report": (

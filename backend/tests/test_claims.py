@@ -512,3 +512,104 @@ def test_same_rows_and_spec_produce_same_claim() -> None:
     assert result_a.claims[0].raw_value == result_b.claims[0].raw_value
     assert result_a.claims[0].display_value == result_b.claims[0].display_value
     assert result_a.claims[0].source_hash == result_b.claims[0].source_hash
+
+
+# --- RF-212: etiquetado semántico (T-617C) -----------------------------------
+
+
+def test_built_claim_resolves_public_column_name_from_execution_alias() -> None:
+    """El alias de ejecución (`dim_1`) se preserva en `columns_used` (lo que
+    exige la reproducción del hash), pero `public_columns`/`label` exponen el
+    nombre de columna fuente real, nunca el alias."""
+
+    evidence = EvidenceContext(
+        dataset_id="abcd-1234",
+        canonical_soql="SELECT cantidad_empleados AS dim_1 LIMIT 1",
+        rows=({"dim_1": "12"},),
+    )
+    result = build_claims(
+        evidence,
+        [
+            spec(
+                columns=("dim_1",),
+                column_field_names={"dim_1": "cantidad_empleados"},
+                unit=None,
+            )
+        ],
+    )
+
+    assert result.rejected == ()
+    claim = result.claims[0]
+    assert claim.columns_used == ("dim_1",)
+    assert claim.public_columns == ("cantidad_empleados",)
+    assert claim.label == "Cantidad empleados"
+    assert claim.label_status == "verified"
+
+
+def test_column_field_names_never_change_source_hash_or_dsl_result() -> None:
+    """Añadir el mapeo de etiquetado no puede alterar `raw_value` ni
+    `source_hash`: la reproducibilidad del claim depende exclusivamente del
+    alias de ejecución (`columns`), no del nombre público derivado."""
+
+    evidence = EvidenceContext(
+        dataset_id="abcd-1234",
+        canonical_soql="SELECT cantidad_empleados AS dim_1 LIMIT 1",
+        rows=({"dim_1": "12"},),
+    )
+    without_mapping = build_claims(evidence, [spec(columns=("dim_1",), unit=None)])
+    with_mapping = build_claims(
+        evidence,
+        [
+            spec(
+                columns=("dim_1",),
+                column_field_names={"dim_1": "cantidad_empleados"},
+                unit=None,
+            )
+        ],
+    )
+
+    assert without_mapping.claims[0].raw_value == with_mapping.claims[0].raw_value
+    assert without_mapping.claims[0].source_hash == with_mapping.claims[0].source_hash
+
+
+def test_derived_claim_over_distinct_columns_is_ambiguous_not_invented() -> None:
+    """Un claim `derived` que combina dos columnas reales distintas no recibe
+    una etiqueta fabricada mezclando ambas: queda ambiguo, la cifra se
+    conserva."""
+
+    result = build_claims(
+        EVIDENCE,
+        [
+            spec(
+                claim_type="derived",
+                columns=("matriculados", "desertores"),
+                formula={
+                    "op": "mul",
+                    "args": [
+                        {"op": "div", "args": [{"col": "desertores"}, {"col": "matriculados"}]},
+                        {"const": 100},
+                    ],
+                },
+                unit="%",
+                rounding=1,
+            )
+        ],
+    )
+
+    assert result.rejected == ()
+    claim = result.claims[0]
+    assert claim.label is None
+    assert claim.label_status == "ambiguous"
+
+
+def test_public_columns_default_to_legacy_columns_without_mapping() -> None:
+    """Compatibilidad: specs que ya declaran nombres reales directamente en
+    `columns` (sin `column_field_names`, como los fixtures existentes de este
+    archivo) no se rompen ni exponen algo distinto de antes."""
+
+    result = build_claims(EVIDENCE, [spec()])
+
+    claim = result.claims[0]
+    assert claim.public_columns == claim.columns_used == ("matriculados",)
+    assert claim.label == "Matriculados"
+    assert claim.label_status == "verified"

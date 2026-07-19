@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -189,9 +190,7 @@ async def test_persistence_uses_evidence_id_created_by_persistence(monkeypatch) 
         "app.agent.deterministic_pipeline.persist_evidence_and_quality",
         fake_persist_evidence,
     )
-    monkeypatch.setattr(
-        "app.agent.deterministic_pipeline.persist_claims", fake_persist_claims
-    )
+    monkeypatch.setattr("app.agent.deterministic_pipeline.persist_claims", fake_persist_claims)
     persisted = await persist_deterministic_execution(
         execution,
         engine=object(),  # type: ignore[arg-type]
@@ -202,3 +201,68 @@ async def test_persistence_uses_evidence_id_created_by_persistence(monkeypatch) 
     assert captured["evidence_id"] == generated_evidence_id
     assert captured["claims"] == execution.claims.claims
     assert persisted.evidence["evidence_id"] == str(generated_evidence_id)
+
+
+# --- RF-212: etiquetado semántico de extremo a extremo (T-617C) --------------
+
+_INTERNAL_ALIAS_PATTERN = re.compile(r"^(dim_\d+|metric_[a-z]+_\d+|group_count)$")
+
+
+@pytest.mark.asyncio
+async def test_pipeline_resolves_real_column_name_for_metric_claim() -> None:
+    """El nombre público del claim debe ser la columna fuente real (`valor`,
+    RF-212), nunca el alias `metric_sum_1` usado para leer la fila."""
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [{"dim_1": "Pasto", "metric_sum_1": "1250"}],
+            "source_url": "https://example.test/resource/abcd-1234.json",
+        }
+
+    result = await execute_validated_plan(
+        validated(sum_plan()), executor=executor, metadata=metadata()
+    )
+
+    claim = result.claims.claims[0]
+    assert claim.columns_used == ("metric_sum_1",)
+    assert claim.public_columns == ("valor",)
+    assert claim.label == "Valor"
+    assert claim.label_status == "verified"
+    assert not _INTERNAL_ALIAS_PATTERN.match(claim.public_columns[0])
+
+
+@pytest.mark.asyncio
+async def test_pipeline_never_leaks_internal_alias_into_public_columns() -> None:
+    """Regresión genérica (pruebas.md §4.6): ningún claim del pipeline real
+    expone un `public_columns` con forma de alias interno, sin importar
+    cuántas columnas/filas tenga el resultado."""
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [
+                {"dim_1": "Pasto", "dim_2": "1250"},
+                {"dim_1": "Ibagué", "dim_2": "980"},
+            ],
+            "source_url": "https://example.test/resource/abcd-1234.json",
+        }
+
+    plan = QueryPlan(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimensions=(
+            DimensionSelection(column=ColumnReference(column_index=0), provenance=provenance()),
+            DimensionSelection(column=ColumnReference(column_index=1), provenance=provenance()),
+        ),
+        limit=2,
+        purpose="Consultar municipios",
+    )
+    result = await execute_validated_plan(validated(plan), executor=executor, metadata=metadata())
+
+    assert result.claims.claims
+    for claim in result.claims.claims:
+        for name in claim.public_columns:
+            assert not _INTERNAL_ALIAS_PATTERN.match(name), name

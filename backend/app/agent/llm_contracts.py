@@ -28,6 +28,7 @@ from app.agent.query_plan import (
     SortTargetKind,
     TextualSelection,
 )
+from app.quality.claim_labels import label_grounded_in_text
 from app.quality.claims import BuiltClaim, find_orphan_figures
 
 
@@ -149,6 +150,21 @@ def validate_grounded_synthesis(
     orphan_figures = find_orphan_figures(synthesis.answer, accepted)
     if orphan_figures:
         raise ValueError(f"síntesis contiene cifras huérfanas: {orphan_figures}")
+    # RF-212: cada claim citado con etiqueta verificada debe mantener su
+    # asociación exacta claim_id → display_value → label en el texto final;
+    # no basta con que la etiqueta y la cifra aparezcan en cualquier parte
+    # (eso permitiría intercambiarlas entre dos claims citados).
+    mislabeled = [
+        index
+        for index in synthesis.cited_claim_indexes
+        if claims[index].label_status == "verified"
+        and claims[index].label is not None
+        and not label_grounded_in_text(
+            synthesis.answer, claims[index].label, claims[index].display_value
+        )
+    ]
+    if mislabeled:
+        raise ValueError(f"síntesis no asocia la etiqueta verificada con su cifra: {mislabeled}")
 
 
 def normalize_temporal_year_filters(
