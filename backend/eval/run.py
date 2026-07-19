@@ -856,7 +856,7 @@ def main() -> int:
         default="full",
         help=(
             "Puerta a aplicar: 'full' es el umbral completo de golden (RNF-001…005/009); "
-            "'smoke' es la puerta dirigida de pruebas.md §4.4 (negativos 100%, ningún "
+            "'smoke' es la puerta dirigida de pruebas.md §4.4 (negativos 100%%, ningún "
             "positivo sólido retrocede, todo fallo con etapa+código)."
         ),
     )

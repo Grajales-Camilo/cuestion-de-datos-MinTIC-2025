@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +14,16 @@ import eval.run as run_module
 from app.config import Settings
 from eval.loader import GoldenCase, GoldenSuite
 from eval.persistence import PersistedGoldenSuite
+
+
+def test_main_help_renders_literal_percentage(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(sys, "argv", ["eval.run", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_module.main()
+
+    assert exc_info.value.code == 0
+    assert "negativos 100%" in capsys.readouterr().out
 
 
 def _settings(**overrides: object) -> Settings:
