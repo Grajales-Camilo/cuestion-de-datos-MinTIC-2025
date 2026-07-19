@@ -76,15 +76,24 @@ class RuntimeLLMUsage:
         )
 
 
-# T-617B0-R4: presupuesto de razonamiento del planificador Gemini
+# T-617B0-R4/R4A: presupuesto de razonamiento del planificador Gemini
 # (diagnóstico `backend/eval/reports/t617b-d1-pilot005-timeout-diagnosis.md`
-# §8/§9: build_plan sin thinking_budget respondió en ~1.4 s o agotó los dos
-# intentos de 30 s con 504; con thinking_budget=1024 respondió en ~5.2 s pero
-# con salida estructurada inválida; con thinking_budget=4096 respondió en
-# ~2.9 s con salida estructurada válida). Constante única, sin excepción por
-# `case_id`/`dataset_id`/pregunta: se aplica a TODAS las invocaciones del
-# planificador, para todos los casos.
+# §8/§9: la prueba mínima de disponibilidad del modelo, sin thinking_budget y
+# sin el payload real de build_plan, respondió en ~1.4 s; build_plan real de
+# `pilot-005-empleo-publico` agotó los dos intentos de 30 s con 504 en las
+# tres corridas observadas; con thinking_budget=1024 build_plan respondió en
+# ~5.2 s pero con salida estructurada inválida; con thinking_budget=4096
+# build_plan respondió en ~2.9 s con salida estructurada válida). Constante
+# única, sin excepción por `case_id`/`dataset_id`/pregunta: se aplica a TODAS
+# las invocaciones del planificador, para todos los casos golden.
 PLANNER_THINKING_BUDGET_TOKENS = 4096
+
+# T-617B0-R4A: la evidencia de §8/§9 del diagnóstico se produjo
+# específicamente contra `gemini-2.5-flash`; no hay evidencia equivalente
+# para otro modelo Google. El presupuesto de razonamiento se acota a este
+# modelo exacto -- cualquier otro modelo Google (presente o futuro) queda
+# sin `thinking_budget`, igual que Anthropic.
+_PLANNER_THINKING_BUDGET_LLM_MODEL = "gemini-2.5-flash"
 
 
 def _model[T: BaseModel](
@@ -98,11 +107,17 @@ def _model[T: BaseModel](
     ``thinking_budget`` es específico de ``ChatGoogleGenerativeAI``
     (``langchain_google_genai._common.thinking_budget``, en tokens): NUNCA se
     envía cuando ``settings.llm_provider != "google"`` (Anthropic no expone
-    este parámetro). No modifica ``timeout``/``max_retries``, que se
-    mantienen fijos en 30/2 para todos los modelos y proveedores."""
+    este parámetro) ni cuando ``settings.llm_model !=
+    "gemini-2.5-flash"`` (T-617B0-R4A: sin evidencia para otro modelo Google).
+    No modifica ``timeout``/``max_retries``, que se mantienen fijos en 30/2
+    para todos los modelos y proveedores."""
 
     provider_kwargs: dict[str, Any] = {}
-    if thinking_budget is not None and settings.llm_provider == "google":
+    if (
+        thinking_budget is not None
+        and settings.llm_provider == "google"
+        and settings.llm_model == _PLANNER_THINKING_BUDGET_LLM_MODEL
+    ):
         provider_kwargs["thinking_budget"] = thinking_budget
     return get_structured_chat_model(
         settings.llm_provider,
@@ -189,8 +204,9 @@ def build_real_runtime_dependencies(
         if settings.deterministic_textual_facts_enabled
         else QuantitativePlanSelection
     )
-    # T-617B0-R4: solo el planificador recibe thinking_budget; intent,
-    # síntesis y plan de síntesis quedan sin cambios (ver _model).
+    # T-617B0-R4/R4A: solo el planificador recibe thinking_budget, y solo se
+    # aplica de verdad cuando el modelo efectivo es gemini-2.5-flash (ver
+    # _model); intent, síntesis y plan de síntesis quedan sin cambios.
     planner_model = _model(settings, planner_schema, thinking_budget=PLANNER_THINKING_BUDGET_TOKENS)
     synthesis_model = _model(settings, GroundedSynthesis)
     synthesis_plan_model = (

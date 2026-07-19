@@ -126,38 +126,56 @@ def test_model_signature_has_no_case_or_dataset_specific_parameter() -> None:
     assert params == {"settings", "schema", "thinking_budget"}
 
 
-def test_planner_thinking_budget_reaches_google_model_without_changing_timeout() -> None:
-    """Requisitos 1 y 4: `_model()` real (sin mocks, con clave falsa, sin red)
-    para el proveedor google construye un `ChatGoogleGenerativeAI` con
-    `thinking_budget=4096`, y `timeout`/`max_retries` permanecen en 30/2."""
+@pytest.mark.parametrize(
+    ("llm_provider", "llm_model", "api_key_kwargs", "expected_thinking_budget"),
+    [
+        (
+            "google",
+            "gemini-2.5-flash",
+            {"GOOGLE_API_KEY": "fake-google-key"},
+            PLANNER_THINKING_BUDGET_TOKENS,
+        ),
+        (
+            "google",
+            "gemini-2.5-pro",
+            {"GOOGLE_API_KEY": "fake-google-key"},
+            None,
+        ),
+        (
+            "anthropic",
+            "claude-sonnet-5",
+            {"ANTHROPIC_API_KEY": "fake-anthropic-key"},
+            None,
+        ),
+    ],
+)
+def test_thinking_budget_is_scoped_to_google_gemini_2_5_flash(
+    llm_provider: str,
+    llm_model: str,
+    api_key_kwargs: dict[str, str],
+    expected_thinking_budget: int | None,
+) -> None:
+    """T-617B0-R4A, requisito 4 (parametrizada, sin mocks, claves falsas, sin
+    red): `_model()` real, pidiendo siempre `thinking_budget=4096`, solo lo
+    envía de verdad cuando `llm_provider=="google"` **y**
+    `llm_model=="gemini-2.5-flash"`. Otro modelo Google (`gemini-2.5-pro`) y
+    Anthropic quedan sin `thinking_budget`, y `timeout`/`max_retries`
+    permanecen en 30/2 en los tres casos (requisitos 1, 2 y 3)."""
 
-    google_settings = settings(LLM_PROVIDER="google", GOOGLE_API_KEY="fake-google-key")
+    model_settings = settings(LLM_PROVIDER=llm_provider, LLM_MODEL=llm_model, **api_key_kwargs)
     structured = _model(
-        google_settings, QuantitativePlanSelection, thinking_budget=PLANNER_THINKING_BUDGET_TOKENS
+        model_settings, QuantitativePlanSelection, thinking_budget=PLANNER_THINKING_BUDGET_TOKENS
     )
     bound = structured.first.steps__["raw"].bound
 
-    assert bound.thinking_budget == PLANNER_THINKING_BUDGET_TOKENS
-    assert bound.timeout == 30
-    assert bound.max_retries == 2
-
-
-def test_thinking_budget_never_reaches_anthropic_model() -> None:
-    """Requisito 3: incluso si se pide thinking_budget explícitamente, `_model()`
-    con proveedor anthropic construye un `ChatAnthropic` que ni siquiera tiene
-    el atributo `thinking_budget` (Anthropic no lo expone); `max_retries` se
-    conserva en 2 sin cambios."""
-
-    anthropic_settings = settings(LLM_PROVIDER="anthropic", ANTHROPIC_API_KEY="fake-anthropic-key")
-    structured = _model(
-        anthropic_settings,
-        QuantitativePlanSelection,
-        thinking_budget=PLANNER_THINKING_BUDGET_TOKENS,
-    )
-    bound = structured.first.steps__["raw"].bound
-
-    assert not hasattr(bound, "thinking_budget")
-    assert bound.max_retries == 2
+    if expected_thinking_budget is None:
+        assert not hasattr(bound, "thinking_budget") or bound.thinking_budget is None
+    else:
+        assert bound.thinking_budget == expected_thinking_budget
+    if hasattr(bound, "max_retries"):
+        assert bound.max_retries == 2
+    if hasattr(bound, "timeout"):
+        assert bound.timeout == 30
 
 
 def test_intent_and_synthesis_models_have_no_thinking_budget_by_default() -> None:

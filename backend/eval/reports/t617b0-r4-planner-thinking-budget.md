@@ -26,12 +26,17 @@ Evidencia adicional aportada para este incremento (fuera de este repositorio,
 comunicada por el responsable del proyecto; **no** se ejecutó ninguna llamada
 real durante T-617B0-R4 para producirla ni para verificarla):
 
-| Configuración | Latencia observada | Resultado |
-|---|---|---|
-| Sin `thinking_budget` (mínimo aislado) | 1.418 s | — |
-| `pilot-005` real, 3 intentos | ~65 s cada uno | 504 `LLM_PROVIDER_ERROR` |
-| `thinking_budget=1024` | 5.17 s | Salida estructurada **inválida** |
-| `thinking_budget=4096` | 2.899 s | Salida estructurada **válida** |
+| Configuración | Llamada | Latencia observada | Resultado |
+|---|---|---|---|
+| Sin `thinking_budget` | Prueba mínima de disponibilidad del modelo (sin el payload real de `build_plan`) | 1.418 s | — |
+| Sin `thinking_budget` | `build_plan` real de `pilot-005`, 3 intentos | ~65 s cada uno | 504 `LLM_PROVIDER_ERROR` |
+| `thinking_budget=1024` | `build_plan` real | 5.17 s | Salida estructurada **inválida** |
+| `thinking_budget=4096` | `build_plan` real | 2.899 s | Salida estructurada **válida** |
+
+**Corrección T-617B0-R4A:** los 1.418 s corresponden a una prueba mínima de
+disponibilidad del modelo (sin el payload real de `build_plan`), **no** a una
+llamada `build_plan`; una versión anterior de este informe los presentaba sin
+esa distinción.
 
 **Advertencia registrada explícitamente:** el rechazo `max` frente a `lookup`
 observado en el arnés aislado usado para producir esa evidencia **no es
@@ -54,7 +59,11 @@ cualquier otra normalización/materialización/validación. Este incremento
     (keyword-only). Solo se agrega a los kwargs del modelo cuando
     `thinking_budget is not None` **y** `settings.llm_provider == "google"`
     — separación explícita por proveedor, verificable por lectura directa
-    del código (una única condición, sin ramas ocultas).
+    del código (una única condición, sin ramas ocultas). **Corregido en
+    T-617B0-R4A (§10):** además de por proveedor, la condición se acota por
+    modelo exacto (`settings.llm_model == "gemini-2.5-flash"`), porque la
+    evidencia de la tabla de §1 se produjo específicamente contra ese
+    modelo.
   - `timeout=30` y `max_retries=2` permanecen **hardcodeados sin cambios**,
     para las 4 llamadas y ambos proveedores.
   - Solo la construcción de `planner_model` pasa
@@ -90,10 +99,14 @@ cualquier otra normalización/materialización/validación. Este incremento
 
 `thinking_budget` es un campo propio de `ChatGoogleGenerativeAI`
 (`langchain_google_genai._common`, `Optional[int]`, tokens); `ChatAnthropic`
-no lo expone (`hasattr(chat_anthropic_instance, "thinking_budget") is False`,
-verificado en la prueba `test_thinking_budget_never_reaches_anthropic_model`)
-— la condición `settings.llm_provider == "google"` en `_model()` es la única
-guarda necesaria y suficiente para que nunca se envíe a Anthropic.
+no lo expone (`hasattr(chat_anthropic_instance, "thinking_budget") is False`)
+— la condición `settings.llm_provider == "google"` en `_model()` es necesaria
+y suficiente para que nunca se envíe a Anthropic. **Corregido en T-617B0-R4A
+(§10):** la tabla de arriba refleja el estado tras R4; desde R4A, la columna
+"Proveedor `google`" del rol `planner_model` solo aplica
+`thinking_budget=4096` cuando el modelo efectivo es exactamente
+`gemini-2.5-flash` — otro modelo Google queda sin `thinking_budget`, igual
+que Anthropic.
 
 ---
 
@@ -266,3 +279,124 @@ por tareas previas ya archivados. Sin cambios en `backend/app/agent/**` más
 allá de `deterministic_dependencies.py`; sin cambios en `specs/**` salvo la
 nota operativa añadida a `tasks.md` bajo T-617 (no marca la tarea cerrada);
 sin push ni PR.
+
+---
+
+## 10. Corrección T-617B0-R4A — acotado a `gemini-2.5-flash` y comentario corregido
+
+**Baseline de este sub-incremento:**
+`c5cda0d184e1b74eac162ca4d7e19d396e720d39` (T-617B0-R4).
+
+### 10.1 Motivo
+
+La evidencia de §1 (`thinking_budget=1024`→salida inválida,
+`thinking_budget=4096`→salida válida) se produjo **específicamente** contra
+`gemini-2.5-flash`. R4 aplicaba `thinking_budget` a cualquier modelo Google
+configurado (`settings.llm_provider == "google"`, sin mirar
+`settings.llm_model`), lo que habría enviado un presupuesto de razonamiento
+sin evidencia si `LLM_MODEL` cambiara a otro modelo Google (p. ej.
+`gemini-2.5-pro`). R4A cierra ese hueco.
+
+### 10.2 Corrección aplicada
+
+`backend/app/agent/deterministic_dependencies.py`:
+
+- Nueva constante `_PLANNER_THINKING_BUDGET_LLM_MODEL = "gemini-2.5-flash"`.
+- La condición de `_model()` pasa de
+  `thinking_budget is not None and settings.llm_provider == "google"` a
+  `thinking_budget is not None and settings.llm_provider == "google" and
+  settings.llm_model == _PLANNER_THINKING_BUDGET_LLM_MODEL`.
+- `timeout=30`, `max_retries=2`, prompts, schemas, `normalize_system_owned_operation`,
+  golden-v1/v2 y contratos: **sin cambios** (idénticos a R4).
+- Comentarios corregidos: los 1.418 s de la tabla de §1 se re-etiquetan
+  explícitamente como "prueba mínima de disponibilidad del modelo (sin el
+  payload real de `build_plan`)", distinta de los renglones de
+  `build_plan` real (~65 s sin budget, 5.17 s con 1024, 2.899 s con 4096).
+
+### 10.3 Regresión parametrizada nueva
+
+`tests/test_deterministic_dependencies.py::test_thinking_budget_is_scoped_to_google_gemini_2_5_flash`,
+3 casos:
+
+| `llm_provider` | `llm_model` | `thinking_budget` esperado |
+|---|---|---|
+| `google` | `gemini-2.5-flash` | `4096` |
+| `google` | `gemini-2.5-pro` | ninguno |
+| `anthropic` | `claude-sonnet-5` | ninguno |
+
+En los tres casos se verifica además `timeout=30`/`max_retries=2` cuando el
+proveedor expone esos atributos (Anthropic no expone `.timeout`
+directamente; se omite esa aserción puntual con un `hasattr` guard, sin
+dejar de verificar `max_retries`).
+
+### 10.4 Verificación (2026-07-19)
+
+```
+pytest tests/test_deterministic_dependencies.py -q
+```
+→ **15 passed** (las 5 de R4 + la actualizada + la nueva parametrizada de 3
+casos).
+
+```
+pytest tests/test_deterministic_dependencies.py tests/test_deterministic_runtime.py \
+  tests/test_llm_factory.py tests/test_llm_contracts.py tests/test_settings.py -q
+```
+→ **92 passed**.
+
+```
+pytest -m "not integration" -q
+```
+→ **948 passed, 122 deselected**, 0 fallos.
+
+```
+pytest -m deterministic_agent_acceptance -q
+```
+(PostgreSQL local, sin LLM real) → **18 passed, 1 xfailed** (mismo `xfail`
+preexistente de R4, no relacionado).
+
+```
+ruff check .
+```
+→ **All checks passed!**
+
+```
+ruff format --check app/agent/deterministic_dependencies.py tests/test_deterministic_dependencies.py
+```
+→ **2 files already formatted**.
+
+```
+git diff --check
+```
+→ limpio (exit 0).
+
+### 10.5 Prueba fallo→pasa contra el baseline de R4
+
+Worktree temporal en `c5cda0d184e1b74eac162ca4d7e19d396e720d39`
+(`git worktree add`/`git worktree remove --force`), copiando únicamente
+`tests/test_deterministic_dependencies.py`:
+
+```
+FAILED tests/test_deterministic_dependencies.py::test_thinking_budget_is_scoped_to_google_gemini_2_5_flash[google-gemini-2.5-pro-api_key_kwargs1-None]
+AssertionError: assert (not True or 4096 is None)
+1 failed, 14 passed
+```
+
+El caso `google/gemini-2.5-pro` falla exactamente como se esperaba contra el
+baseline de R4 (que aplicaba `thinking_budget` a cualquier modelo Google) y
+pasa con la corrección de este sub-incremento; los otros 2 casos de la misma
+parametrización (`google/gemini-2.5-flash`, `anthropic`) ya pasaban en R4 y
+siguen pasando.
+
+### 10.6 Hashes golden (antes y después, idénticos)
+
+```
+golden-v1: ab546062767ce2046508489c169a270ae00ceb1515ff67bf92d472404630ff72
+golden-v2: 1c78264cccb0da6a10920b6b212438cc40c2b70d2bbd40265f5794fdc754e483
+```
+
+### 10.7 Alcance respetado
+
+Sin cambios en Anthropic, `timeout`, `max_retries`, prompts, schemas,
+`golden-v1.yaml`, `golden-v2.yaml` ni contratos. No se ejecutó Gemini,
+Socrata, `pilot-005` ni el smoke en este sub-incremento. T-617 sigue
+**abierta**.
