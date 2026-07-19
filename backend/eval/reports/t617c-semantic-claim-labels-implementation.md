@@ -314,3 +314,282 @@ prompts ni migraciones.
 
 No se marca T-617C como completada. Detenido tras el commit; no se ejecutó
 el smoke ni ninguna suite completa real.
+
+---
+
+# T-617C-R1 — Persistencia contractual, reverificación versionada, T-615H y asociación exacta
+
+**Estado: implementado, sin auditoría ni corrida real todavía.** T-617C
+sigue **sin** marcarse como completada.
+
+- HEAD de partida: `8b0caab503a71a0795ec5addf6a99096ac65881f`
+- Cierra los 3 riesgos residuales que R0 dejó documentados: persistencia
+  contractual (`quantitative_claims.columns_used` seguía siendo alias),
+  T-615H sin etiquetas, y validación de asociación por proximidad simple.
+
+## Hallazgo 1 — Persistencia contractual
+
+`persist_claims` ahora escribe `columns_used=list(claim.public_columns)`
+tanto en la fila real de `quantitative_claims` como en el diccionario
+público — el nombre de columna fuente real (`"genero_hombre"`), nunca el
+alias de ejecución (`dim_N`/`metric_N`). El alias sigue viviendo
+exclusivamente en `BuiltClaim.columns_used` (dominio interno, nunca
+persistido), usado solo para leer `EvidenceContext.rows`/`evidence_results.rows`
+(indexadas por alias, sin cambios) y como entrada `execution_columns` de
+`compute_source_hash`. Verificado con PostgreSQL local real
+(`tests/integration/test_deterministic_pipeline_persistence.py`):
+`claim.columns_used == ["total"]` en la fila de base de datos, nunca
+`["metric_sum_1"]`.
+
+## Hallazgo 2 — Reproducibilidad e históricos
+
+**Versionado del algoritmo (RF-212):** `CLAIMS_ALGORITHM_VERSION` sube a
+`"2.0.0"` — el payload que alimenta `source_hash` ahora embebe
+`public_columns` (nombre real) en `"columns"` y en las claves de
+`rows_subset_canonical`, en vez del alias. `compute_source_hash` recibe
+ahora **dos** parámetros explícitos y separados:
+`execution_columns` (alias, solo para leer `rows`) y `public_columns`
+(nombre real, identidad pública embebida en el hash) — nunca se
+confunden ni se colapsan en uno solo.
+
+**Compatibilidad histórica, sin invalidar nada en silencio:**
+`compute_legacy_source_hash` reproduce bit a bit el algoritmo `v1.0.0`
+anterior (columnas = alias) para reverificar claims persistidos antes de
+esta ronda. `persistence._reverify_quantitative_synthesis_fact` distingue
+legacy vs. nuevo **por forma** de `claim.columns_used`
+(`looks_like_internal_alias`, nunca por `run_id` ni fecha) y aplica el
+algoritmo correcto en cada caso:
+- **Legacy** (columnas con forma de alias): `compute_legacy_source_hash`,
+  igual que antes de R1; el hecho se reverifica igual, pero
+  `label_status="ambiguous"` porque no hay nombre real que exponer.
+- **Nuevo** (columnas reales): reconstruye `execution_columns` parseando
+  `evidence.soql_query` con el **parser SoQL vigente**
+  (`app.tools.soql_parser.extract_column_field_names`, cero regex
+  improvisada) e invirtiendo alias→columna a columna→alias; luego
+  `compute_source_hash` con ambos conjuntos. `derive_claim_label` se
+  aplica directamente sobre `claim.columns_used` (ya el nombre real
+  persistido) para `label`/`label_status`.
+
+Un `source_hash` manipulado o un nombre de columna que no puede vincularse
+a ningún alias del SoQL persistido siguen rechazándose (`fact=None`), sin
+excepción no controlada — probado explícitamente.
+
+## Hallazgo 3 — Ruta T-615H (RF-212 completo, no residual)
+
+- `AllowedQuantitativeFact` gana `label: str | None` y
+  `label_status: LabelStatus` (antes ausentes → `extra_forbidden` los
+  rechazaba).
+- `_reverify_quantitative_synthesis_fact` deriva `label`/`label_status`
+  como parte de la reverificación (Hallazgo 2).
+- `_atomic_clause` (renderer literal) usa `f"{fact.label}: {fact.display_value}."`
+  cuando `verified`, o `f"{fact.display_value} (sin etiqueta verificable)."`
+  cuando `ambiguous` — igual que la ruta activa por defecto.
+- `build_grounded_synthesis_fallback` (fallback sin LLM de T-615H) gana
+  `requested_tokens` y filtra hechos cuantitativos auxiliares/temporales
+  con `claim_is_relevant_to_narrative`, igual criterio genérico que las
+  otras dos rutas de síntesis.
+- `plan_synthesis` (ruta con LLM de T-615H) filtra `allowed.facts` por
+  relevancia antes de construir el payload que ve el modelo; la validación
+  posterior sigue certificando contra el conjunto completo.
+- `presentation_warnings` se sigue construyendo en `runner.py` a partir de
+  `persisted.claims` — igual mecanismo que la ruta por defecto, sin
+  cambios adicionales necesarios.
+
+**Verificado de extremo a extremo con PostgreSQL local real** (no solo
+unitariamente): `tests/integration/test_deterministic_agent_acceptance.py`
+con `DETERMINISTIC_TEXTUAL_FACTS_ENABLED=True` — un fallback textual antes
+mostraba `"sum: T-611 fallo textual no es éxito narrativo (metric_sum_1,
+fila 0): 20."`; ahora muestra `"Monto: 20."` (columna real `monto`). Un
+`count(*)` antes mostraba `"count: ... (metric_count_1, fila 0): 42."`;
+ahora `"Conteo de registros: 42."` (centinela estructural, nunca el alias
+`metric_count_1`). Ya no es un riesgo residual: la ruta T-615H completa
+cumple RF-212 igual que la ruta activa por defecto, confirmado con el flag
+encendido y base de datos real.
+
+## Hallazgo 4 — Asociación exacta (reemplazo de la ventana de 60 caracteres)
+
+`label_grounded_in_text` se reescribió: para cada aparición del
+`display_value` en el texto, localiza la ocurrencia de **etiqueta más
+cercana** entre todas las citadas (`label` propio + `other_labels` de los
+demás claims citados) y exige que sea la propia; además ninguna cifra
+citada de otro claim (`other_values`) puede interponerse entre esa
+etiqueta y el valor. En empate de distancia se prefiere la etiqueta que
+**precede** al valor (convención "Etiqueta: valor") sobre la que sigue al
+valor del *siguiente* claim ("valor; Etiqueta_del_siguiente") — sin este
+desempate, `"Hombres: 764; Mujeres: 719"` (par correcto) fallaba por
+empate de distancia real durante el desarrollo, detectado por las propias
+pruebas nuevas antes de llegar al commit.
+
+Casos verificados explícitamente (`tests/test_claim_labels.py`):
+- `"Hombres: 719; Mujeres: 764"` (valor real 764/719) → **rechazado** para
+  ambos claims citados.
+- `"Hombres: 719. Mujeres: 764."` → **rechazado** igual, con punto en vez
+  de punto y coma.
+- `"Hombres: 764; Mujeres: 719"` (par correcto) → **aceptado** para ambos.
+- `"764 hombres y 719 mujeres"` (etiqueta después del valor, RF-211 prosa
+  natural) → **aceptado**.
+- `"719 hombres y 764 mujeres"` (mismo estilo, pero intercambiado) →
+  **rechazado**.
+
+`llm_contracts.validate_grounded_synthesis` ahora calcula
+`other_labels`/`other_values` a partir de **todos** los claims citados con
+`label_status="verified"` (excluyendo el propio en cada verificación) y se
+los pasa a `label_grounded_in_text`; sigue disparando el mismo mecanismo
+de reintento/fallback ya existente ante cualquier fallo.
+
+## Archivos modificados (R1)
+
+**Producción:**
+- `backend/app/tools/soql_parser.py` — `extract_column_field_names` (nuevo,
+  sin regex, reutiliza `parse_soql`).
+- `backend/app/quality/claims.py` — versión `2.0.0` del algoritmo,
+  `compute_source_hash` con `execution_columns`/`public_columns`
+  separados, `compute_legacy_source_hash` nuevo, `_build_one_claim`
+  actualizado.
+- `backend/app/quality/claim_labels.py` — `label_grounded_in_text`
+  reescrito (etiqueta más cercana + bloqueo de valores ajenos + desempate
+  por precedencia).
+- `backend/app/quality/grounded_synthesis.py` — `label`/`label_status` en
+  `AllowedQuantitativeFact`; `_atomic_clause` etiquetado;
+  `build_grounded_synthesis_fallback` con `requested_tokens`.
+- `backend/app/agent/persistence.py` — `persist_claims` persiste nombres
+  reales; `_reverify_quantitative_synthesis_fact` reescrita (legacy vs.
+  nuevo, reconstrucción vía SoQL parser, derivación de label).
+- `backend/app/agent/deterministic_dependencies.py` — `plan_synthesis`
+  filtra por relevancia antes de construir el payload del LLM.
+- `backend/app/agent/runner.py` — pasa `requested_tokens` al fallback
+  T-615H.
+- `backend/app/agent/llm_contracts.py` — `validate_grounded_synthesis`
+  calcula `other_labels`/`other_values` para la nueva verificación.
+
+**Pruebas:**
+- `backend/tests/test_persistence_reverification.py` (nuevo, 4 pruebas) —
+  reverificación legacy/nueva, hash manipulado, columna no resoluble, sin
+  DB real (modelos ORM en memoria).
+- `backend/tests/test_soql_guard.py` (+5 pruebas) — `extract_column_field_names`.
+- `backend/tests/test_claim_labels.py` (reescrito el bloque de
+  intercambio, +6 pruebas netas) — los 2 casos de intercambio obligatorios
+  más pares correctos y prosa natural.
+- `backend/tests/test_claims.py` (firma de `compute_source_hash`
+  actualizada, +1 prueba de reproducibilidad, 1 prueba reescrita para
+  reflejar el versionado).
+- `backend/tests/test_grounded_synthesis_renderer.py` (fixture con
+  `label`/`label_status`, +3 pruebas) — relevancia y etiquetado del
+  fallback T-615H.
+- `backend/tests/integration/test_deterministic_pipeline_persistence.py`
+  (+4 aserciones, PostgreSQL local real) — `columns_used` real en la fila
+  de BD.
+- `backend/tests/integration/test_deterministic_agent_acceptance.py` (2
+  aserciones actualizadas a la salida etiquetada real, PostgreSQL local
+  real, `DETERMINISTIC_TEXTUAL_FACTS_ENABLED=True`).
+
+## Pruebas y resultados exactos (R1)
+
+### Reproducción de fallo contra baseline (worktree temporal)
+
+`git worktree add %TEMP%/t617c-r1-baseline 8b0caab503a71a0795ec5addf6a99096ac65881f`,
+copiando los 7 archivos de prueba nuevos/modificados sin ningún cambio de
+producción:
+
+```
+uv run python -m pytest tests/test_claims.py tests/test_claim_labels.py \
+  tests/test_soql_guard.py tests/test_grounded_synthesis_renderer.py \
+  tests/test_persistence_reverification.py -q
+
+3 errores de colección:
+  ImportError: cannot import name 'extract_column_field_names' from 'app.tools.soql_parser'
+  ImportError: cannot import name 'compute_legacy_source_hash' from 'app.quality.claims'
+  ValidationError: AllowedQuantitativeFact — label/label_status: Extra inputs are not permitted
+
+Tras excluir esos 3 módulos:
+tests/test_claims.py tests/test_claim_labels.py -q
+12 failed, 44 passed in 0.23s
+```
+
+Los 12 fallos + 3 errores de colección corresponden exactamente a las
+áreas tocadas por R1. Worktree eliminado con `git worktree remove --force`.
+
+### Con la implementación, en el árbol principal
+
+```
+uv run python -m pytest tests/test_claim_labels.py tests/test_claims.py \
+  tests/test_soql_guard.py tests/test_grounded_synthesis_renderer.py \
+  tests/test_persistence_reverification.py tests/test_llm_contracts.py \
+  tests/test_deterministic_pipeline.py tests/test_deterministic_runtime.py \
+  tests/test_deterministic_dependencies.py tests/test_deterministic_textual_planning.py -q
+168 passed (módulos afectados combinados) + 4 + 39 adicionales = todos verdes
+```
+
+### Suite completa no-integración
+
+```
+uv run python -m pytest -m "not integration" -q
+1007 passed, 122 deselected, 5 warnings in 17.18s
+```
+(990 tras R0 + 17 pruebas nuevas netas de R1.)
+
+### Aceptación determinista completa (unitaria + integración local real)
+
+```
+uv run python -m pytest tests/test_deterministic_acceptance_guard.py \
+  tests/test_deterministic_runtime.py tests/test_deterministic_pipeline.py \
+  tests/test_deterministic_graph.py tests/test_deterministic_dependencies.py \
+  tests/test_deterministic_textual_planning.py -q
+96 passed, 1 warning in 6.05s
+
+DATABASE_URL=<local :5433> uv run python -m pytest \
+  tests/integration/test_deterministic_agent_acceptance.py \
+  tests/integration/test_deterministic_pipeline_persistence.py -q -m integration
+19 passed, 1 xfailed, 1 warning in 12.07s
+```
+Ambas corridas de integración usan PostgreSQL local (`localhost:5433`,
+mismo entorno ya disponible en esta sesión); cero llamadas a Gemini ni
+Socrata (el `xfailed` es preexistente, no relacionado con R1).
+
+### Lint, formato, `git diff --check`
+
+```
+uv run ruff check .
+All checks passed!
+
+uv run ruff format --check <14 archivos modificados + 1 nuevo>
+2 archivos requerían reformateo (líneas largas); aplicado `ruff format` y
+reverificado: todos formateados.
+
+git diff --check
+(solo advertencias inocuas de normalización CRLF de Git en Windows)
+```
+
+## Hashes golden
+
+- Antes y después: **idénticos, sin cambio.**
+  - `golden-v1.yaml`: `ab546062767ce2046508489c169a270ae00ceb1515ff67bf92d472404630ff72`
+  - `golden-v2.yaml`: `1c78264cccb0da6a10920b6b212438cc40c2b70d2bbd40265f5794fdc754e483`
+
+## Riesgos residuales tras R1
+
+1. **Ambigüedad estructural en `field_name_to_alias`** (persistence.py):
+   si el mismo nombre de columna real aparece en más de un `SelectItem`
+   del SoQL (p. ej. seleccionado dos veces con alias distintos), la
+   inversión alias↔columna toma arbitrariamente el último alias
+   encontrado. No causa un valor incorrecto (ambos alias apuntan a la
+   misma columna real, mismo valor en la fila), pero es una limitación
+   teórica documentada, no verificada con un caso de prueba dedicado por
+   ser un patrón que el renderer actual (`soql_renderer.py`) no produce
+   hoy (cada dimensión/métrica del plan genera un alias propio y distinto).
+2. **Tie-break de `label_grounded_in_text`** favorece la etiqueta que
+   precede al valor en un empate exacto de distancia; es una heurística
+   determinista y probada contra los casos requeridos, no una prueba
+   formal de que ninguna construcción textual adversaria más compleja (3+
+   claims entrelazados) pudiera burlarla. Aceptable para el alcance de
+   RF-212 (prosa generada por un LLM ya instruido a no intercambiar
+   etiquetas, con esta validación como red de seguridad determinista, no
+   como parser de lenguaje natural general).
+
+## Estado final
+
+**READY_FOR_T617C_R1_AUDIT**
+
+No se marca T-617C como completada. Sin push, sin amend. Detenido tras el
+commit; no se ejecutó smoke ni golden completas ni llamadas reales a
+Gemini/Socrata.

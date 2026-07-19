@@ -350,7 +350,8 @@ def _hash_for(**overrides: object) -> str:
         "canonical_soql": "SELECT matriculados LIMIT 1000 OFFSET 0",
         "source_row_indexes": (0,),
         "rows": ({"matriculados": "1000"},),
-        "columns": ("matriculados",),
+        "execution_columns": ("matriculados",),
+        "public_columns": ("matriculados",),
         "formula": None,
         "raw_value": Decimal("1000"),
         "unit": "personas",
@@ -392,7 +393,8 @@ def test_source_hash_reorder_of_source_row_indexes_is_not_semantically_relevant(
         canonical_soql="SELECT matriculados LIMIT 1000 OFFSET 0",
         source_row_indexes=(0, 1),
         rows=rows,
-        columns=("matriculados",),
+        execution_columns=("matriculados",),
+        public_columns=("matriculados",),
         formula={"agg": "sum", "col": "matriculados"},
         raw_value=Decimal("3000"),
         unit="personas",
@@ -403,7 +405,8 @@ def test_source_hash_reorder_of_source_row_indexes_is_not_semantically_relevant(
         canonical_soql="SELECT matriculados LIMIT 1000 OFFSET 0",
         source_row_indexes=(1, 0),
         rows=rows,
-        columns=("matriculados",),
+        execution_columns=("matriculados",),
+        public_columns=("matriculados",),
         formula={"agg": "sum", "col": "matriculados"},
         raw_value=Decimal("3000"),
         unit="personas",
@@ -419,7 +422,8 @@ def test_source_hash_changing_referenced_indexes_changes_hash() -> None:
         canonical_soql="SELECT matriculados LIMIT 1000 OFFSET 0",
         source_row_indexes=(0,),
         rows=rows,
-        columns=("matriculados",),
+        execution_columns=("matriculados",),
+        public_columns=("matriculados",),
         formula=None,
         raw_value=Decimal("1000"),
         unit="personas",
@@ -430,7 +434,8 @@ def test_source_hash_changing_referenced_indexes_changes_hash() -> None:
         canonical_soql="SELECT matriculados LIMIT 1000 OFFSET 0",
         source_row_indexes=(0, 1),
         rows=rows,
-        columns=("matriculados",),
+        execution_columns=("matriculados",),
+        public_columns=("matriculados",),
         formula=None,
         raw_value=Decimal("1000"),
         unit="personas",
@@ -546,10 +551,14 @@ def test_built_claim_resolves_public_column_name_from_execution_alias() -> None:
     assert claim.label_status == "verified"
 
 
-def test_column_field_names_never_change_source_hash_or_dsl_result() -> None:
-    """Añadir el mapeo de etiquetado no puede alterar `raw_value` ni
-    `source_hash`: la reproducibilidad del claim depende exclusivamente del
-    alias de ejecución (`columns`), no del nombre público derivado."""
+def test_column_field_names_never_change_dsl_result_but_do_version_the_hash() -> None:
+    """`raw_value` (evaluación del DSL sobre filas alias-keyed) es idéntico
+    con o sin mapeo de etiquetado -- el mapeo no participa en el DSL. El
+    `source_hash` sí cambia (T-617C-R1, v2.0.0): la identidad de columnas
+    embebida en el hash es ahora el nombre público real, así que un mapeo
+    distinto (o su ausencia, que usa el alias tal cual como nombre público
+    de compatibilidad) produce identidades -- y por tanto hashes -- distintas
+    a propósito, nunca por accidente del cálculo numérico."""
 
     evidence = EvidenceContext(
         dataset_id="abcd-1234",
@@ -569,7 +578,29 @@ def test_column_field_names_never_change_source_hash_or_dsl_result() -> None:
     )
 
     assert without_mapping.claims[0].raw_value == with_mapping.claims[0].raw_value
-    assert without_mapping.claims[0].source_hash == with_mapping.claims[0].source_hash
+    assert without_mapping.claims[0].public_columns == ("dim_1",)
+    assert with_mapping.claims[0].public_columns == ("cantidad_empleados",)
+    assert without_mapping.claims[0].source_hash != with_mapping.claims[0].source_hash
+
+
+def test_same_mapping_reproduces_identical_hash() -> None:
+    """Con el mismo `column_field_names`, dos construcciones independientes
+    del mismo claim producen el mismo `source_hash` (reproducibilidad
+    v2.0.0)."""
+
+    evidence = EvidenceContext(
+        dataset_id="abcd-1234",
+        canonical_soql="SELECT cantidad_empleados AS dim_1 LIMIT 1",
+        rows=({"dim_1": "12"},),
+    )
+    mapping = {"dim_1": "cantidad_empleados"}
+    first = build_claims(
+        evidence, [spec(columns=("dim_1",), column_field_names=mapping, unit=None)]
+    )
+    second = build_claims(
+        evidence, [spec(columns=("dim_1",), column_field_names=mapping, unit=None)]
+    )
+    assert first.claims[0].source_hash == second.claims[0].source_hash
 
 
 def test_derived_claim_over_distinct_columns_is_ambiguous_not_invented() -> None:

@@ -50,7 +50,7 @@ from app.llm.factory import (
 )
 from app.quality.claim_labels import claim_is_relevant_to_narrative, intent_relevance_tokens
 from app.quality.grounded_facts import GroundedSynthesisPlan
-from app.quality.grounded_synthesis import AllowedGroundedFacts
+from app.quality.grounded_synthesis import AllowedGroundedFacts, AllowedQuantitativeFact
 from app.tools.catalog_lookup import fetch_columns_catalog
 from app.tools.explorar_valores import explorar_valores
 
@@ -495,6 +495,18 @@ def build_real_runtime_dependencies(
     ) -> GroundedSynthesisPlan:
         if synthesis_plan_model is None:
             raise RuntimeError("el plan de síntesis cerrada requiere el flag textual")
+        # RF-212 (T-617C-R1): el LLM solo ve hechos cuantitativos relevantes
+        # para la intención (identificadores/dimensiones auxiliares fuera
+        # salvo solicitud explícita); la validación posterior sigue
+        # certificando contra el conjunto completo `allowed`.
+        requested_tokens = intent_relevance_tokens(intent.topic, intent.administrative_terms)
+        visible_facts = tuple(
+            fact
+            for fact in allowed.facts
+            if not isinstance(fact, AllowedQuantitativeFact)
+            or claim_is_relevant_to_narrative(fact.columns, requested_tokens=requested_tokens)
+        )
+        visible = allowed.model_copy(update={"facts": visible_facts or allowed.facts})
         return await _invoke(
             synthesis_plan_model,
             GroundedSynthesisPlan,
@@ -513,7 +525,7 @@ def build_real_runtime_dependencies(
                     content=json.dumps(
                         {
                             "intent": intent.model_dump(mode="json"),
-                            "allowed_grounded_facts": allowed.model_dump(mode="json"),
+                            "allowed_grounded_facts": visible.model_dump(mode="json"),
                         },
                         ensure_ascii=False,
                     )

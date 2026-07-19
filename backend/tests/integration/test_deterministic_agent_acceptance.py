@@ -898,12 +898,10 @@ async def test_t615h_mixed_fallback_uses_only_reverified_persisted_objects(
         run_id,
     )
     final_answer = result["final_answer"]
-    quantitative_fallback = (
-        "sum: T-611 fallo textual no es éxito narrativo "
-        "(metric_sum_1, fila 0): 20. "
-        "Además, sum: T-611 fallo textual no es éxito narrativo "
-        "(metric_sum_1, fila 1): 10."
-    )
+    # RF-212 (T-617C-R1): el fallback etiquetado usa el nombre de columna
+    # fuente real ("monto"), no el alias interno "metric_sum_1"/la
+    # descripción cruda.
+    quantitative_fallback = "Monto: 20. Además, Monto: 10."
     if fail_textual_persistence:
         assert final_answer["status"] == "completed"
         assert final_answer["narrative"] == quantitative_fallback
@@ -2072,9 +2070,10 @@ async def test_t615h_real_factory_plans_only_from_post_persistence_allowed_ids(
     assert final_answer["status"] == "completed"
     assert len(final_answer["claims"]) == 1
     assert final_answer["textual_facts"] == []
-    assert final_answer["narrative"] == (
-        "count: T-611 T-615H fábrica productiva post persistencia (metric_count_1, fila 0): 42."
-    )
+    # RF-212 (T-617C-R1): `count(*)` no tiene columna fuente real; se
+    # etiqueta con el centinela estructural fijo, nunca con el alias
+    # "metric_count_1" ni la descripción cruda.
+    assert final_answer["narrative"] == "Conteo de registros: 42."
     assert final_answer["summary"] == final_answer["narrative"]
 
     persisted_claims = await _count_claims(engine, run_id)

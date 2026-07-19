@@ -228,4 +228,12 @@ async def test_persists_evidence_quality_and_claims_with_real_postgres(engine) -
     assert quality_count == 1
     assert claim is not None
     assert claim.evidence_id == evidence_id
+    # RF-212 (T-617C-R1): la fila real de `quantitative_claims.columns_used`
+    # persiste el nombre de columna fuente real ("total"), nunca el alias de
+    # ejecución interno ("metric_sum_1") que solo vive en memoria durante la
+    # construcción del claim.
+    assert claim.columns_used == ["total"]
+    assert persisted.claims[0]["columns"] == ["total"]
+    assert persisted.claims[0]["label"] == "Total"
+    assert persisted.claims[0]["label_status"] == "verified"
     assert claim.source_hash.startswith("sha256:")

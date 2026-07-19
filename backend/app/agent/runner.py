@@ -72,7 +72,7 @@ from app.llm.factory import (
     LLMProviderError,
     get_structured_chat_model,
 )
-from app.quality.claim_labels import build_presentation_warnings
+from app.quality.claim_labels import build_presentation_warnings, intent_relevance_tokens
 from app.quality.grounded_facts import QuantitativeFactKind
 from app.quality.grounded_synthesis import (
     GroundedSynthesisValidationError,
@@ -493,7 +493,12 @@ async def execute_deterministic_agent_run_async(
                     ValidationError,
                     ValueError,
                 ):
-                    synthesis_plan = build_grounded_synthesis_fallback(allowed_grounded_facts)
+                    synthesis_plan = build_grounded_synthesis_fallback(
+                        allowed_grounded_facts,
+                        requested_tokens=intent_relevance_tokens(
+                            result.intent.topic, result.intent.administrative_terms
+                        ),
+                    )
                 if cancel_event.is_set():
                     raise DeterministicRunCancelled(
                         "corrida cancelada después de planificar síntesis"

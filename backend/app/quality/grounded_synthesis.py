@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.quality.claim_labels import LabelStatus, claim_is_relevant_to_narrative
 from app.quality.grounded_facts import (
     GroundedSynthesisClosing,
     GroundedSynthesisConnector,
@@ -53,6 +54,11 @@ class AllowedQuantitativeFact(_AllowedFact):
     source_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     claim: str = Field(min_length=1)
     display_value: str = Field(min_length=1)
+    #: RF-212 (T-617C-R1): etiqueta humana verificable derivada de
+    #: `columns` (nombre de columna fuente real), o `None` si
+    #: `label_status="ambiguous"`. Nunca se infiere del valor numérico.
+    label: str | None = None
+    label_status: LabelStatus = "ambiguous"
 
 
 class AllowedTextualFact(_AllowedFact):
@@ -180,14 +186,28 @@ def render_grounded_synthesis(
 
 def build_grounded_synthesis_fallback(
     allowed: AllowedGroundedFacts,
+    *,
+    requested_tokens: frozenset[str] = frozenset(),
 ) -> GroundedSynthesisPlan:
-    """Construye el plan determinista cerrado cuando el plan LLM no es usable."""
+    """Construye el plan determinista cerrado cuando el plan LLM no es usable.
+
+    RF-212 (T-617C-R1): prioriza hechos cuantitativos relevantes para la
+    intención (mismo criterio genérico que la ruta con LLM y el fallback
+    del contrato antiguo); los hechos textuales no tienen noción de columna
+    auxiliar/temporal y siempre se conservan elegibles."""
 
     if not allowed.facts:
         raise GroundedSynthesisValidationError(
             "no hay ningún hecho permitido para construir fallback"
         )
-    ordered = sorted(allowed.facts, key=_fallback_sort_key)
+    relevant = [
+        fact
+        for fact in allowed.facts
+        if not isinstance(fact, AllowedQuantitativeFact)
+        or claim_is_relevant_to_narrative(fact.columns, requested_tokens=requested_tokens)
+    ]
+    pool = relevant if relevant else list(allowed.facts)
+    ordered = sorted(pool, key=_fallback_sort_key)
     selected = ordered[:8]
     if len(ordered) > 8:
         closing = GroundedSynthesisClosing.LIMITACION_DISPONIBILIDAD
@@ -223,7 +243,11 @@ def build_grounded_synthesis_fallback(
 
 def _atomic_clause(fact: AllowedQuantitativeFact | AllowedTextualFact) -> str:
     if isinstance(fact, AllowedQuantitativeFact):
-        return f"{fact.claim}: {fact.display_value}."
+        # RF-212: etiqueta humana verificable en vez del `claim`/alias
+        # crudo; ambiguo se señala explícitamente, nunca se inventa.
+        if fact.label_status == "verified" and fact.label:
+            return f"{fact.label}: {fact.display_value}."
+        return f"{fact.display_value} (sin etiqueta verificable)."
     return fact.fact
 
 

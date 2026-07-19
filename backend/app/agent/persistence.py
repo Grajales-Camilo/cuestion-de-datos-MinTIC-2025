@@ -26,7 +26,13 @@ from app.db.models import (
     QuantitativeClaim,
 )
 from app.db.models import TextualFact as TextualFactRecord
-from app.quality.claims import BuiltClaim, compute_source_hash, format_es_co
+from app.quality.claim_labels import derive_claim_label, looks_like_internal_alias
+from app.quality.claims import (
+    BuiltClaim,
+    compute_legacy_source_hash,
+    compute_source_hash,
+    format_es_co,
+)
 from app.quality.grounded_facts import (
     CategorySelectionParams,
     CategorySelectionRule,
@@ -47,7 +53,7 @@ from app.quality.textual_fact_builder import (
 )
 from app.quality.textual_facts import TextualFactSpec
 from app.quality.validator import EvidenceDraft, QualityResult
-from app.tools.soql_parser import SoqlGuardError, parse_soql
+from app.tools.soql_parser import SoqlGuardError, extract_column_field_names, parse_soql
 
 TOOL_OUTPUT_SUMMARY_MAX_BYTES = 20 * 1024
 
@@ -275,7 +281,13 @@ async def persist_claims(
                     claim_text=claim_text,
                     claim_type=claim.claim_type,
                     source_row_indexes=list(claim.source_row_indexes),
-                    columns_used=list(claim.columns_used),
+                    # T-617C-R1 (RF-212): `columns_used` contractual
+                    # persiste el nombre de columna fuente real, nunca el
+                    # alias de ejecución `dim_N`/`metric_N`. El alias sigue
+                    # viviendo únicamente en `claim.columns_used` (dominio
+                    # interno, nunca persistido) para leer filas y calcular
+                    # `source_hash`/DSL; ver `claim.public_columns`.
+                    columns_used=list(claim.public_columns),
                     formula=claim.formula,
                     raw_value=claim.raw_value,
                     display_value=claim.display_value,
@@ -292,10 +304,8 @@ async def persist_claims(
                     "evidence_id": str(evidence_id),
                     "dataset_id": dataset_id,
                     "source_row_indexes": list(claim.source_row_indexes),
-                    # RF-212 (T-617C-A §4c): nombre de columna fuente real,
-                    # nunca el alias de ejecución `dim_N`/`metric_N` -- ese
-                    # alias sigue viviendo en `columns_used`/DB para
-                    # reproducir `source_hash`, pero nunca se expone aquí.
+                    # RF-212 (T-617C-A §4c, T-617C-R1): nombre de columna
+                    # fuente real, igual que la fila persistida arriba.
                     "columns": list(claim.public_columns),
                     "formula": claim.formula,
                     "raw_value": (
@@ -430,17 +440,55 @@ def _reverify_quantitative_synthesis_fact(
             }
         )
         expected_display = format_es_co(claim.raw_value, rounding, claim.unit)
-        expected_hash = compute_source_hash(
-            dataset_id=evidence.dataset_id,
-            canonical_soql=evidence.soql_query,
-            source_row_indexes=tuple(public.source_row_indexes),
-            rows=tuple(evidence.rows),
-            columns=tuple(public.columns),
-            formula=public.formula,
-            raw_value=claim.raw_value,
-            unit=public.unit,
-            rounding=rounding,
-        )
+        # T-617C-R1 (RF-212): un claim persistido antes de esta enmienda
+        # guarda el alias de ejecución en `columns_used`; uno nuevo guarda el
+        # nombre de columna fuente real. Se distinguen por forma (nunca por
+        # `run_id`/fecha) y cada uno se reverifica con el algoritmo de hash
+        # que realmente lo produjo -- nunca se invalida evidencia histórica
+        # en silencio.
+        is_legacy = any(looks_like_internal_alias(column) for column in public.columns)
+        if is_legacy:
+            expected_hash = compute_legacy_source_hash(
+                dataset_id=evidence.dataset_id,
+                canonical_soql=evidence.soql_query,
+                source_row_indexes=tuple(public.source_row_indexes),
+                rows=tuple(evidence.rows),
+                columns=tuple(public.columns),
+                formula=public.formula,
+                raw_value=claim.raw_value,
+                unit=public.unit,
+                rounding=rounding,
+            )
+            rf212_label: str | None = None
+            rf212_label_status = "ambiguous"
+        else:
+            # Reconstruye alias<->columna real desde el SoQL persistido con
+            # el parser SoQL vigente (sin heurística de texto ad-hoc): las
+            # filas de `evidence.rows` siguen indexadas por alias, así que
+            # hace falta recuperarlo para leer los mismos valores que en la
+            # construcción original.
+            try:
+                alias_to_field = extract_column_field_names(evidence.soql_query)
+            except SoqlGuardError:
+                return None
+            field_to_alias = {field: alias for alias, field in alias_to_field.items()}
+            try:
+                execution_columns = tuple(field_to_alias[name] for name in public.columns)
+            except KeyError:
+                return None
+            expected_hash = compute_source_hash(
+                dataset_id=evidence.dataset_id,
+                canonical_soql=evidence.soql_query,
+                source_row_indexes=tuple(public.source_row_indexes),
+                rows=tuple(evidence.rows),
+                execution_columns=execution_columns,
+                public_columns=tuple(public.columns),
+                formula=public.formula,
+                raw_value=claim.raw_value,
+                unit=public.unit,
+                rounding=rounding,
+            )
+            rf212_label, rf212_label_status = derive_claim_label(tuple(public.columns))
         suffix = f": {public.display_value}"
         if (
             evidence.run_id != run_id
@@ -463,6 +511,8 @@ def _reverify_quantitative_synthesis_fact(
             claim=claim_label,
             display_value=public.display_value,
             quality_classification=quality.classification,
+            label=rf212_label,
+            label_status=rf212_label_status,
         )
     except (IndexError, TypeError, ValueError, ValidationError):
         return None

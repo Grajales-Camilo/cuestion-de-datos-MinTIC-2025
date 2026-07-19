@@ -150,17 +150,27 @@ def validate_grounded_synthesis(
     orphan_figures = find_orphan_figures(synthesis.answer, accepted)
     if orphan_figures:
         raise ValueError(f"síntesis contiene cifras huérfanas: {orphan_figures}")
-    # RF-212: cada claim citado con etiqueta verificada debe mantener su
-    # asociación exacta claim_id → display_value → label en el texto final;
-    # no basta con que la etiqueta y la cifra aparezcan en cualquier parte
-    # (eso permitiría intercambiarlas entre dos claims citados).
+    # RF-212 (T-617C-R1): cada claim citado con etiqueta verificada debe
+    # mantener su asociación exacta claim_id → display_value → label en el
+    # texto final. `label_grounded_in_text` exige que la ocurrencia de
+    # etiqueta más cercana a cada valor citado sea la propia (no la de otro
+    # claim citado), rechazando intercambios como "Hombres: 719; Mujeres: 764".
+    cited_verified = [
+        (index, claims[index])
+        for index in synthesis.cited_claim_indexes
+        if claims[index].label_status == "verified" and claims[index].label is not None
+    ]
+    all_labels = frozenset(claim.label for _, claim in cited_verified if claim.label)
+    all_values = frozenset(claim.display_value for _, claim in cited_verified)
     mislabeled = [
         index
-        for index in synthesis.cited_claim_indexes
-        if claims[index].label_status == "verified"
-        and claims[index].label is not None
-        and not label_grounded_in_text(
-            synthesis.answer, claims[index].label, claims[index].display_value
+        for index, claim in cited_verified
+        if not label_grounded_in_text(
+            synthesis.answer,
+            claim.label,
+            claim.display_value,
+            other_labels=all_labels - {claim.label},
+            other_values=all_values - {claim.display_value},
         )
     ]
     if mislabeled:

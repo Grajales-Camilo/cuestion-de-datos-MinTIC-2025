@@ -117,19 +117,103 @@ def test_label_grounded_in_text_accepts_adjacent_label_and_value() -> None:
     assert label_grounded_in_text(answer, "Cantidad empleados", "12")
 
 
-def test_label_grounded_in_text_rejects_swapped_label_and_value() -> None:
-    """Etiqueta y cifra presentes en el texto, pero no asociadas entre sí
-    (p. ej. dos claims cuyas etiquetas se intercambiaron) deben rechazarse."""
+def test_label_grounded_in_text_rejects_semicolon_swapped_pair() -> None:
+    """RF-212 (T-617C-R1): "Hombres: 719; Mujeres: 764" cuando el valor real
+    es hombres=764/mujeres=719 debe rechazarse para AMBOS claims citados."""
 
-    answer = (
-        "La categoría observada con mayor participación relativa este periodo "
-        "es Categoría A, con un total de 30 registros verificados. "
-        "Un resultado adicional y completamente distinto reportó 12."
+    answer = "Hombres: 719; Mujeres: 764"
+    assert not label_grounded_in_text(
+        answer,
+        "Hombres",
+        "764",
+        other_labels=frozenset({"Mujeres"}),
+        other_values=frozenset({"719"}),
     )
-    # La etiqueta de un claim (Categoría A) queda lejos del valor del otro
-    # claim que estamos verificando (12, que en realidad pertenece a otra
-    # categoría no nombrada en este fragmento).
-    assert not label_grounded_in_text(answer, "Categoría A", "12")
+    assert not label_grounded_in_text(
+        answer,
+        "Mujeres",
+        "719",
+        other_labels=frozenset({"Hombres"}),
+        other_values=frozenset({"764"}),
+    )
+
+
+def test_label_grounded_in_text_rejects_period_swapped_pair() -> None:
+    """Misma verificación con puntuación de punto en vez de punto y coma."""
+
+    answer = "Hombres: 719. Mujeres: 764."
+    assert not label_grounded_in_text(
+        answer,
+        "Hombres",
+        "764",
+        other_labels=frozenset({"Mujeres"}),
+        other_values=frozenset({"719"}),
+    )
+    assert not label_grounded_in_text(
+        answer,
+        "Mujeres",
+        "719",
+        other_labels=frozenset({"Hombres"}),
+        other_values=frozenset({"764"}),
+    )
+
+
+def test_label_grounded_in_text_accepts_correct_colon_pair_with_competing_claim() -> None:
+    answer = "Hombres: 764; Mujeres: 719"
+    assert label_grounded_in_text(
+        answer,
+        "Hombres",
+        "764",
+        other_labels=frozenset({"Mujeres"}),
+        other_values=frozenset({"719"}),
+    )
+    assert label_grounded_in_text(
+        answer,
+        "Mujeres",
+        "719",
+        other_labels=frozenset({"Hombres"}),
+        other_values=frozenset({"764"}),
+    )
+
+
+def test_label_grounded_in_text_accepts_natural_phrasing_with_label_after_value() -> None:
+    """La etiqueta puede ir después del valor en prosa natural (RF-211): el
+    par sigue siendo inequívoco porque cada etiqueta está pegada a su propio
+    valor y ninguna cifra citada del otro claim se interpone."""
+
+    answer = "La planta está compuesta por 764 hombres y 719 mujeres."
+    assert label_grounded_in_text(
+        answer,
+        "Hombres",
+        "764",
+        other_labels=frozenset({"Mujeres"}),
+        other_values=frozenset({"719"}),
+    )
+    assert label_grounded_in_text(
+        answer,
+        "Mujeres",
+        "719",
+        other_labels=frozenset({"Hombres"}),
+        other_values=frozenset({"764"}),
+    )
+
+
+def test_label_grounded_in_text_rejects_natural_phrasing_when_swapped() -> None:
+    answer = "La planta está compuesta por 719 hombres y 764 mujeres."
+    assert not label_grounded_in_text(
+        answer,
+        "Hombres",
+        "764",
+        other_labels=frozenset({"Mujeres"}),
+        other_values=frozenset({"719"}),
+    )
+    assert not label_grounded_in_text(
+        answer,
+        "Mujeres",
+        "719",
+        other_labels=frozenset({"Hombres"}),
+        other_values=frozenset({"764"}),
+    )
 
 
 def test_label_grounded_in_text_rejects_missing_label() -> None:

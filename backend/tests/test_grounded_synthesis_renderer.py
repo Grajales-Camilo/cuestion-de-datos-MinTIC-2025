@@ -31,6 +31,8 @@ def quantitative_fact(
     columns: tuple[str, ...] = ("total",),
     source_hash: str = f"sha256:{'1' * 64}",
     quality_classification: str = "alta",
+    label: str | None = "Total de registros",
+    label_status: str = "verified",
 ) -> AllowedQuantitativeFact:
     return AllowedQuantitativeFact(
         id=fact_id,
@@ -43,6 +45,8 @@ def quantitative_fact(
         claim="Total de registros",
         display_value="25",
         quality_classification=quality_classification,
+        label=label,
+        label_status=label_status,
     )
 
 
@@ -394,3 +398,61 @@ def test_fallback_uses_quality_warning_and_rejects_empty_allowed_set() -> None:
     assert fallback.closing.value == "advertencia_calidad"
     with pytest.raises(GroundedSynthesisValidationError, match="ningún hecho"):
         build_grounded_synthesis_fallback(AllowedGroundedFacts(run_id=RUN_ID, facts=()))
+
+
+# --- RF-212 (T-617C-R1): relevancia y etiquetado del fallback T-615H ---------
+
+
+def test_fallback_excludes_auxiliary_column_by_default() -> None:
+    """El fallback estructural (flag textual activo) también prioriza
+    columnas relevantes: un identificador auxiliar no solicitado no debe
+    ser el único hecho renderizado si hay una alternativa relevante."""
+
+    relevant = quantitative_fact(
+        fact_id=uuid.UUID(int=1),
+        columns=("cantidad_empleados",),
+        label="Cantidad empleados",
+        label_status="verified",
+    )
+    auxiliary = quantitative_fact(
+        fact_id=uuid.UUID(int=2),
+        source_hash=f"sha256:{2:064x}",
+        columns=("codigo_interno",),
+        label="Codigo interno",
+        label_status="verified",
+    )
+    allowed = AllowedGroundedFacts(run_id=RUN_ID, facts=(relevant, auxiliary))
+
+    fallback = build_grounded_synthesis_fallback(allowed, requested_tokens=frozenset())
+    cited_ids = {ref.id for segment in fallback.segments for ref in segment.fact_refs}
+
+    assert relevant.id in cited_ids
+    assert auxiliary.id not in cited_ids
+
+
+def test_fallback_includes_auxiliary_column_when_explicitly_requested() -> None:
+    auxiliary = quantitative_fact(
+        fact_id=uuid.UUID(int=2),
+        columns=("codigo_interno",),
+        label="Codigo interno",
+        label_status="verified",
+    )
+    allowed = AllowedGroundedFacts(run_id=RUN_ID, facts=(auxiliary,))
+
+    fallback = build_grounded_synthesis_fallback(
+        allowed, requested_tokens=frozenset({"codigo", "interno"})
+    )
+    cited_ids = {ref.id for segment in fallback.segments for ref in segment.fact_refs}
+
+    assert auxiliary.id in cited_ids
+
+
+def test_fallback_renders_labeled_text_and_flags_ambiguous_without_inventing() -> None:
+    ambiguous = quantitative_fact(label=None, label_status="ambiguous")
+    allowed = AllowedGroundedFacts(run_id=RUN_ID, facts=(ambiguous,))
+
+    fallback = build_grounded_synthesis_fallback(allowed)
+    text = render_grounded_synthesis(fallback, allowed)
+
+    assert "sin etiqueta verificable" in text
+    assert "Total de registros" not in text

@@ -186,16 +186,26 @@ def build_presentation_warnings(claims: list[dict]) -> list[dict]:
 
 
 def label_grounded_in_text(
-    answer: str, label: str, display_value: str, *, window: int = 60
+    answer: str,
+    label: str,
+    display_value: str,
+    *,
+    other_labels: frozenset[str] = frozenset(),
+    other_values: frozenset[str] = frozenset(),
 ) -> bool:
-    """Comprueba que `label` aparece cerca de `display_value` en `answer`.
+    """Comprueba que `label` está inequívocamente asociada a `display_value`
+    en `answer` (RF-212, T-617C-R1).
 
-    Una simple co-presencia de ambos textos en cualquier parte de la
-    respuesta no basta: eso permitiría intercambiar la etiqueta de un valor
-    con la de otro (p. ej. "Mujeres: 764" cuando 764 son hombres) sin que la
-    validación lo detecte. Exigir proximidad textual entre la etiqueta y su
-    propio valor bloquea ese intercambio sin exigir un parser de lenguaje
-    natural completo.
+    No basta con proximidad: "Hombres: 719; Mujeres: 764" tiene la etiqueta
+    "Hombres" cerca de "719" y también cerca de "764" dentro de una ventana
+    corta, así que una distancia simple aceptaría el intercambio. En su
+    lugar, para cada aparición de `display_value` se exige que la ocurrencia
+    de ETIQUETA MÁS CERCANA entre todas las citadas (`label` más
+    `other_labels`) sea justamente `label` -- y que ninguna otra cifra
+    citada (`other_values`) se interponga entre esa etiqueta y este valor.
+    Esto rechaza los dos casos de intercambio del prompt (con `;` o con `.`)
+    y sigue aceptando redacciones naturales donde el par es inequívoco
+    (p. ej. "764 hombres y 719 mujeres", con la etiqueta después del valor).
     """
 
     norm_answer = _normalize(answer)
@@ -203,9 +213,48 @@ def label_grounded_in_text(
     norm_value = _normalize(display_value)
     if not norm_label or not norm_value:
         return False
+
+    all_labels = {norm_label} | {
+        normalized for candidate in other_labels if (normalized := _normalize(candidate))
+    }
+    other_values_norm = {
+        normalized
+        for candidate in other_values
+        if (normalized := _normalize(candidate)) and normalized != norm_value
+    }
+
+    label_occurrences = [
+        (match.start(), match.end(), candidate)
+        for candidate in all_labels
+        for match in re.finditer(re.escape(candidate), norm_answer)
+    ]
+    other_value_positions = [
+        match.start()
+        for candidate in other_values_norm
+        for match in re.finditer(re.escape(candidate), norm_answer)
+    ]
+
     for match in re.finditer(re.escape(norm_value), norm_answer):
-        start = max(0, match.start() - window)
-        end = min(len(norm_answer), match.end() + window)
-        if norm_label in norm_answer[start:end]:
-            return True
+        v_start, v_end = match.span()
+        # (distance, order, label, span_start, span_end); en empate de
+        # distancia se prefiere la etiqueta que PRECEDE al valor (orden 0),
+        # la convención dominante ("Etiqueta: valor"), sobre la que sigue al
+        # siguiente valor de otro claim ("valor; Etiqueta_del_siguiente").
+        closest: tuple[int, int, str, int, int] | None = None
+        for l_start, l_end, candidate in label_occurrences:
+            if l_end <= v_start:
+                distance, span, order = v_start - l_end, (l_end, v_start), 0
+            elif l_start >= v_end:
+                distance, span, order = l_start - v_end, (v_end, l_start), 1
+            else:
+                continue
+            key = (distance, order)
+            if closest is None or key < (closest[0], closest[1]):
+                closest = (distance, order, candidate, *span)
+        if closest is None or closest[2] != norm_label:
+            continue
+        span_start, span_end = closest[3], closest[4]
+        if any(span_start <= pos < span_end for pos in other_value_positions):
+            continue
+        return True
     return False

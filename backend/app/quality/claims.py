@@ -73,7 +73,13 @@ from decimal import ROUND_HALF_UP, Decimal, DecimalException
 
 from app.quality.claim_labels import LabelStatus, derive_claim_label
 
-CLAIMS_ALGORITHM_VERSION = "1.0.0"
+#: v2.0.0 (T-617C-R1, RF-212): la identidad de columnas embebida en el hash
+#: pasa de alias de ejecución (`dim_N`/`metric_N`) a nombre de columna fuente
+#: real. v1.0.0 sigue siendo verificable explícitamente vía
+#: `compute_legacy_source_hash` para claims persistidos antes de esta
+#: enmienda -- nunca se invalida evidencia histórica en silencio.
+CLAIMS_ALGORITHM_VERSION = "2.0.0"
+LEGACY_CLAIMS_ALGORITHM_VERSION = "1.0.0"
 
 ALLOWED_AGG_FUNCTIONS = {"sum", "avg", "count", "min", "max"}
 ALLOWED_OPS = {"add", "sub", "mul", "div", "ratio", "pct_change"}
@@ -368,23 +374,24 @@ def _build_one_claim(evidence: EvidenceContext, spec: ClaimSpec) -> BuiltClaim:
     display_value = format_es_co(raw_value, rounding, spec.unit)
     sorted_indexes = tuple(sorted(spec.source_row_indexes))
 
-    source_hash = compute_source_hash(
-        dataset_id=evidence.dataset_id,
-        canonical_soql=evidence.canonical_soql,
-        source_row_indexes=sorted_indexes,
-        rows=evidence.rows,
-        columns=spec.columns,
-        formula=spec.formula,
-        raw_value=raw_value,
-        unit=spec.unit,
-        rounding=rounding,
-    )
-
     sorted_alias_columns = tuple(sorted(used_columns))
     public_columns = tuple(
         spec.column_field_names.get(alias, alias) for alias in sorted_alias_columns
     )
     label, label_status = derive_claim_label(public_columns)
+
+    source_hash = compute_source_hash(
+        dataset_id=evidence.dataset_id,
+        canonical_soql=evidence.canonical_soql,
+        source_row_indexes=sorted_indexes,
+        rows=evidence.rows,
+        execution_columns=sorted_alias_columns,
+        public_columns=public_columns,
+        formula=spec.formula,
+        raw_value=raw_value,
+        unit=spec.unit,
+        rounding=rounding,
+    )
 
     return BuiltClaim(
         claim_type=spec.claim_type,
@@ -445,10 +452,25 @@ def format_es_co(raw_value: Decimal, rounding: int, unit: str | None) -> str:
 # --- source_hash --------------------------------------------------------------
 
 
-def _row_subset_canonical(
+def _row_subset_canonical_legacy(
     rows: tuple[dict, ...], indexes: tuple[int, ...], columns: tuple[str, ...]
 ) -> list[dict]:
     return [{col: rows[idx].get(col) for col in columns} for idx in indexes]
+
+
+def _row_subset_canonical(
+    rows: tuple[dict, ...],
+    indexes: tuple[int, ...],
+    execution_columns: tuple[str, ...],
+    public_columns: tuple[str, ...],
+) -> list[dict]:
+    """Extrae el subconjunto canónico de filas leyendo por alias de
+    ejecución (única clave presente en `rows`, ver `EvidenceContext`), pero
+    reindexa el resultado por nombre de columna público (RF-212): el alias
+    nunca queda embebido en el material que produce `source_hash`."""
+
+    pairs = tuple(zip(execution_columns, public_columns, strict=True))
+    return [{public: rows[idx].get(alias) for alias, public in pairs} for idx in indexes]
 
 
 def _canonical_json(value: object) -> str:
@@ -461,19 +483,61 @@ def compute_source_hash(
     canonical_soql: str,
     source_row_indexes: tuple[int, ...],
     rows: tuple[dict, ...],
-    columns: tuple[str, ...],
+    execution_columns: tuple[str, ...],
+    public_columns: tuple[str, ...],
     formula: dict | None,
     raw_value: Decimal,
     unit: str | None,
     rounding: int,
 ) -> str:
+    """Hash reproducible v2.0.0 (RF-212): la identidad de columnas embebida
+    en el material (`"columns"`, `rows_subset_canonical`) es el nombre de
+    columna fuente real (`public_columns`), nunca el alias de ejecución
+    (`execution_columns`) usado solo para leer `rows`. Para claims
+    persistidos antes de esta versión usar `compute_legacy_source_hash`."""
+
     sorted_indexes = tuple(sorted(source_row_indexes))
     payload = {
         "algorithm_version": CLAIMS_ALGORITHM_VERSION,
         "dataset_id": dataset_id,
         "canonical_soql": canonical_soql,
         "source_row_indexes": list(sorted_indexes),
-        "rows_subset_canonical": _row_subset_canonical(rows, sorted_indexes, columns),
+        "rows_subset_canonical": _row_subset_canonical(
+            rows, sorted_indexes, execution_columns, public_columns
+        ),
+        "columns": list(public_columns),
+        "formula_dsl_canonical": formula,
+        "raw_value": format(raw_value, "f"),
+        "unit": unit,
+        "rounding": rounding,
+    }
+    digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+    return f"sha256:{digest}"
+
+
+def compute_legacy_source_hash(
+    *,
+    dataset_id: str,
+    canonical_soql: str,
+    source_row_indexes: tuple[int, ...],
+    rows: tuple[dict, ...],
+    columns: tuple[str, ...],
+    formula: dict | None,
+    raw_value: Decimal,
+    unit: str | None,
+    rounding: int,
+) -> str:
+    """Reproduce el hash v1.0.0 (columns = alias de ejecución) bit a bit,
+    exclusivamente para reverificar claims persistidos antes de T-617C-R1.
+    No usar para claims nuevos."""
+
+    sorted_indexes = tuple(sorted(source_row_indexes))
+    payload = {
+        "algorithm_version": LEGACY_CLAIMS_ALGORITHM_VERSION,
+        "dataset_id": dataset_id,
+        "canonical_soql": canonical_soql,
+        "source_row_indexes": list(sorted_indexes),
+        "rows_subset_canonical": _row_subset_canonical_legacy(rows, sorted_indexes, columns),
         "columns": list(columns),
         "formula_dsl_canonical": formula,
         "raw_value": format(raw_value, "f"),
