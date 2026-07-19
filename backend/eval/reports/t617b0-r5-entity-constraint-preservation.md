@@ -184,6 +184,174 @@ El commit de este incremento incluye únicamente los dos archivos de código/pru
 informe. No hubo `push`, no hubo `amend`, no se tocó ningún archivo no rastreado ni ninguno
 de los 7 documentos de specs señalados como fuera de alcance.
 
-## Veredicto
+## Veredicto R5
+
+**READY_FOR_T617B_PILOT005_RETRY**
+
+---
+
+# T-617B0-R5A — Corrección de bordes residuales
+
+## Punto de partida
+
+- HEAD base para esta ronda: `7dbcf50f93e4961f86b55775ba8a915630153256` (R5).
+- Disparador: auditoría independiente que confirmó que la protección principal de R5
+  funciona pero reprodujo tres bordes residuales.
+
+## Bordes residuales encontrados (auditoría)
+
+1. Un filtro `IN` con `("MINISTERIO DE RELACIONES EXTERIORES", "INPEC")` se aceptaba
+   porque `_require_entity_constraint_preserved` usaba `any()` sobre **todos los valores
+   de todos los filtros combinados**, en vez de exigir que un único filtro fuera
+   inequívoco: bastaba un valor correcto dentro de una lista que mezclaba dos entidades
+   distintas.
+2. `_entity_grounded_in_value` aceptaba coincidencia por subcadena literal
+   (`entity_norm in value_norm`), así que `"Ministerio"` se consideraba equivalente a
+   `"Ministerio de Relaciones Exteriores"` — un término genérico de tipo institucional no
+   identifica una entidad específica.
+3. `_ENTITY_COLUMN_TOKENS` incluía el token suelto `"nombre"`, así que cualquier columna
+   con `nombre` en el nombre (`nombre_producto`, `nombre_proyecto`, `nombre_indicador`,
+   nombres personales) se clasificaba como columna de entidad y activaba la protección
+   sin que el dataset tuviera semántica institucional real.
+
+## Corrección
+
+Todo el cambio vive en `backend/app/agent/llm_contracts.py`, sin tocar la firma pública de
+`materialize_query_plan` ni el punto de integración con `deterministic_runtime.py`:
+
+1. **Columna de entidad** (`_is_entity_designating_column`): se retira `"nombre"` de
+   `_ENTITY_COLUMN_TOKENS`, que ahora es
+   `{"entidad", "empresa", "institucion", "organismo", "organizacion"}`. Una columna sólo
+   cuenta como de entidad si sus tokens semánticos intersecan directamente ese conjunto.
+   `nombre_de_la_entidad` y `nombre_empresa` siguen reconociéndose porque contienen
+   `"entidad"`/`"empresa"`; `nombre_producto` ya no interseca nada del conjunto.
+
+2. **Equivalencia entre valores** (`_entity_grounded_in_value`): se elimina el atajo por
+   subcadena de texto y se compara exclusivamente por conjuntos de tokens semánticos.
+   Dos frases se consideran equivalentes si sus conjuntos de tokens son iguales, o si uno
+   es subconjunto propio del otro (frase más específica que añade calificadores, p. ej.
+   *"... de Colombia"*) — **salvo** que el conjunto más pequeño tenga un solo token y ese
+   token esté en `_GENERIC_ENTITY_TOKENS` (`ministerio`, `instituto`, `entidad`,
+   `empresa`, `organismo`, `institucion`, `organizacion`, `direccion`, `secretaria`,
+   `agencia`, `fondo`, `unidad`, `superintendencia`, `corporacion`, `comision`,
+   `consejo`): en ese caso se rechaza por ser un fragmento genérico de un solo término, no
+   una identificación inequívoca.
+
+3. **Unanimidad en `IN`** (`_filter_unambiguously_grounds_entity` +
+   `_require_entity_constraint_preserved`): en vez de recolectar todos los valores de
+   todos los filtros de entidad y usar `any()`, ahora se evalúa **filtro por filtro**: un
+   filtro sólo cuenta como grounding si **todos** sus valores son equivalentes a la
+   entidad solicitada (`all(...)`). El plan se acepta si **existe** al menos un filtro de
+   entidad que sea inequívoco en su totalidad; si ningún filtro lo es (incluyendo un `IN`
+   que mezcla la entidad correcta con otra), se rechaza como contradicción/ambigüedad.
+
+Ninguno de estos cambios depende de `case_id`, `dataset_id` ni cifras de `pilot-005`; los
+conjuntos de tokens son vocabulario genérico de tipos institucionales en español,
+consistente con el ya usado en `normalize_lookup_filters` para filtros de `lookup`.
+
+## Comportamiento verificado
+
+- `IN` con entidad correcta + entidad distinta → rechazado (unanimidad falla).
+- `IN` con solo variantes de la misma entidad (mayúsculas distintas) → aceptado.
+- `"Ministerio"` solo → rechazado (token genérico único).
+- `"Ministerio de Relaciones Exteriores de Colombia"` (superset específico) → aceptado.
+- `nombre_producto` → no se clasifica como columna de entidad; el plan no requiere ningún
+  filtro sobre ella.
+- `nombre_de_la_entidad` y `nombre_empresa` → sí se clasifican como columnas de entidad.
+- Los 5 comportamientos originales de R5 (omisión, equivalencia simple, contradicción
+  total, ausencia de entidad en la intención, selección temporal subóptima no bloqueada)
+  siguen verdes sin modificar sus aserciones de comportamiento (solo se actualizó el
+  texto de una expresión regular de una prueba existente para que siga coincidiendo con
+  el mensaje de error, ahora compartido entre contradicción y ambigüedad).
+
+## Archivos modificados (R5A)
+
+- `backend/app/agent/llm_contracts.py` — reescritura de `_ENTITY_COLUMN_TOKENS`,
+  `_entity_grounded_in_value`, nuevas `_is_entity_designating_column`,
+  `_GENERIC_ENTITY_TOKENS`, `_filter_unambiguously_grounds_entity`; reescritura de
+  `_require_entity_constraint_preserved` para evaluar filtro por filtro.
+- `backend/tests/test_llm_contracts.py` — 6 pruebas nuevas + 1 ajuste de regex en una
+  prueba existente de R5 (mismo comportamiento, mensaje de error actualizado):
+  - `test_materialization_rejects_in_filter_mixing_correct_and_other_entity`
+  - `test_materialization_accepts_in_filter_with_only_equivalent_entity_variants`
+  - `test_materialization_rejects_single_generic_word_as_entity_equivalence`
+  - `test_materialization_accepts_sufficiently_specific_normalized_variant`
+  - `test_product_name_column_is_not_classified_as_institutional_entity`
+  - `test_institutional_name_columns_are_recognized_as_entity_columns`
+- Esta sección del informe existente (sin crear archivo nuevo).
+
+## Pruebas y resultados exactos (R5A)
+
+1. **Reproducción de fallo en worktree temporal sobre R5** (`git worktree add
+   %TEMP%/t617b0-r5a-baseline 7dbcf50f93e4961f86b55775ba8a915630153256`, copiando sólo el
+   archivo de pruebas con los 6 casos nuevos, sin la corrección de producción R5A):
+   ```
+   uv run python -m pytest tests/test_llm_contracts.py -q
+   3 failed, 30 passed in 0.36s
+   FAILED test_materialization_rejects_in_filter_mixing_correct_and_other_entity
+   FAILED test_materialization_rejects_single_generic_word_as_entity_equivalence
+   FAILED test_product_name_column_is_not_classified_as_institutional_entity
+   ```
+   Los 3 fallos corresponden exactamente a los 3 bordes residuales reportados por la
+   auditoría; los otros 3 casos nuevos (IN con variantes equivalentes, forma específica
+   aceptada, columnas institucionales reconocidas) y los 5 originales de R5 ya pasaban en
+   baseline. Worktree eliminado con `git worktree remove --force`.
+
+2. **Con la corrección R5A, en el árbol principal**:
+   ```
+   uv run python -m pytest tests/test_llm_contracts.py -q
+   .................................                                        [100%]
+   33 passed in 0.16s / 0.34s
+   ```
+
+3. **Suite completa no-integración**:
+   ```
+   uv run python -m pytest -m "not integration" -q
+   959 passed, 122 deselected, 5 warnings in 17.18s
+   ```
+
+4. **Aceptación determinista focalizada**:
+   ```
+   uv run python -m pytest tests/test_deterministic_acceptance_guard.py \
+     tests/test_deterministic_runtime.py tests/test_deterministic_pipeline.py \
+     tests/test_deterministic_graph.py tests/test_deterministic_dependencies.py \
+     tests/test_deterministic_textual_planning.py -q
+   90 passed, 1 warning in 6.01s
+   ```
+
+5. **Lint y formato**:
+   ```
+   uv run ruff check .
+   All checks passed!
+
+   uv run ruff format --check app/agent/llm_contracts.py tests/test_llm_contracts.py
+   → app/agent/llm_contracts.py requería reformateo; se aplicó `ruff format` y se
+     reejecutaron las pruebas (33 passed). Verificación final: 2 files already formatted.
+   ```
+
+6. **`git diff --check`** sobre los archivos modificados: sin salida (limpio).
+
+## Hashes golden (antes y después de R5A)
+
+- `golden-v1.yaml`: `ab546062767ce2046508489c169a270ae00ceb1515ff67bf92d472404630ff72` (sin cambio)
+- `golden-v2.yaml`: `1c78264cccb0da6a10920b6b212438cc40c2b70d2bbd40265f5794fdc754e483` (sin cambio)
+
+No se ejecutó Gemini, Socrata, PostgreSQL, `pilot-005` ni el smoke durante este
+incremento; toda la verificación usó dobles deterministas en memoria.
+
+## Estado final del worktree (R5A)
+
+`git status --porcelain` antes del commit mostraba únicamente:
+- `M backend/app/agent/llm_contracts.py`
+- `M backend/tests/test_llm_contracts.py`
+- Los mismos 7 documentos preexistentes de `specs/` modificados por el coordinador (no
+  tocados, no incluidos en el commit).
+- Los mismos archivos no rastreados preexistentes, preservados intactos.
+
+El commit de esta ronda incluye únicamente los dos archivos de código/pruebas y esta
+sección del informe existente. No hubo `push`, no hubo `amend`, no se tocó ningún archivo
+no rastreado ni ninguno de los 7 documentos de specs señalados como fuera de alcance.
+
+## Veredicto R5A
 
 **READY_FOR_T617B_PILOT005_RETRY**

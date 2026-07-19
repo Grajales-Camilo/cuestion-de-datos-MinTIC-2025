@@ -338,7 +338,7 @@ def test_materialization_rejects_plan_that_contradicts_entity_filter() -> None:
         order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=0),),
         limit=1,
     )
-    with pytest.raises(ValueError, match="contradice la entidad solicitada"):
+    with pytest.raises(ValueError, match="entidad solicitada"):
         materialize_query_plan(
             selection,
             intent=_entity_intent("Ministerio de Relaciones Exteriores"),
@@ -387,6 +387,208 @@ def test_materialization_does_not_block_suboptimal_temporal_selection_with_entit
         context=_entity_context(),
     )
     assert len(plan.filters) == 1
+
+
+def test_materialization_rejects_in_filter_mixing_correct_and_other_entity() -> None:
+    """R5A: un valor coincidente no basta si la lista IN incluye otra entidad."""
+
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.IN,
+                value_type=ScalarType.TEXT,
+                values=("Ministerio de Relaciones Exteriores", "INPEC"),
+            ),
+        ),
+        order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=0),),
+        limit=1,
+    )
+    with pytest.raises(ValueError, match="entidad solicitada"):
+        materialize_query_plan(
+            selection,
+            intent=_entity_intent("Ministerio de Relaciones Exteriores"),
+            context=_entity_context(),
+        )
+
+
+def test_materialization_accepts_in_filter_with_only_equivalent_entity_variants() -> None:
+    """R5A: un IN cuyos valores son todos variantes de la misma entidad sí es válido."""
+
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.IN,
+                value_type=ScalarType.TEXT,
+                values=(
+                    "Ministerio de Relaciones Exteriores",
+                    "MINISTERIO DE RELACIONES EXTERIORES",
+                ),
+            ),
+        ),
+        order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=0),),
+        limit=1,
+    )
+    plan = materialize_query_plan(
+        selection,
+        intent=_entity_intent("Ministerio de Relaciones Exteriores"),
+        context=_entity_context(),
+    )
+    assert plan.filters[0].column.column_index == 0
+
+
+def test_materialization_rejects_single_generic_word_as_entity_equivalence() -> None:
+    """R5A: 'Ministerio' solo no equivale a 'Ministerio de Relaciones Exteriores'."""
+
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("Ministerio",),
+            ),
+        ),
+        order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=0),),
+        limit=1,
+    )
+    with pytest.raises(ValueError, match="entidad solicitada"):
+        materialize_query_plan(
+            selection,
+            intent=_entity_intent("Ministerio de Relaciones Exteriores"),
+            context=_entity_context(),
+        )
+
+
+def test_materialization_accepts_sufficiently_specific_normalized_variant() -> None:
+    """R5A: una forma más específica y normalizada de la misma entidad sí se acepta."""
+
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("Ministerio de Relaciones Exteriores de Colombia",),
+            ),
+        ),
+        order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=0),),
+        limit=1,
+    )
+    plan = materialize_query_plan(
+        selection,
+        intent=_entity_intent("Ministerio de Relaciones Exteriores"),
+        context=_entity_context(),
+    )
+    assert plan.filters[0].column.column_index == 0
+
+
+def test_product_name_column_is_not_classified_as_institutional_entity() -> None:
+    """R5A: 'nombre_producto' no debe activar la protección de entidad."""
+
+    product_context = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="prod-1234",
+                title="Catálogo de productos",
+                publisher="Entidad oficial",
+                columns=(
+                    ColumnOption(
+                        index=0,
+                        field_name="nombre_producto",
+                        display_name="Nombre del producto",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=1,
+                        field_name="cantidad",
+                        display_name="Cantidad",
+                        data_type=ColumnDataType.INTEGER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                ),
+            ),
+        )
+    )
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1,),
+        order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=0),),
+        limit=1,
+    )
+    plan = materialize_query_plan(
+        selection,
+        intent=_entity_intent("Ministerio de Relaciones Exteriores"),
+        context=product_context,
+    )
+    assert plan.filters == ()
+
+
+def test_institutional_name_columns_are_recognized_as_entity_columns() -> None:
+    """R5A: 'nombre_de_la_entidad' y 'nombre_empresa' sí cuentan como columna de entidad."""
+
+    institutional_context = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="inst-1234",
+                title="Directorio institucional",
+                publisher="Entidad oficial",
+                columns=(
+                    ColumnOption(
+                        index=0,
+                        field_name="nombre_de_la_entidad",
+                        display_name="Nombre de la entidad",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=1,
+                        field_name="nombre_empresa",
+                        display_name="Nombre empresa",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=2,
+                        field_name="valor",
+                        display_name="Valor",
+                        data_type=ColumnDataType.INTEGER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                ),
+            ),
+        )
+    )
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(2,),
+        order_by=(SortChoice(target_kind=SortTargetKind.DIMENSION, target_index=0),),
+        limit=1,
+    )
+    with pytest.raises(ValueError, match="omite la restricción de entidad"):
+        materialize_query_plan(
+            selection,
+            intent=_entity_intent("Ministerio de Relaciones Exteriores"),
+            context=institutional_context,
+        )
 
 
 def test_structured_outputs_forbid_extra_free_text_fields() -> None:

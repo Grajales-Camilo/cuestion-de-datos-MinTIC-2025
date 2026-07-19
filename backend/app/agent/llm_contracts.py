@@ -756,21 +756,75 @@ def normalize_lookup_filters(
     return selection.model_copy(update={"filters": filters})
 
 
-_ENTITY_COLUMN_TOKENS = {"entidad", "empresa", "institucion", "organismo", "nombre"}
+_ENTITY_COLUMN_TOKENS = {"entidad", "empresa", "institucion", "organismo", "organizacion"}
+
+_GENERIC_ENTITY_TOKENS = {
+    "ministerio",
+    "instituto",
+    "entidad",
+    "empresa",
+    "organismo",
+    "institucion",
+    "organizacion",
+    "direccion",
+    "secretaria",
+    "agencia",
+    "fondo",
+    "unidad",
+    "superintendencia",
+    "corporacion",
+    "comision",
+    "consejo",
+}
+
+
+def _is_entity_designating_column(field_name: str, display_name: str) -> bool:
+    """Requiere semántica institucional explícita, no basta con `nombre` solo.
+
+    `nombre_producto`, `nombre_proyecto`, `nombre_indicador` o un nombre
+    personal no deben clasificarse como columna de entidad: `nombre` por sí
+    solo no distingue una razón social de cualquier otro campo etiquetado.
+    """
+
+    tokens = _semantic_tokens(f"{field_name} {display_name}")
+    return bool(tokens & _ENTITY_COLUMN_TOKENS)
 
 
 def _entity_grounded_in_value(entity: str, value: str) -> bool:
-    entity_norm = _normalized_phrase(entity)
-    value_norm = _normalized_phrase(value)
-    if not entity_norm or not value_norm:
-        return False
-    if entity_norm in value_norm or value_norm in entity_norm:
-        return True
+    """Compara `entity` y `value` tolerando mayúsculas, acentos y orden.
+
+    Rechaza equivalencias basadas en un único término genérico de tipo
+    institucional (`"Ministerio"`, `"Instituto"`, `"Entidad"`...): ese
+    término por sí solo no identifica de forma inequívoca la entidad
+    solicitada, así sea literalmente un sustring de una frase más larga.
+    """
+
     entity_tokens = _semantic_tokens(entity)
     value_tokens = _semantic_tokens(value)
     if not entity_tokens or not value_tokens:
         return False
-    return entity_tokens <= value_tokens or value_tokens <= entity_tokens
+    if entity_tokens == value_tokens:
+        return True
+    if entity_tokens <= value_tokens:
+        smaller = entity_tokens
+    elif value_tokens <= entity_tokens:
+        smaller = value_tokens
+    else:
+        return False
+    if len(smaller) == 1 and smaller <= _GENERIC_ENTITY_TOKENS:
+        return False
+    return True
+
+
+def _filter_unambiguously_grounds_entity(entity: str, values: tuple[str, ...]) -> bool:
+    """Un filtro `IN` sólo cuenta si TODOS sus valores son la misma entidad.
+
+    Que un solo valor de una lista coincida no basta: una lista que mezcla la
+    entidad correcta con una distinta (p. ej. INPEC junto al Ministerio
+    solicitado) es una restricción ambigua, no una equivalencia.
+    """
+
+    return bool(values) and all(_entity_grounded_in_value(entity, value) for value in values)
 
 
 def _require_entity_constraint_preserved(
@@ -783,7 +837,7 @@ def _require_entity_constraint_preserved(
 
     Si la intención identifica una entidad específica y el dataset seleccionado
     tiene al menos una columna que semánticamente designa entidades, el plan
-    final debe restringir esa columna a un valor equivalente a la entidad
+    final debe restringir esa columna, sin ambigüedad, a la entidad
     solicitada. Preguntas sin entidad explícita o datasets sin columna de
     entidad no activan esta comprobación: no es una regla de pilot-005, es la
     misma frontera determinista que ya impide operation != intent.operation.
@@ -796,28 +850,29 @@ def _require_entity_constraint_preserved(
     entity_column_indexes = {
         column.index
         for column in candidate.columns
-        if _semantic_tokens(f"{column.field_name} {column.display_name}").intersection(
-            _ENTITY_COLUMN_TOKENS
-        )
+        if _is_entity_designating_column(column.field_name, column.display_name)
     }
     if not entity_column_indexes:
         return
-    matching_values = [
-        value.value
+    matching_filters = [
+        item
         for item in plan.filters
         if item.column.column_index in entity_column_indexes
         and item.operator in {FilterOperator.EQ, FilterOperator.IN}
-        for value in item.values
     ]
-    if not matching_values:
+    if not matching_filters:
         raise ValueError(
             "el plan omite la restricción de entidad requerida por la intención: "
             f"{entity!r} no aparece filtrado en ninguna columna de entidad del dataset"
         )
-    if not any(_entity_grounded_in_value(entity, value) for value in matching_values):
+    grounded = any(
+        _filter_unambiguously_grounds_entity(entity, tuple(value.value for value in item.values))
+        for item in matching_filters
+    )
+    if not grounded:
         raise ValueError(
-            "el plan contradice la entidad solicitada por la intención: "
-            f"el filtro de entidad no corresponde a {entity!r}"
+            "el plan contradice o ambigua la entidad solicitada por la intención: "
+            f"ningún filtro de entidad corresponde inequívocamente a {entity!r}"
         )
 
 
