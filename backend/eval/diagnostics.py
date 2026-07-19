@@ -51,6 +51,7 @@ class FailureCode(StrEnum):
     INTERNAL_ERROR = "internal_error"
     STRUCTURED_OUTPUT_INVALID = "structured_output_invalid"
     HARNESS_ERROR = "harness_error"
+    RUN_INTERRUPTED = "run_interrupted"
 
 
 # Códigos terminales tipados de `agent_runs.terminal_error_code`
@@ -61,7 +62,18 @@ class FailureCode(StrEnum):
 # infraestructura, proveedor o ejecución. Cada código mapea a un
 # `FailureCode` propio (T-617B0-R3A: `INTERNAL` no puede leerse como
 # "proveedor", ni `RUN_TIMEOUT`/`HEARTBEAT_EXPIRED`/`WORKER_LOST` deben
-# perder su identidad bajo un rótulo genérico). Excluye deliberadamente:
+# perder su identidad bajo un rótulo genérico).
+#
+# `RUN_INTERRUPTED` (T-617B0-R3B, corrección de un comentario impreciso de
+# R3A): NO es una cancelación del usuario. Según `plan.md` §11 y
+# `contracts/api-rest.md` §4, es el arranque idempotente del backend
+# marcando como `interrupted` las corridas `running` cuya lease de worker
+# venció (reinicio/despliegue), y conserva evidencias/claims parciales ya
+# validados hasta el corte. Es exactamente tan no evaluable como
+# `HEARTBEAT_EXPIRED`/`WORKER_LOST`: la corrida se cortó por infraestructura
+# del backend, no por una decisión semántica del agente.
+#
+# Excluye deliberadamente:
 # - `STRUCTURED_OUTPUT_INVALID`: por contrato (`contracts/api-rest.md` §4)
 #   distingue explícitamente una salida que sigue sin cumplir el esquema tras
 #   agotar el repair loop de una falla real del proveedor; NO es
@@ -69,9 +81,6 @@ class FailureCode(StrEnum):
 #   infraestructura. Se clasifica aparte (ver `_STRUCTURED_OUTPUT_INVALID`
 #   abajo) con `failure_owner="agent"` y SÍ puede contar como regresión
 #   semántica bloqueante de un positivo sólido.
-# - `RUN_INTERRUPTED`: cancelación (`status="interrupted"`), un resultado
-#   operativo distinto de una falla, no una regresión ni una falla de
-#   infraestructura no evaluable.
 # - Códigos aplicativos que no terminan la corrida (p. ej.
 #   `SOCRATA_TIMEOUT`/`SOCRATA_ERROR`), que ocurren dentro de una corrida que
 #   puede seguir y terminar `completed`/`no_evidence`.
@@ -88,6 +97,7 @@ _INFRASTRUCTURE_TERMINAL_ERROR_CODE_TO_FAILURE_CODE: dict[str, FailureCode] = {
     "HEARTBEAT_EXPIRED": FailureCode.HEARTBEAT_EXPIRED,
     "WORKER_LOST": FailureCode.WORKER_LOST,
     "INTERNAL": FailureCode.INTERNAL_ERROR,
+    "RUN_INTERRUPTED": FailureCode.RUN_INTERRUPTED,
 }
 INFRASTRUCTURE_TERMINAL_ERROR_CODES: frozenset[str] = frozenset(
     _INFRASTRUCTURE_TERMINAL_ERROR_CODE_TO_FAILURE_CODE

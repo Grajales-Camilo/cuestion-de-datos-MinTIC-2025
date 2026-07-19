@@ -63,6 +63,12 @@ def test_config_snapshot_registers_deterministic_textual_facts_enabled(monkeypat
         # AMBOS estados no evaluables; sin esto, esta rama de la
         # parametrización fallaría con error_code=None.
         ("interrupted", "HEARTBEAT_EXPIRED", "heartbeat_expired"),
+        # T-617B0-R3B (requisito A): RUN_INTERRUPTED también se persiste con
+        # status="interrupted" (arranque idempotente del backend marcando
+        # corridas con lease vencida, plan.md §11) y antes de esta corrección
+        # caía en expected_dataset_not_retrieved/owner=agent porque
+        # diagnostics no lo reconocía como terminal no evaluable.
+        ("interrupted", "RUN_INTERRUPTED", "run_interrupted"),
     ],
 )
 async def test_run_suite_propagates_provider_terminal_from_agent_run(
@@ -348,6 +354,101 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
     assert persisted_calls[1]["agent_run_id"] is None
     assert persisted_calls[1]["error_code"] == "RuntimeError"
     assert persisted_calls[2]["agent_run_id"] is not None
+
+
+async def test_run_suite_aborts_when_persistence_fails_twice(monkeypatch) -> None:
+    """T-617B0-R3B #2 (requisito B): si el reintento de persistencia TAMBIÉN
+    falla, la excepción NUNCA se silencia. `run_suite` debe abortar con
+    `EvalPersistenceError` (no devolver ningún `RunSuiteResult`/veredicto que
+    pudiera leerse como PASS), y el cleanup de worker/engine debe ejecutarse
+    de todas formas vía el `finally` existente. Sin la corrección, el
+    `except Exception: pass` original silenciaba el segundo fallo y permitía
+    que la corrida siguiera acumulando `results`/`outcomes` como si el caso
+    hubiera quedado persistido."""
+
+    suite = _fake_suite()
+    suite_id = uuid.uuid4()
+    case_ids = {case.case_id: uuid.uuid4() for case in suite.cases}
+
+    monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
+    monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
+    monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+    monkeypatch.setattr(run_module, "validate_gate_selection", lambda *a, **k: None)
+
+    engine_disposed = AsyncMock()
+    monkeypatch.setattr(
+        run_module,
+        "create_app_async_engine",
+        lambda *a, **k: SimpleNamespace(dispose=engine_disposed),
+    )
+    monkeypatch.setattr(
+        run_module,
+        "sync_golden_suite",
+        AsyncMock(return_value=PersistedGoldenSuite(suite_id=suite_id, case_ids=case_ids)),
+    )
+    monkeypatch.setattr(run_module, "register_worker_instance", AsyncMock(return_value="worker-1"))
+    worker_shutdown = AsyncMock()
+    monkeypatch.setattr(run_module, "mark_worker_shutdown", worker_shutdown)
+    monkeypatch.setattr(run_module, "create_eval_run", AsyncMock(return_value=uuid.uuid4()))
+    monkeypatch.setattr(run_module, "execute_agent_run_async", AsyncMock())
+    monkeypatch.setattr(
+        run_module,
+        "get_run",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                final_answer={"status": "no_evidence", "evidence": [], "claims": []}
+            )
+        ),
+    )
+    monkeypatch.setattr(run_module, "_planner_search_dataset_ids", AsyncMock(return_value=[]))
+    monkeypatch.setattr(run_module, "_stage_observations", AsyncMock(return_value=()))
+    monkeypatch.setattr(
+        run_module,
+        "_create_eval_record",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                id=uuid.uuid4(), llm_provider="google", llm_model="gemini-2.5-flash"
+            )
+        ),
+    )
+
+    finalize_calls = []
+    monkeypatch.setattr(
+        run_module,
+        "_finalize_eval_record",
+        AsyncMock(side_effect=lambda *a, **k: finalize_calls.append(1)),
+    )
+    write_report_calls = []
+    monkeypatch.setattr(run_module, "_write_report", lambda *a, **k: write_report_calls.append(1))
+
+    persisted_calls = []
+
+    async def always_fails(engine, **kwargs):
+        persisted_calls.append(kwargs)
+        raise RuntimeError(
+            'insert or update on table "eval_case_results" violates foreign key constraint'
+        )
+
+    monkeypatch.setattr(run_module, "_persist_case_result", always_fails)
+
+    with pytest.raises(run_module.EvalPersistenceError, match="c1"):
+        await run_module.run_suite(
+            suite_name="golden-v1", provider=None, model=None, seed=1, limit=None
+        )
+
+    # Los dos intentos del primer caso se hicieron; la corrida se abortó ahí
+    # mismo, sin seguir al segundo caso de la suite.
+    assert len(persisted_calls) == 2
+    assert persisted_calls[0]["agent_run_id"] is not None
+    assert persisted_calls[1]["agent_run_id"] is None
+
+    # No se generó ningún resultado que pudiera leerse como PASS.
+    assert finalize_calls == []
+    assert write_report_calls == []
+
+    # El cleanup de worker y engine se ejecutó de todas formas (finally).
+    worker_shutdown.assert_awaited_once()
+    engine_disposed.assert_awaited_once()
 
 
 @pytest.mark.parametrize(

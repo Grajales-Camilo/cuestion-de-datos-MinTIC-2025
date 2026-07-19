@@ -58,6 +58,24 @@ from eval.persistence import PersistedGoldenSuite, sync_golden_suite
 # (Art. IV.2) es del workflow de CI que invoca este script, no de este modulo.
 
 
+class EvalPersistenceError(RuntimeError):
+    """Un `EvalCaseResult` no pudo persistirse ni con reintento (T-617B0-R3B).
+
+    Se lanza cuando el segundo intento de `_persist_case_result` (sin
+    `agent_run_id`) también falla: a diferencia de una excepción del propio
+    caso (que se captura y se diagnostica como `harness_error` sin tumbar los
+    otros casos), una falla de persistencia DOBLE indica que la base de
+    datos misma no está aceptando escrituras — un fallo sistémico, no una
+    anomalía de un caso aislado. Abortar la corrida entera es correcto: no
+    hay resultado persistido que agregar, y continuar produciría un
+    `results`/`outcomes` que **finge** que el caso fue evaluado cuando en
+    realidad nunca quedó en `eval_case_results`. `run_suite` no captura esta
+    excepción: se propaga a través del `finally` (que sí libera el worker y
+    el engine) y llega a `main()`, que ya trata cualquier `RuntimeError` como
+    abortada con exit code 2 — nunca se genera reporte ni veredicto de
+    puerta para una corrida con persistencia incompleta."""
+
+
 def _select_cases(cases, *, limit: int | None, case_ids: list[str] | None):
     if not case_ids:
         return cases[:limit] if limit is not None else cases
@@ -756,7 +774,7 @@ async def run_suite(
                 # agent_run_id pudo dejar de existir entre la ejecucion y este
                 # punto (p. ej. un barrido de retencion concurrente sobre la
                 # misma base compartida viola la FK). Reintenta sin la
-                # referencia rota; si sigue fallando, no tumba los otros 49.
+                # referencia rota.
                 try:
                     await _persist_case_result(
                         engine,
@@ -769,8 +787,23 @@ async def run_suite(
                         claims_integrity=claims_integrity,
                         error_code=type(exc).__name__,
                     )
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as retry_exc:  # noqa: BLE001
+                    # T-617B0-R3B: si el reintento TAMBIEN falla, la base de
+                    # datos misma no acepta escrituras -- un fallo sistemico,
+                    # no una anomalia de un caso aislado. NUNCA se silencia:
+                    # abortar aqui evita que la corrida siga acumulando
+                    # results/outcomes que fingirian que este caso fue
+                    # evaluado y persistido cuando en realidad no quedo en
+                    # eval_case_results, lo que podria dejar aprobar la
+                    # puerta con datos incompletos. No se genera reporte ni
+                    # veredicto: el `finally` de mas abajo sigue liberando el
+                    # worker y el engine antes de propagar.
+                    raise EvalPersistenceError(
+                        f"No se pudo persistir eval_case_results para "
+                        f"case_id={case.case_id!r} tras dos intentos "
+                        f"(agent_run_id={agent_run_id}): "
+                        f"{type(exc).__name__} luego {type(retry_exc).__name__}."
+                    ) from retry_exc
             results.append((case.case_id, assessment, stage_diagnostics))
             outcomes.append(
                 _build_case_outcome(

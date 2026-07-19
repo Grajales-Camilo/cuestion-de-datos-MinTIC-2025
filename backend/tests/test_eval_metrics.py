@@ -559,6 +559,11 @@ def test_diagnostics_approved_case_has_no_failure() -> None:
         ("HEARTBEAT_EXPIRED", "heartbeat_expired"),
         ("WORKER_LOST", "worker_lost"),
         ("INTERNAL", "internal_error"),
+        # T-617B0-R3B: RUN_INTERRUPTED NO es cancelación del usuario — es el
+        # arranque idempotente del backend marcando corridas con lease
+        # vencida (plan.md §11, reinicio/despliegue); tan no evaluable como
+        # HEARTBEAT_EXPIRED/WORKER_LOST.
+        ("RUN_INTERRUPTED", "run_interrupted"),
     ],
 )
 def test_diagnostics_classifies_provider_terminal_error_as_infrastructure(
@@ -621,8 +626,8 @@ def test_diagnostics_structured_output_invalid_is_not_infrastructure() -> None:
 
 def test_diagnostics_unrecognized_terminal_error_code_does_not_force_infrastructure() -> None:
     """Un terminal_error_code presente pero fuera del mapeo de infraestructura
-    y distinto de STRUCTURED_OUTPUT_INVALID (p. ej. RUN_INTERRUPTED,
-    cancelación con status="interrupted") no fuerza ninguna clasificación
+    y distinto de STRUCTURED_OUTPUT_INVALID (código verdaderamente
+    desconocido para esta taxonomía) no fuerza ninguna clasificación
     especial: conserva el comportamiento previo por etapa/observaciones."""
 
     final = {"status": "eval_error", "evidence": [], "claims": [], "usage": {}}
@@ -631,13 +636,13 @@ def test_diagnostics_unrecognized_terminal_error_code_does_not_force_infrastruct
         final,
         _failed_assessment(),
         [StageObservation("profile_dataset", {}, {})],
-        provider_error_code="RUN_INTERRUPTED",
+        provider_error_code="SOME_UNKNOWN_TERMINAL_CODE",
     )
 
     assert diagnostics["failure_code"] != "provider_error"
     assert diagnostics["failure_code"] != "structured_output_invalid"
     assert diagnostics["failure_owner"] != "infrastructure"
-    assert diagnostics["terminal_error_code"] == "RUN_INTERRUPTED"
+    assert diagnostics["terminal_error_code"] == "SOME_UNKNOWN_TERMINAL_CODE"
 
 
 def test_diagnostics_provider_error_outranks_golden_ambiguous() -> None:

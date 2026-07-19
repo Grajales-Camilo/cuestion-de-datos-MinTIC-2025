@@ -926,3 +926,110 @@ auditoría ya **no** son reproducibles ⇒ **READY_FOR_T617B_SMOKE_RETRY**. El
 reintento del smoke real (y, si pasa, la continuación a
 golden-v1/golden-v2/aceptación legacy) queda sujeto a nueva autorización
 explícita de Juan Camilo y del coordinador.
+
+---
+
+## O. Corrección T-617B0-R3B — dos últimos falsos diagnósticos antes del smoke
+
+**Contexto:** auditoría posterior a T-617B0-R3A (baseline
+`2f87a3c5959c9fc8b32961aca411445ba3c85704`) encontró dos bordes adicionales,
+ambos exclusivamente en `backend/eval/`, sin tocar `backend/app/agent/**`,
+golden-v1/v2, preguntas, `expected_facts`, cardinalidades, umbrales ni
+contratos normativos.
+
+### O.1 `RUN_INTERRUPTED` no reconocido por `diagnostics`
+
+**Hallazgo:** `run_suite` ya propagaba `status="interrupted"` +
+`terminal_error_code="RUN_INTERRUPTED"` (ampliado en R3A), pero
+`eval.diagnostics` no tenía este código en su mapeo de infraestructura. El
+resultado caía en `expected_dataset_not_retrieved`/`owner="agent"` — la misma
+clase de falsa atribución que R3/R3A cerraron para otros terminales.
+
+**Corrección de comentario:** el comentario original de R3A describía
+`RUN_INTERRUPTED` como "cancelación". Es impreciso: según `plan.md` §11 y
+`contracts/api-rest.md` §4, es el **arranque idempotente del backend**
+marcando como `interrupted` las corridas `running` cuya lease de worker venció
+(reinicio/despliegue), conservando evidencias/claims parciales ya validados
+hasta el corte — exactamente tan no evaluable como
+`HEARTBEAT_EXPIRED`/`WORKER_LOST`, no un resultado operativo distinto.
+
+**Corregido:** nuevo `FailureCode.RUN_INTERRUPTED = "run_interrupted"`,
+añadido a `_INFRASTRUCTURE_TERMINAL_ERROR_CODE_TO_FAILURE_CODE` →
+`failure_owner="infrastructure"`, `infrastructure_failure=True` (vía
+`_build_case_outcome`, sin cambios en `eval/gate.py`: ya generaliza sobre el
+flag), bloquea `smoke`/`full` por la métrica `infraestructura` existente y NO
+cuenta como regresión semántica en `positivos_sólidos`.
+
+**Prueba integral:** se amplió la parametrización de
+`test_run_suite_propagates_provider_terminal_from_agent_run` (ya existente
+desde R3A) con `("interrupted", "RUN_INTERRUPTED", "run_interrupted")` —
+reproduce el punto defectuoso dentro de `run_suite`, no solo diagnóstico
+aislado.
+
+### O.2 Doble fallo de persistencia silenciado
+
+**Hallazgo:** en `eval/run.py`, si el primer `_persist_case_result` fallaba
+(p. ej. `agent_run_id` invalidado por un barrido de retención concurrente), el
+reintento sin `agent_run_id` era correcto y se conserva. Pero si ese
+**segundo** intento también fallaba, la excepción se silenciaba con
+`except Exception: pass`, permitiendo que `results`/`outcomes` acumularan un
+caso que **nunca quedó persistido** en `eval_case_results` — la corrida podía
+seguir, calcular un veredicto y potencialmente aprobar la puerta con datos
+incompletos.
+
+**Corregido:** nueva excepción tipada `EvalPersistenceError(RuntimeError)`.
+Cuando el reintento también falla, se lanza inmediatamente con el `case_id`,
+`agent_run_id` y los nombres de ambas excepciones (sin texto humano ni datos
+sensibles) y se encadena (`raise ... from retry_exc`). `run_suite` **no**
+captura esta excepción: se propaga a través del `finally` existente (que
+libera `worker`/`engine` de todas formas) y llega a `main()`, que ya trata
+cualquier `RuntimeError` como abortada con exit code 2. No se genera reporte
+ni veredicto de puerta — nunca puede leerse como `PASS`.
+
+**Pruebas:**
+
+1. `test_run_suite_retries_persistence_without_agent_run_id_and_keeps_going`
+   (ya existente desde antes de R3, sin cambios): primer intento falla,
+   reintento funciona → la suite continúa, resultado persistido sin
+   `agent_run_id`, comportamiento preservado.
+2. `test_run_suite_aborts_when_persistence_fails_twice` (nueva): ambos
+   intentos fallan → `EvalPersistenceError` se propaga (no se silencia),
+   `_finalize_eval_record`/`_write_report` nunca se invocan (cero reporte,
+   cero veredicto), y `mark_worker_shutdown`/`engine.dispose` sí se ejecutan.
+
+### O.3 Verificación de que las pruebas fallan contra el baseline sin la corrección
+
+Worktree temporal en `2f87a3c5959c9fc8b32961aca411445ba3c85704`
+(`git worktree add`/`git worktree remove --force`, sin afectar este
+worktree), copiando únicamente los dos archivos de prueba modificados:
+
+```
+3 failed, 41 passed
+FAILED test_diagnostics_classifies_provider_terminal_error_as_infrastructure[RUN_INTERRUPTED-run_interrupted]
+FAILED test_run_suite_propagates_provider_terminal_from_agent_run[interrupted-RUN_INTERRUPTED-run_interrupted]
+FAILED test_run_suite_aborts_when_persistence_fails_twice (AttributeError: module 'eval.run' has no attribute 'EvalPersistenceError')
+```
+
+Las tres fallan contra el baseline (la última incluso a nivel de
+`AttributeError`, confirmando que `EvalPersistenceError` no existía) y pasan
+tras aplicar R3B.
+
+### O.4 Verificación (2026-07-18)
+
+`pytest tests/test_eval_metrics.py tests/test_eval_gate.py
+tests/test_eval_run_error_handling.py` = **99 passed**; `pytest -m "not
+integration"` = **941 passed, 122 deselected, 0 fallos**; `ruff check .` =
+**All checks passed!**; `ruff format --check` sobre los archivos modificados
+= limpio tras un reformateo automático de
+`tests/test_eval_run_error_handling.py` (una línea larga, sin cambio
+semántico); `git diff --check` limpio. `golden-v1`/`golden-v2` con SHA-256
+sin cambios (`ab546062…4630ff72` / `1c78264c…54e483`). Sin cambios en
+`backend/app/`, `specs/**` (salvo la nota operativa de T-617) ni
+cardinalidades/umbrales/contratos; sin push ni PR; T-617 sigue abierta; cero
+llamadas LLM/Socrata/PostgreSQL reales.
+
+**Estado T-617B0-R3B:** los dos últimos falsos diagnósticos encontrados por la
+auditoría ya **no** son reproducibles ⇒ **READY_FOR_T617B_SMOKE_RETRY**. El
+reintento del smoke real (y, si pasa, la continuación a
+golden-v1/golden-v2/aceptación legacy) queda sujeto a nueva autorización
+explícita de Juan Camilo y del coordinador.
