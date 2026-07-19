@@ -433,3 +433,80 @@ ejecutar ninguna; decisión de Juan Camilo y del coordinador):
 2. **Solicitar una enmienda humana** que traslade explícitamente la medición de
    tráfico a T-701/T-703 (monitoreo con tráfico real, RNF-001/009), dejando a
    T-617 solo la puerta técnica de migración.
+
+---
+
+## K. Corrección T-617B0-R — cuatro falsos positivos mecánicos remanentes
+
+**Contexto:** tras T-617B0, Codex (revisor) encontró que la instrumentación de
+`backend/eval/gate.py` todavía podía emitir un PASS espurio en cuatro bordes.
+T-617B0-R los cierra **sin ejecutar Gemini, smoke ni golden**, exclusivamente en
+`backend/eval/` (runtime, contratos, umbrales normativos y golden-v1/v2
+intactos). Cada uno se reprodujo primero mecánicamente contra el código real
+(script mínimo, sin LLM) y luego se cubrió con una prueba de regresión que falla
+antes del fix. Los cuatro, con su causa raíz y su corrección:
+
+1. **`None` aprobaba la puerta completa (latencia/costo sin medir).** CIERTO.
+   `evaluate_full_gate` usaba `ls is None or ls <= umbral` (y análogamente para
+   `latency_multistep_p95_ms` y `avg_cost_usd`): un p95 o un costo `None` —es
+   decir, **no medido**— pasaba. Reproducción: 50 casos con `latency_ms=None` y
+   `cost_usd=None` daban `passed=True`. **Corregido:** (a) dos métricas de
+   completitud (`latencia_medida`, `costo_medido`) que exigen medición en
+   `N/N` casos y registran el conteo medido/esperado; (b) el p95 simple y el
+   multipaso exigen **muestra válida no vacía** (`ls is not None and ls <=
+   umbral`), de modo que un `None` produce FAIL con razón explícita; (c)
+   `avg_cost_usd` exige valor presente. `AggregateMetrics` añade
+   `measured_total`, `latency_measured_count`, `cost_measured_count`,
+   `simple_sample_count` y `multistep_sample_count`.
+2. **`recall@10` excluía silenciosamente los positivos sin medir.** CIERTO.
+   `aggregate_metrics` calculaba el recall sobre `recall_pool = [positivos con
+   recall_hit is not None]`, sacando del denominador los positivos con
+   `recall_hit=None`. Reproducción: un positivo `True` + uno `None` daba
+   `recall_at_10=1.0` (100%). **Corregido:** el denominador es **todos** los
+   positivos; `None` cuenta como miss (`recall_hits = positivos con recall_hit
+   is True`). Ahora True+None = 0.5. Se añade `recall_measured_count` para
+   exponer medido vs. total sin alterar el denominador.
+3. **El smoke aprobaba con un subconjunto de casos.** CIERTO.
+   `evaluate_smoke_gate` no verificaba qué casos se ejecutaron: correr solo los
+   dos negativos daba `passed=True` (negativos 2/2, ningún sólido presente que
+   retroceda, ningún fallo sin clasificar). **Corregido:** se definen los **10
+   case_ids canónicos** de `pruebas.md` §4.4 (`SMOKE_CANONICAL_IDS` = 4 sólidos
+   + 4 patrones diferenciados + 2 negativos) y una métrica de cobertura
+   canónica que exige exactamente esos 10; **faltar o añadir** casos produce
+   FAIL antes de cualquier otro veredicto.
+4. **Una corrida con cero consultas se clasificaba como "simple".** CIERTO.
+   `classify_run_complexity` usaba `<= 1`, de modo que `{evidence:0, query:0,
+   exploration:0}` (abstención, fallo o caso no aplicable) caía en "simple" y
+   contaminaba el p95 simple. **Corregido:** "simple" exige **exactamente** 1
+   evidencia y **exactamente** 1 SoQL con 0 exploraciones; cualquier otra
+   corrida —incluidas las de cero consultas— es "multipaso". Documentado en el
+   módulo: las corridas no aplicables/fallidas caen en "multipaso" (cota de
+   latencia más holgada) y las que no tienen latencia observable no entran en
+   ninguna muestra p95.
+
+**`socrata_success_rate` se mantiene** como en §I: `None` = "no observable", no
+bloqueante para §4.4; no se instrumentó `backend/app/agent/` (congelado).
+
+**Regresiones añadidas (los tres ejemplos de Codex, más bordes):**
+`test_full_gate_fails_when_latency_and_cost_are_none`,
+`test_full_gate_fails_when_multistep_sample_missing`,
+`test_recall_true_plus_none_is_never_100_percent`,
+`test_recall_counts_none_as_miss_over_all_positives`,
+`test_smoke_gate_fails_with_only_two_negatives`,
+`test_smoke_gate_passes_with_exactly_the_ten_canonical`,
+`test_smoke_gate_fails_when_extra_noncanonical_case_present`,
+`test_classify_zero_queries_is_not_simple`.
+
+**Verificación (2026-07-18):**
+`pytest tests/test_eval_gate.py tests/test_eval_run_error_handling.py` = **41
+passed**; `pytest -m "not integration"` = **905 passed, 122 deselected, 0
+fallos**; `ruff check .` = **All checks passed!**; `ruff format --check
+eval/gate.py tests/test_eval_gate.py` = **2 files already formatted**.
+`golden-v1`/`golden-v2` con SHA-256 sin cambios
+(`ab546062…4630ff72` / `1c78264c…54e483`). Sin cambios en `backend/app/`; sin
+push ni PR; `tasks.md` sin cerrar.
+
+**Estado T-617B0-R:** los tres falsos positivos reproducidos por Codex (y el
+cuarto de complejidad) ya **no** son reproducibles ⇒ **READY_FOR_REAL_T617B**.
+La ejecución de las 110 corridas reales queda sujeta a la autorización de Juan
+Camilo y del coordinador (plan §F).

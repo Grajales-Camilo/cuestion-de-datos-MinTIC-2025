@@ -125,12 +125,59 @@ def _outcome(
 
 def _suite(positives_passed: int, negatives_passed: int, *, positives=40, negatives=10):
     outcomes = []
+    # Complejidad partida por paridad: ambas particiones (simple/multipaso)
+    # quedan pobladas para que la puerta completa disponga de muestra p95 válida
+    # en las dos, y toda corrida tiene latencia y costo medidos.
     for i in range(positives):
-        outcomes.append(_outcome(f"pos-{i}", "positive", i < positives_passed))
+        complexity = "simple" if i % 2 == 0 else "multistep"
+        outcomes.append(
+            _outcome(f"pos-{i}", "positive", i < positives_passed, complexity=complexity)
+        )
     for i in range(negatives):
         passed = i < negatives_passed
         outcomes.append(_outcome(f"neg-{i}", "negative", passed, fabrication=not passed))
     return outcomes
+
+
+def _positive_recall_none(case_id: str) -> CaseOutcome:
+    """Positivo aprobado pero SIN señal de recuperación medida (recall_hit
+    None). Se construye directo porque `_outcome` enmascara None → passed para
+    positivos; aquí queremos el None genuino."""
+
+    return CaseOutcome(
+        case_id=case_id,
+        case_type="positive",
+        passed=True,
+        fabrication=False,
+        recall_hit=None,
+        failure_stage=None,
+        failure_code=None,
+        complexity="simple",
+        latency_ms=1000,
+        cost_usd=Decimal("0.01"),
+        claims_integrity=_trivial_integrity(),
+        socrata_successes=1,
+        socrata_attempts=1,
+    )
+
+
+def _smoke_canonical_outcomes():
+    """Los 10 case_ids canónicos del smoke dirigido (pruebas.md §4.4), todos en
+    verde: base sobre la que las pruebas mutan un solo caso para aislar un
+    fallo específico de la puerta de smoke."""
+
+    return [
+        _outcome("pilot-002-seguridad-homicidios", "positive", True),
+        _outcome("pilot-003-salud-vigilancia", "positive", True),
+        _outcome("pilot-005-empleo-publico", "positive", True),
+        _outcome("pilot-013-app-dnp", "positive", True),
+        _outcome("pilot-012-control-fiscal", "positive", True),
+        _outcome("pilot-021-sensibilizacion-valle", "positive", True),
+        _outcome("pilot-022-red-vial", "positive", True),
+        _outcome("pilot-038-precipitacion", "positive", True),
+        _outcome("pilot-045-negativo-dato-personal", "negative", True),
+        _outcome("pilot-046-negativo-tiempo-real", "negative", True),
+    ]
 
 
 # --- A. Éxito y negativos -----------------------------------------------------
@@ -357,69 +404,200 @@ def test_avg_cost_over_threshold_blocks_full_gate() -> None:
 
 
 def test_smoke_and_full_gates_are_distinct() -> None:
-    """Mismo conjunto: el umbral completo falla (positivos < 80%), pero el
-    smoke pasa (negativos 2/2, sólidos intactos, fallos clasificados)."""
+    """Mismo conjunto canónico de 10: el umbral completo falla (positivos <
+    80%), pero el smoke pasa (10 canónicos, negativos 2/2, sólidos intactos,
+    fallos clasificados)."""
 
-    outcomes = [
-        _outcome("pilot-045-negativo-dato-personal", "negative", True),
-        _outcome("pilot-046-negativo-tiempo-real", "negative", True),
-        _outcome("pilot-002-seguridad-homicidios", "positive", True),
-        _outcome("pilot-003-salud-vigilancia", "positive", True),
-        _outcome("pilot-005-empleo-publico", "positive", True),
-        _outcome("pilot-013-app-dnp", "positive", True),
-    ]
-    # seis positivos no sólidos que fallan con etapa+código
-    for i in range(6):
-        outcomes.append(_outcome(f"otro-{i}", "positive", False))
+    outcomes = _smoke_canonical_outcomes()
+    # Los cuatro patrones diferenciados (no sólidos) fallan con etapa+código:
+    # bajan los positivos a 4/8 = 50% pero no rompen la puerta de smoke.
+    for i, o in enumerate(outcomes):
+        if o.case_id in {
+            "pilot-012-control-fiscal",
+            "pilot-021-sensibilizacion-valle",
+            "pilot-022-red-vial",
+            "pilot-038-precipitacion",
+        }:
+            outcomes[i] = _outcome(o.case_id, "positive", False)
 
     full = evaluate_full_gate(aggregate_metrics(outcomes))
     smoke = evaluate_smoke_gate(outcomes)
 
-    assert full.passed is False  # 4/10 positivos < 80%
+    assert full.passed is False  # 4/8 positivos < 80%
+    assert any("80%" in r or "RNF-002" in r for r in full.blocking_reasons)
     assert smoke.passed is True
     assert full.mode == "full"
     assert smoke.mode == "smoke"
 
 
 def test_smoke_gate_blocks_when_solid_positive_regresses() -> None:
-    outcomes = [
-        _outcome("pilot-045-negativo-dato-personal", "negative", True),
-        _outcome("pilot-046-negativo-tiempo-real", "negative", True),
-        _outcome("pilot-002-seguridad-homicidios", "positive", False),  # sólido retrocede
-        _outcome("pilot-003-salud-vigilancia", "positive", True),
-        _outcome("pilot-005-empleo-publico", "positive", True),
-        _outcome("pilot-013-app-dnp", "positive", True),
-    ]
+    # Base canónica de 10 en verde; solo retrocede un positivo sólido, para
+    # aislar esa razón bloqueante de la cobertura canónica.
+    outcomes = _smoke_canonical_outcomes()
+    for i, o in enumerate(outcomes):
+        if o.case_id == "pilot-002-seguridad-homicidios":
+            outcomes[i] = _outcome(o.case_id, "positive", False)  # sólido retrocede
     smoke = evaluate_smoke_gate(outcomes)
 
     assert smoke.passed is False
     assert any("sólidos" in reason for reason in smoke.blocking_reasons)
+    # La cobertura canónica sigue satisfecha: el fallo es específicamente el
+    # retroceso de un sólido, no una ausencia de casos.
+    assert not any("faltan" in reason for reason in smoke.blocking_reasons)
 
 
 def test_smoke_gate_blocks_when_a_failure_lacks_stage_or_code() -> None:
-    outcomes = [
-        _outcome("pilot-045-negativo-dato-personal", "negative", True),
-        _outcome("pilot-046-negativo-tiempo-real", "negative", True),
-        CaseOutcome(
-            case_id="mudo",
-            case_type="positive",
-            passed=False,
-            fabrication=False,
-            recall_hit=False,
-            failure_stage=None,  # sin etapa
-            failure_code=None,  # sin código
-            complexity="simple",
-            latency_ms=1000,
-            cost_usd=Decimal("0.01"),
-            claims_integrity=_trivial_integrity(),
-            socrata_successes=0,
-            socrata_attempts=0,
-        ),
-    ]
+    # Base canónica de 10; se reemplaza un diferenciado por una corrida fallida
+    # sin etapa ni código (muda), conservando el case_id canónico.
+    outcomes = _smoke_canonical_outcomes()
+    for i, o in enumerate(outcomes):
+        if o.case_id == "pilot-012-control-fiscal":
+            outcomes[i] = CaseOutcome(
+                case_id="pilot-012-control-fiscal",
+                case_type="positive",
+                passed=False,
+                fabrication=False,
+                recall_hit=False,
+                failure_stage=None,  # sin etapa
+                failure_code=None,  # sin código
+                complexity="simple",
+                latency_ms=1000,
+                cost_usd=Decimal("0.01"),
+                claims_integrity=_trivial_integrity(),
+                socrata_successes=0,
+                socrata_attempts=0,
+            )
     smoke = evaluate_smoke_gate(outcomes)
 
     assert smoke.passed is False
     assert any("etapa/código" in reason for reason in smoke.blocking_reasons)
+
+
+# --- F. Regresiones T-617B0-R (falsos positivos reproducidos por Codex) -------
+
+
+def test_full_gate_fails_when_latency_and_cost_are_none() -> None:
+    """Codex #1: latencia y costo None NO pueden aprobar la puerta completa;
+    la incompletitud de medición produce FAIL con razón explícita."""
+
+    outcomes = _suite(40, 10)
+    for o in outcomes:
+        object.__setattr__(o, "latency_ms", None)
+        object.__setattr__(o, "cost_usd", None)
+    aggregate = aggregate_metrics(outcomes)
+    verdict = evaluate_full_gate(aggregate)
+
+    assert aggregate.latency_simple_p95_ms is None
+    assert aggregate.avg_cost_usd is None
+    assert verdict.passed is False
+    assert any("latencia" in r for r in verdict.blocking_reasons)
+    assert any("costo" in r for r in verdict.blocking_reasons)
+
+
+def test_full_gate_fails_when_multistep_sample_missing() -> None:
+    """Sin muestra multipaso medible el p95 multipaso es None y NO aprueba: la
+    puerta completa exige muestra válida en ambas particiones (RNF-001)."""
+
+    outcomes = [_outcome(f"pos-{i}", "positive", True, complexity="simple") for i in range(40)]
+    outcomes += [_outcome(f"neg-{i}", "negative", True, complexity="simple") for i in range(10)]
+    aggregate = aggregate_metrics(outcomes)
+    verdict = evaluate_full_gate(aggregate)
+
+    assert aggregate.multistep_sample_count == 0
+    assert aggregate.latency_multistep_p95_ms is None
+    assert verdict.passed is False
+    assert any("multipaso" in r for r in verdict.blocking_reasons)
+
+
+def test_recall_true_plus_none_is_never_100_percent() -> None:
+    """Codex #2: un positivo True + uno None nunca produce recall@10 = 100%.
+    None cuenta como miss sobre todos los positivos, jamás se excluye."""
+
+    outcomes = [
+        _outcome("p-true", "positive", True, recall_hit=True),
+        _positive_recall_none("p-none"),
+    ]
+    aggregate = aggregate_metrics(outcomes)
+
+    assert aggregate.positive_total == 2
+    assert aggregate.recall_hits == 1
+    assert aggregate.recall_measured_count == 1  # se registra medido vs total
+    assert aggregate.recall_at_10 == 0.5  # 1/2, NO 1/1
+    assert aggregate.recall_at_10 != 1.0
+
+
+def test_recall_counts_none_as_miss_over_all_positives() -> None:
+    """El denominador de recall@10 es el total de positivos, no solo los
+    medidos: 3 True + 1 None = 75%, por debajo del umbral del 85%."""
+
+    outcomes = [
+        _outcome("a", "positive", True, recall_hit=True),
+        _outcome("b", "positive", True, recall_hit=True),
+        _outcome("c", "positive", True, recall_hit=True),
+        _positive_recall_none("d"),
+    ]
+    aggregate = aggregate_metrics(outcomes)
+
+    assert aggregate.recall_at_10 == 0.75
+    verdict = evaluate_full_gate(aggregate)
+    assert any("recall" in r or "RNF-004" in r for r in verdict.blocking_reasons)
+
+
+def test_smoke_gate_fails_with_only_two_negatives() -> None:
+    """Codex #3: ejecutar solo los dos negativos NO puede aprobar el smoke;
+    faltan los ocho positivos canónicos (cobertura canónica incompleta)."""
+
+    outcomes = [
+        _outcome("pilot-045-negativo-dato-personal", "negative", True),
+        _outcome("pilot-046-negativo-tiempo-real", "negative", True),
+    ]
+    smoke = evaluate_smoke_gate(outcomes)
+
+    assert smoke.passed is False
+    assert any("faltan" in reason for reason in smoke.blocking_reasons)
+
+
+def test_smoke_gate_passes_with_exactly_the_ten_canonical() -> None:
+    """Con exactamente los 10 canónicos en verde el smoke aprueba."""
+
+    smoke = evaluate_smoke_gate(_smoke_canonical_outcomes())
+
+    assert smoke.passed is True
+    assert smoke.blocking_reasons == ()
+
+
+def test_smoke_gate_fails_when_extra_noncanonical_case_present() -> None:
+    """Añadir un caso no canónico invalida el smoke antes del veredicto."""
+
+    outcomes = _smoke_canonical_outcomes()
+    outcomes.append(_outcome("pilot-099-intruso", "positive", True))
+    smoke = evaluate_smoke_gate(outcomes)
+
+    assert smoke.passed is False
+    assert any("sobran" in reason for reason in smoke.blocking_reasons)
+
+
+def test_classify_zero_queries_is_not_simple() -> None:
+    """Fix #4: una corrida con cero consultas o cero evidencias (abstención,
+    fallo o caso no aplicable) NUNCA es 'simple'; cae en 'multistep'."""
+
+    assert (
+        classify_run_complexity({"evidence_count": 0, "query_count": 0, "exploration_count": 0})
+        == "multistep"
+    )
+    assert (
+        classify_run_complexity({"evidence_count": 1, "query_count": 0, "exploration_count": 0})
+        == "multistep"
+    )
+    assert (
+        classify_run_complexity({"evidence_count": 0, "query_count": 1, "exploration_count": 0})
+        == "multistep"
+    )
+    # el caso canónico 1 dataset / 1 SoQL / 0 exploraciones sigue siendo simple
+    assert (
+        classify_run_complexity({"evidence_count": 1, "query_count": 1, "exploration_count": 0})
+        == "simple"
+    )
 
 
 # --- Persistencia y reportes --------------------------------------------------

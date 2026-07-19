@@ -64,18 +64,51 @@ SMOKE_SOLID_POSITIVE_IDS: frozenset[str] = frozenset(
     }
 )
 
+# Negativos canónicos del smoke dirigido (pruebas.md §4.4). Deben abstenerse
+# al 100%.
+SMOKE_NEGATIVE_IDS: frozenset[str] = frozenset(
+    {
+        "pilot-045-negativo-dato-personal",
+        "pilot-046-negativo-tiempo-real",
+    }
+)
+
+# Patrones diferenciados del smoke dirigido (pruebas.md §4.4). Completan, junto
+# con los sólidos y los negativos, los 10 casos canónicos.
+SMOKE_DIFFERENTIATED_IDS: frozenset[str] = frozenset(
+    {
+        "pilot-012-control-fiscal",
+        "pilot-021-sensibilizacion-valle",
+        "pilot-022-red-vial",
+        "pilot-038-precipitacion",
+    }
+)
+
+# Los 10 case_ids canónicos que el smoke dirigido DEBE ejecutar, ni más ni
+# menos (pruebas.md §4.4). Faltar o añadir casos invalida la puerta de smoke
+# antes de emitir veredicto.
+SMOKE_CANONICAL_IDS: frozenset[str] = (
+    SMOKE_SOLID_POSITIVE_IDS | SMOKE_DIFFERENTIATED_IDS | SMOKE_NEGATIVE_IDS
+)
+
 _SOCRATA_TRANSPORT_FAILURE_CODES = frozenset({"SOCRATA_TIMEOUT", "SOCRATA_ERROR"})
 
 # Regla de clasificación simple/multipaso (documentada y probada). Un caso es
-# "simple" cuando reproduce literalmente "1 dataset, 1 SoQL, sin perfilado
+# "simple" solo cuando reproduce EXACTAMENTE "1 dataset, 1 SoQL, sin perfilado
 # extenso" (pruebas.md §4.2, RNF-001):
-#   - a lo sumo una evidencia aceptada (1 dataset),
-#   - a lo sumo una ejecución de SoQL (`query_count` <= 1),
+#   - exactamente una evidencia aceptada (1 dataset),
+#   - exactamente una ejecución de SoQL (`query_count` == 1),
 #   - ninguna ronda de exploración de valores (`exploration_count` == 0).
-# Cualquier otra corrida es "multipaso". La regla usa exclusivamente señales
-# estructuradas de la corrida ya presentes en los diagnósticos por etapa.
-SIMPLE_MAX_EVIDENCE = 1
-SIMPLE_MAX_QUERIES = 1
+# Cualquier otra corrida es "multipaso". En particular, una corrida con cero
+# consultas o cero evidencias (abstención, fallo o caso no aplicable) NUNCA es
+# "simple": cae en "multipaso" y, por tanto, se rige por la cota de latencia
+# multipaso (más holgada), evitando contaminar el p95 simple con corridas que
+# no son una consulta directa 1×1. Las corridas sin latencia observable no
+# entran en ninguna muestra p95 (se filtran en `aggregate_metrics`). La regla
+# usa exclusivamente señales estructuradas ya presentes en los diagnósticos por
+# etapa.
+SIMPLE_EVIDENCE_COUNT = 1
+SIMPLE_QUERY_COUNT = 1
 SIMPLE_MAX_EXPLORATIONS = 0
 
 
@@ -263,8 +296,8 @@ def classify_run_complexity(diagnostics: Mapping[str, Any]) -> str:
     query_count = int(diagnostics.get("query_count") or 0)
     exploration_count = int(diagnostics.get("exploration_count") or 0)
     if (
-        evidence_count <= SIMPLE_MAX_EVIDENCE
-        and query_count <= SIMPLE_MAX_QUERIES
+        evidence_count == SIMPLE_EVIDENCE_COUNT
+        and query_count == SIMPLE_QUERY_COUNT
         and exploration_count <= SIMPLE_MAX_EXPLORATIONS
     ):
         return "simple"
@@ -350,6 +383,7 @@ class CaseOutcome:
 
 @dataclass(frozen=True)
 class AggregateMetrics:
+    measured_total: int
     positive_total: int
     positive_passed: int
     negative_total: int
@@ -357,11 +391,17 @@ class AggregateMetrics:
     success_rate: float | None
     negative_success_rate: float | None
     recall_at_10: float | None
+    recall_hits: int
+    recall_measured_count: int
     fabrication_count: int
     orphan_figures_count: int
     claims_coverage: float | None
     claims_reproducible: float | None
     claims_integrity_ok: bool
+    latency_measured_count: int
+    cost_measured_count: int
+    simple_sample_count: int
+    multistep_sample_count: int
     latency_p50_ms: float | None
     latency_p95_ms: float | None
     latency_simple_p95_ms: float | None
@@ -378,9 +418,13 @@ def aggregate_metrics(outcomes: Sequence[CaseOutcome]) -> AggregateMetrics:
 
     positive_passed = sum(o.passed for o in positives)
     negative_passed = sum(o.passed for o in negatives)
-    # recall_at_10 solo aplica a positivos con señal de recuperación medida
-    recall_pool = [o for o in positives if o.recall_hit is not None]
-    recall_hits = sum(bool(o.recall_hit) for o in recall_pool)
+    # recall_at_10 se calcula sobre TODOS los positivos, no solo los medidos:
+    # un positivo sin señal de recuperación (`recall_hit is None`) cuenta como
+    # miss y jamás se excluye silenciosamente del denominador (RNF-004). Así,
+    # un True + un None nunca produce 100%. `recall_measured_count` se registra
+    # aparte para exponer cuántos positivos sí tuvieron medición.
+    recall_hits = sum(1 for o in positives if o.recall_hit is True)
+    recall_measured_count = sum(1 for o in positives if o.recall_hit is not None)
 
     applicable_integrity = [o for o in outcomes if o.claims_integrity.applicable]
     coverages = [
@@ -411,18 +455,25 @@ def aggregate_metrics(outcomes: Sequence[CaseOutcome]) -> AggregateMetrics:
     socrata_attempts = sum(o.socrata_attempts for o in outcomes)
 
     return AggregateMetrics(
+        measured_total=len(outcomes),
         positive_total=len(positives),
         positive_passed=positive_passed,
         negative_total=len(negatives),
         negative_passed=negative_passed,
         success_rate=(positive_passed / len(positives)) if positives else None,
         negative_success_rate=(negative_passed / len(negatives)) if negatives else None,
-        recall_at_10=(recall_hits / len(recall_pool)) if recall_pool else None,
+        recall_at_10=(recall_hits / len(positives)) if positives else None,
+        recall_hits=recall_hits,
+        recall_measured_count=recall_measured_count,
         fabrication_count=sum(o.fabrication for o in outcomes),
         orphan_figures_count=sum(o.claims_integrity.orphan_figure_count for o in outcomes),
         claims_coverage=(sum(coverages) / len(coverages)) if coverages else None,
         claims_reproducible=(sum(reproducibles) / len(reproducibles)) if reproducibles else None,
         claims_integrity_ok=all(o.claims_integrity.integrity_ok for o in outcomes),
+        latency_measured_count=len(latencies),
+        cost_measured_count=len(costs),
+        simple_sample_count=len(simple_latencies),
+        multistep_sample_count=len(multistep_latencies),
         latency_p50_ms=percentile(latencies, 0.50),
         latency_p95_ms=percentile(latencies, 0.95),
         latency_simple_p95_ms=percentile(simple_latencies, 0.95),
@@ -527,31 +578,50 @@ def evaluate_full_gate(aggregate: AggregateMetrics) -> GateVerdict:
         recall is not None and recall >= RECALL_AT_10_THRESHOLD,
         "recall@10 por debajo del 85% (RNF-004)",
     )
-    # RNF-001: latencia p95 simple/multipaso
+    # Completitud de medición (RNF-001/RNF-009): la puerta completa NO puede
+    # certificarse con latencia o costo sin medir. Cualquier caso sin latencia
+    # o sin costo observado produce FAIL con conteo medido/esperado explícito.
+    total = aggregate.measured_total
+    add(
+        "latencia_medida",
+        f"medida en {total}/{total} casos",
+        f"{aggregate.latency_measured_count}/{total}",
+        total > 0 and aggregate.latency_measured_count == total,
+        "medición de latencia incompleta: hay casos sin latencia observada (RNF-001)",
+    )
+    add(
+        "costo_medido",
+        f"medido en {total}/{total} casos",
+        f"{aggregate.cost_measured_count}/{total}",
+        total > 0 and aggregate.cost_measured_count == total,
+        "medición de costo incompleta: hay casos sin costo observado (RNF-009)",
+    )
+    # RNF-001: latencia p95 simple/multipaso. Se exige muestra válida (no vacía)
+    # en AMBAS particiones; un p95 None (sin muestra) NUNCA aprueba.
     ls = aggregate.latency_simple_p95_ms
     add(
         "latency_simple_p95_ms",
-        f"<= {LATENCY_SIMPLE_P95_MS}",
-        _fmt(ls),
-        ls is None or ls <= LATENCY_SIMPLE_P95_MS,
-        "p95 de latencia simple supera 20 s (RNF-001)",
+        f"<= {LATENCY_SIMPLE_P95_MS} con muestra válida",
+        f"{_fmt(ls)} (n={aggregate.simple_sample_count})",
+        ls is not None and ls <= LATENCY_SIMPLE_P95_MS,
+        "sin muestra simple medible o p95 de latencia simple supera 20 s (RNF-001)",
     )
     lm = aggregate.latency_multistep_p95_ms
     add(
         "latency_multistep_p95_ms",
-        f"<= {LATENCY_MULTISTEP_P95_MS}",
-        _fmt(lm),
-        lm is None or lm <= LATENCY_MULTISTEP_P95_MS,
-        "p95 de latencia multipaso supera 75 s (RNF-001)",
+        f"<= {LATENCY_MULTISTEP_P95_MS} con muestra válida",
+        f"{_fmt(lm)} (n={aggregate.multistep_sample_count})",
+        lm is not None and lm <= LATENCY_MULTISTEP_P95_MS,
+        "sin muestra multipaso medible o p95 de latencia multipaso supera 75 s (RNF-001)",
     )
-    # RNF-009: costo promedio
+    # RNF-009: costo promedio. Un costo None (sin medición) NUNCA aprueba.
     cost = aggregate.avg_cost_usd
     add(
         "avg_cost_usd",
         f"<= {AVG_COST_USD_THRESHOLD}",
         _fmt(cost),
-        cost is None or cost <= AVG_COST_USD_THRESHOLD,
-        "costo promedio por corrida supera 0,05 USD (RNF-009)",
+        cost is not None and cost <= AVG_COST_USD_THRESHOLD,
+        "costo promedio ausente o supera 0,05 USD por corrida (RNF-009)",
     )
 
     passed = all(m.passed for m in metrics)
@@ -562,12 +632,39 @@ def evaluate_smoke_gate(
     outcomes: Sequence[CaseOutcome],
     *,
     solid_positive_ids: frozenset[str] = SMOKE_SOLID_POSITIVE_IDS,
+    canonical_ids: frozenset[str] = SMOKE_CANONICAL_IDS,
 ) -> GateVerdict:
     """Puerta específica del smoke dirigido (pruebas.md §4.4), distinta del
-    umbral completo de golden-v2: negativos 100%, ningún positivo sólido
-    retrocede y todo fallo tiene etapa y código."""
+    umbral completo de golden-v2: se ejecutan EXACTAMENTE los 10 case_ids
+    canónicos (4 sólidos, 4 patrones diferenciados y 2 negativos), los
+    negativos se abstienen al 100%, ningún positivo sólido retrocede y todo
+    fallo tiene etapa y código."""
 
     metrics: list[GateMetric] = []
+
+    # Cobertura canónica: faltar o añadir casos invalida el smoke ANTES de
+    # cualquier otro veredicto (pruebas.md §4.4). El denominador es el conjunto
+    # exacto de 10; ejecutar solo un subconjunto (p. ej. dos negativos) nunca
+    # puede aprobar.
+    present_ids = {o.case_id for o in outcomes}
+    missing = sorted(canonical_ids - present_ids)
+    extra = sorted(present_ids - canonical_ids)
+    coverage_reason_parts: list[str] = []
+    if missing:
+        coverage_reason_parts.append(f"faltan: {', '.join(missing)}")
+    if extra:
+        coverage_reason_parts.append(f"sobran: {', '.join(extra)}")
+    metrics.append(
+        GateMetric(
+            "cobertura_canónica",
+            f"exactamente {len(canonical_ids)} canónicos",
+            f"{len(present_ids & canonical_ids)}/{len(canonical_ids)} canónicos"
+            + (f", {len(extra)} no canónicos" if extra else ""),
+            not missing and not extra,
+            None if not coverage_reason_parts else "; ".join(coverage_reason_parts),
+        )
+    )
+
     negatives = [o for o in outcomes if o.case_type == "negative"]
     negatives_passed = sum(o.passed for o in negatives)
     metrics.append(
