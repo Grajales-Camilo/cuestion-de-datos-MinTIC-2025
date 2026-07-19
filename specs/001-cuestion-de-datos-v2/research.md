@@ -437,10 +437,10 @@ Pero incluso con el filtro correcto, `app/quality/claims.py::_to_decimal` (`Deci
 **Decisión de arquitectura.**
 
 1. Durante la migración coexistirán dos runtimes explícitos: `legacy`, el grafo histórico basado en router LLM; y `deterministic`, la máquina de etapas con transiciones, validaciones y presupuestos gobernados por código.
-2. La selección se realiza mediante `AGENT_RUNTIME`; durante la validación el valor operativo es `legacy`. Al superar la puerta normativa, `deterministic` se convierte inmediatamente en el default. No se permite fallback automático de `deterministic` a `legacy` dentro de una corrida. Un fallo del runtime seleccionado debe quedar tipado y observable.
+2. La selección se realiza mediante `AGENT_RUNTIME`; durante la validación el valor operativo es `legacy`. Al superar la puerta normativa, `deterministic` queda certificado inmediatamente como default técnico; T-701 hace efectivo ese valor de forma explícita en el entorno desplegado. No se permite fallback automático de `deterministic` a `legacy` dentro de una corrida. Un fallo del runtime seleccionado debe quedar tipado y observable.
 3. Los contratos existentes de herramientas, API, calidad y claims cuantitativos permanecen vigentes. Esta enmienda no los cambia para acomodar el runtime.
 4. `golden-v1.yaml` permanece congelado. El runtime no puede incorporar IDs, cifras, filtros, estaciones, horas ni respuestas específicas de sus casos.
-5. El agente legado se conserva congelado como rollback. Al superar el determinista todas las puertas de `pruebas.md` §4.4 deja de ser el default y permanece disponible solo como rollback de emergencia durante una versión adicional; después se eliminan el selector `AGENT_RUNTIME` y el código legado en una tarea independiente.
+5. El agente legado se conserva congelado como rollback. Al superar el determinista todas las puertas de `pruebas.md` §4.4 deja de ser el default técnico; la ventana de una versión como rollback de emergencia empieza con el canary desplegado de T-701. Después de la validación operativa de T-703 se eliminan el selector `AGENT_RUNTIME` y el código legado en una tarea independiente.
 6. La aceptación de cada runtime debe estar separada y nombrada inequívocamente: `legacy_agent_acceptance` y `deterministic_agent_acceptance`.
 7. La evaluación debe registrar etapa y motivo de fallo tipados; el porcentaje agregado no basta para dirigir el desarrollo.
 
@@ -456,6 +456,26 @@ Pero incluso con el filtro correcto, `app/quality/claims.py::_to_decimal` (`Deci
 8. Auditar los 50 casos y construir `golden-v2` sin modificar `golden-v1`.
 9. Ejecutar ambas suites y mantener el rollback hasta superar la puerta normativa.
 
+**Separación entre puerta técnica y tráfico real (decisión 2026-07-18).**
+
+- T-617 es una puerta técnica previa al despliegue. Sus corridas controladas
+  (`smoke`, `golden-v1` y `golden-v2`) prueban reproducibilidad, calidad,
+  latencia y costo del runtime, pero no son tráfico de usuarios y no satisfacen
+  por sí solas la verificación operativa de RNF-001/RNF-009.
+- T-701 activa `deterministic` como canary en el entorno desplegado y prueba de
+  forma explícita y reversible el cambio a `legacy` y el retorno a
+  `deterministic`. Las corridas sintéticas de ese canary se registran y se
+  excluyen de la cohorte de tráfico real.
+- T-703 mide RNF-001/RNF-009 durante los primeros siete días consecutivos de
+  tráfico real del runtime determinista. La medición usa agregados técnicos sin
+  preguntas, narrativas, filas ni citas y publica tamaño de muestra,
+  completitud y exclusiones.
+- Si la ventana no contiene al menos 20 corridas simples y 20 multietapa
+  terminales con latencia y costo medidos, o si alguna métrica necesaria está
+  ausente, el resultado es `INSUFFICIENT_EVIDENCE`: se amplía la observación y
+  no se declara superado el requisito. Las corridas de evaluación o canary no
+  pueden rellenar esa muestra.
+
 **Límites contra sobreajuste.**
 
 - No relajar `backend/eval/metrics.py` para hacer pasar resultados observados.
@@ -464,7 +484,7 @@ Pero incluso con el filtro correcto, `app/quality/claims.py::_to_decimal` (`Deci
 - No aumentar presupuestos sin diagnóstico por etapa que demuestre que el presupuesto es la causa.
 - No atribuir al runtime determinista una prueba que importe o ejecute `app.agent.graph`.
 
-**Consecuencias.** `plan.md` documenta desde esta enmienda la arquitectura dual; `pruebas.md` define suites, diagnósticos y puertas; `tasks.md` contiene la secuencia ejecutable T-610…T-617. La siguiente implementación autorizada es T-611, precedida únicamente por el cierre reproducible de la línea base T-610. No se autorizan todavía cambios de comportamiento para mejorar recuperación, claims o síntesis.
+**Consecuencias.** `plan.md` documenta desde esta enmienda la arquitectura dual; `pruebas.md` define suites, diagnósticos y puertas; `tasks.md` contiene la secuencia ejecutable T-610…T-617 y la validación operativa T-701/T-703. Superar T-617 autoriza el canary, no permite afirmar todavía que RNF-001/RNF-009 se cumplen con tráfico real. La siguiente implementación autorizada es T-611, precedida únicamente por el cierre reproducible de la línea base T-610. No se autorizan todavía cambios de comportamiento para mejorar recuperación, claims o síntesis.
 
 ## 26. Decisión registrada: materialización lexical para RNF-010 — `DECIDIDA`
 

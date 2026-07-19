@@ -238,3 +238,33 @@ docker compose exec db psql -U usuario -d cuestion_de_datos -c "SELECT 1;"
 | SSE no muestra pasos en el navegador | URL del backend o CORS mal configurados | Revisa `NEXT_PUBLIC_BACKEND_URL` en `frontend/.env.local` y que el origen `http://localhost:3000` esté permitido en el CORS del backend; recuerda que el consumo es con `fetch()` streaming, no `EventSource`. |
 | Socrata responde 403 | App token ausente/incorrecto | §7, segunda línea. |
 | `alembic upgrade` falla con `type "vector" does not exist` | El contenedor local no ejecutó el script `init` de T-105 o estás usando una base remota sin extensión | En local, recrea el contenedor/volumen siguiendo T-105; en base gestionada, habilita `vector` y `pg_trgm` según T-001 despliegue. |
+
+## 9. Validación operativa de Fase 7
+
+T-617 usa corridas controladas y termina antes del despliegue. No las cuentes
+como tráfico real. Después de superar esa puerta:
+
+1. En T-701 despliega una versión identificable con
+   `AGENT_RUNTIME=deterministic` explícito y verifica `/v2/health`.
+2. Ejecuta una pregunta sintética por la API y conserva su `run_id`; repite
+   después de cambiar explícitamente a `legacy` y una vez más tras restaurar
+   `deterministic`. Archiva también la versión y la configuración efectiva.
+3. Confirma que `deterministic` quedó restaurado. Los tres `run_id` son
+   evidencia del canary/rollback y deben excluirse del reporte de tráfico.
+4. En T-703 inicia una ventana de siete días consecutivos. Cuando el agregado
+   autenticado del contrato esté implementado, consulta:
+
+   ```powershell
+   $headers = @{ "X-Admin-Token" = $env:ADMIN_TOKEN }
+   $metrics = Invoke-RestMethod `
+     -Uri "https://api.cuestiondedatos.com/v2/admin/metrics?window_days=7" `
+     -Headers $headers
+   $metrics
+   ```
+
+El resultado debe mostrar la ventana, versión/runtime, tamaños de muestra,
+completitud, exclusiones, p95 simple y multietapa y costo promedio, sin
+preguntas ni otros contenidos de usuario. `PASS` exige al menos 20 terminales
+simples y 20 multietapa, costo presente en toda la cohorte, p95 ≤20 s/≤75 s y
+costo promedio ≤USD 0,05. `FAIL` exige corrección; `INSUFFICIENT_EVIDENCE`
+exige ampliar la ventana. Solo `PASS` permite cerrar T-703.

@@ -83,7 +83,7 @@ No se define un `addopts` global que excluya integración, para no impedir accid
 - `DELETE /v2/agent/runs/{id}`: 204, purga checkpoints con `adelete_thread(run_id)` y el `GET` posterior da 404; repetir el DELETE da 404 (idempotencia observable). Variante activa: borrar una corrida `running` detiene la tarea, no deja estado `cancelled`, no emite eventos posteriores y termina en 404.
 - `GET /v2/agent/runs/{id}`: valida los cinco esquemas normativos (`running`, `completed`, `no_evidence`, `interrupted`, `failed`), incluida la nulabilidad exacta de `RespuestaFinal` en `interrupted` y los datos parciales permitidos en `failed`.
 - `GET /v2/catalog/search`: valida `q` vacío/corto/largo; valida `k` > 25 como `422`; excluye dataset inactivo; marca `index_stale`; retorna `latest_observed_cutoff_at` solo como pista y nunca sustituye `data_cutoff_at` por `data_updated_at`.
-- Endpoints administrativos: `401` sin `X-Admin-Token`, `401` con token inválido; `POST /v2/admin/ingest` y `GET /v2/admin/ingest/runs`; `POST /v2/admin/publishers/reload`; `POST /v2/admin/retention/run`; `/v2/admin/metrics` calcula RNF-002 desde `eval_runs`/`eval_case_results`.
+- Endpoints administrativos: `401` sin `X-Admin-Token`, `401` con token inválido; `POST /v2/admin/ingest` y `GET /v2/admin/ingest/runs`; `POST /v2/admin/publishers/reload`; `POST /v2/admin/retention/run`; `/v2/admin/metrics` calcula RNF-002 desde `eval_runs`/`eval_case_results` y RNF-001/RNF-009 desde agregados técnicos reales. Probar `window_days` fuera de rango, exclusión de `eval`/canary, separación simple/multietapa, ausencia de contenido de usuario y que muestra insuficiente, costo nulo o latencia nula producen `INSUFFICIENT_EVIDENCE`, nunca `PASS`.
 - **Invariante Art. I.4:** ninguna `Evidencia` serializada sin objeto `quality` (prueba que intenta construirla y debe fallar).
 - **Invariante RF-208:** una `RespuestaFinal` cuyo `summary`/`narrative` contiene una cifra sin claim correspondiente no pasa la validación de serialización.
 - Sobre de error estándar en TODAS las rutas no-2xx excepto `/v2/health`; `message_user` presente y en español.
@@ -249,7 +249,58 @@ No se cambia el runtime predeterminado ni se retira el legado hasta cumplir simu
 - Latencia y costo dentro de RNF-001/RNF-009.
 - `legacy_agent_acceptance` verde y rollback probado.
 
-Al superar la puerta, `AGENT_RUNTIME=deterministic` se convierte inmediatamente en el default. `legacy` permanece disponible solo como rollback de emergencia durante una versión adicional; después se eliminan el selector y el código legado en una tarea independiente.
+Al superar la puerta, `AGENT_RUNTIME=deterministic` queda certificado inmediatamente como default técnico y se autoriza el canary desplegado de T-701. `legacy` permanece disponible como rollback de emergencia durante una versión contada desde ese canary; después de cerrar T-703 se eliminan el selector y el código legado en una tarea independiente.
+
+#### Validación operativa con tráfico real — Fase 7
+
+La puerta anterior certifica el runtime antes del despliegue; sus corridas
+`smoke` y golden son tráfico controlado de evaluación. La evidencia con tráfico
+real se obtiene después y no puede sustituirse por esas corridas.
+
+**T-701 — canary y rollback desplegado**
+
+1. Desplegar una versión identificable con
+   `AGENT_RUNTIME=deterministic` explícito; no depender del default implícito.
+2. Ejecutar un smoke sintético contra `/v2/agent/query` y su stream hasta un
+   único terminal; archivar versión, configuración y `run_id`.
+3. Cambiar explícitamente a `legacy`, reiniciar/desplegar, comprobar salud y
+   una corrida terminal; archivar el segundo `run_id`.
+4. Restaurar `deterministic`, comprobar salud y una corrida terminal.
+5. Registrar todos los `run_id` sintéticos para que T-703 los excluya. Ninguna
+   de estas corridas cuenta como tráfico real.
+
+El rollback solo se considera probado si la configuración efectiva y la
+versión desplegada quedan registradas y ambos runtimes responden en producción;
+la mera existencia del selector o una prueba local no basta.
+
+**T-703 — cohorte operativa RNF-001/RNF-009**
+
+- Ventana inicial: siete días consecutivos desde la restauración del canary
+  determinista. Si hubo otro despliegue o cambio de runtime, la ventana se
+  corta y el reporte separa las versiones.
+- Cohorte: corridas `retention_class=user` del runtime determinista desplegado.
+  Se excluyen de forma explícita las corridas `eval` y los `run_id` sintéticos
+  registrados por T-701.
+- Privacidad: la agregación usa trazas estructuradas y no exporta preguntas,
+  `context_hint`, filas, narrativas, citas ni identificadores de usuario.
+- Estratos: una corrida simple usa una sola consulta/evidencia y ninguna
+  exploración; una corrida multietapa usa más de una consulta/evidencia o al
+  menos una exploración. La clasificación no se infiere de la redacción.
+- Muestra mínima: 20 terminales simples y 20 terminales multietapa, además de
+  costo medido para el 100% de las corridas terminales incluidas.
+- Umbrales: p95 simple ≤ 20 s, p95 multietapa ≤ 75 s y costo promedio ≤
+  USD 0,05. Los percentiles se calculan sobre muestras no nulas sin eliminar
+  outliers.
+- Completitud: el reporte muestra denominadores, nulos, estados terminales,
+  exclusiones, runtime, modelo, versión desplegada y límites de la ventana.
+  Cualquier métrica faltante, estrato por debajo de la muestra mínima o
+  imposibilidad de separar tráfico sintético produce
+  `INSUFFICIENT_EVIDENCE`, no `PASS`.
+
+`GET /v2/admin/metrics` debe implementar y probar el agregado definido en
+`contracts/api-rest.md` antes de usarse como evidencia. La primera semana puede
+terminar en `PASS`, `FAIL` o `INSUFFICIENT_EVIDENCE`; en el último caso se
+amplía la observación y T-703 permanece abierta.
 
 ### 4.5 Matriz de pruebas para hechos textuales (T-615)
 
