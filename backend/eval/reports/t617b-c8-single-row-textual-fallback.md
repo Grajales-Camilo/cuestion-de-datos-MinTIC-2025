@@ -122,3 +122,28 @@ Verificación posterior:
 - Ruff check/formato y `git diff --check`: limpios.
 
 Estado: `READY_FOR_DIRECTED_PILOT013_RETRY` / `FULL_GATE_BLOCKED`.
+
+## C8B — revalidación real satisfactoria
+
+La única revalidación dirigida posterior, eval
+`e57d5421-017e-4f54-972e-3ae7b9e3dc9d` sobre `d16b1e1`, pasó:
+
+- `agent_run_id=3a52133f-b776-4118-8da2-e724d71c963b`;
+- estado terminal `completed`, sin código terminal;
+- dataset correcto `tmk8-iihq`;
+- SoQL con `WHERE codigo = 'PRY00062'`;
+- exactamente una fila: nombre `IP Ibagué - Cajamarca` y tipo
+  `Iniciativa Privada sin Recursos Públicos`;
+- dos hechos `direct_text`, uno por cada campo pedido, persistidos y
+  reproducibles;
+- integridad textual total: cobertura, reproducibilidad y presentación al
+  100%, sin segmentos huérfanos ni operaciones inválidas;
+- `fabrication_count=0`, `orphan_figures_count=0`, sin infraestructura;
+- latencia 12.654 s y costo estimado USD 0,005642.
+
+La narrativa es verificable aunque estilísticamente genérica (“El valor
+observado es…”); no intercambia ni inventa valores y la evidencia/fuente queda
+consultable. Conforme a RF-211, es una advertencia de presentación no
+bloqueante, no motivo para convertir la respuesta en `no_evidence`.
+
+Estado: `READY_FOR_CANONICAL_SMOKE` / `FULL_GATE_BLOCKED`.
