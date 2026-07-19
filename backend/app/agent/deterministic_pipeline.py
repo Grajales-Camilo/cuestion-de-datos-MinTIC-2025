@@ -21,9 +21,13 @@ from app.agent.plan_validator import (
     ValidatedTextualColumn,
     ValidatedTextualRequest,
 )
-from app.agent.query_plan import PiiRiskLevel, QueryOperation, SortTargetKind
+from app.agent.query_plan import ColumnDataType, PiiRiskLevel, QueryOperation, SortTargetKind
 from app.agent.soql_renderer import RenderedQuery, render_soql
-from app.quality.claim_labels import COUNT_FIELD_SENTINEL
+from app.quality.claim_labels import (
+    COUNT_FIELD_SENTINEL,
+    column_is_explicitly_requested,
+    intent_relevance_tokens,
+)
 from app.quality.claims import (
     ClaimsBuildResult,
     ClaimSpec,
@@ -33,6 +37,7 @@ from app.quality.claims import (
 from app.quality.grounded_facts import (
     CategorySelectionParams,
     CategorySelectionRule,
+    EmptyTextualFactOperationParams,
     ExtremumLabelParams,
     TextualFact,
     TextualFactOperation,
@@ -322,6 +327,81 @@ def _prepare_textual_facts(
     return tuple(prepared), tuple(rejected)
 
 
+def _prepare_single_row_lookup_textual_fallback(
+    plan: ValidatedQueryPlan,
+    rendered: RenderedQuery,
+    *,
+    canonical_soql: str,
+    rows: tuple[dict, ...],
+    quantitative_aliases: frozenset[str],
+) -> tuple[tuple[PreparedTextualFact, ...], tuple[TextualRejection, ...]]:
+    """Deriva ``direct_text`` solo para una fila única y campos solicitados.
+
+    RF-211/pruebas.md §4.5: una consulta LOOKUP que ya devolvió una única fila
+    elegible no debe terminar en ``no_evidence`` solo porque el LLM omitió
+    ``textual_requests``. El fallback no elige entre filas ni columnas por sus
+    valores: exige exactamente una fila, usa únicamente dimensiones TEXT
+    seleccionadas cuyo nombre real coincide con la intención, y excluye los
+    aliases que ya produjeron un claim cuantitativo. Solicitudes textuales
+    explícitas se procesan por la ruta normal y nunca llegan aquí.
+    """
+
+    if (
+        plan.operation is not QueryOperation.LOOKUP
+        or plan.textual_requests
+        or len(rows) != 1
+        or canonical_soql != rendered.canonical_soql
+    ):
+        return (), ()
+
+    requested_tokens = intent_relevance_tokens(plan.purpose, ())
+    prepared: list[PreparedTextualFact] = []
+    rejected: list[TextualRejection] = []
+    evidence = TextualEvidence(
+        dataset_id=rendered.dataset_id,
+        canonical_soql=canonical_soql,
+        rows=rows,
+        validated_order_is_total=False,
+    )
+    for dimension, alias in zip(
+        plan.dimensions,
+        rendered.dimension_aliases,
+        strict=True,
+    ):
+        if (
+            dimension.data_type is not ColumnDataType.TEXT
+            or alias in quantitative_aliases
+            or not column_is_explicitly_requested(
+                dimension.field_name,
+                requested_tokens=requested_tokens,
+            )
+        ):
+            continue
+        spec = TextualFactSpec(
+            operation=TextualFactOperation.DIRECT_TEXT,
+            source_row_indexes=(0,),
+            columns=(alias,),
+            operation_params=EmptyTextualFactOperationParams(),
+        )
+        try:
+            evaluate_textual_operation(evidence=evidence, spec=spec)
+        except TextualOperationError as exc:
+            rejected.append(
+                TextualRejection(
+                    operation=TextualFactOperation.DIRECT_TEXT,
+                    code=exc.code,
+                )
+            )
+            continue
+        prepared.append(
+            PreparedTextualFact(
+                spec=spec,
+                validated_order_is_total=False,
+            )
+        )
+    return tuple(prepared), tuple(rejected)
+
+
 async def execute_validated_plan(
     plan: ValidatedQueryPlan,
     *,
@@ -371,15 +451,6 @@ async def execute_validated_plan(
         )
     if is_cancelled is not None and is_cancelled():
         raise DeterministicPersistenceCancelled("corrida cancelada antes de construir texto")
-    textual_facts: tuple[PreparedTextualFact, ...] = ()
-    textual_rejections: tuple[TextualRejection, ...] = ()
-    if textual_facts_enabled:
-        textual_facts, textual_rejections = _prepare_textual_facts(
-            plan,
-            rendered,
-            canonical_soql=canonical_soql,
-            rows=rows,
-        )
     claims = build_claims(
         EvidenceContext(
             dataset_id=rendered.dataset_id,
@@ -388,6 +459,27 @@ async def execute_validated_plan(
         ),
         _claim_specs(plan, rendered, rows),
     )
+    textual_facts: tuple[PreparedTextualFact, ...] = ()
+    textual_rejections: tuple[TextualRejection, ...] = ()
+    if textual_facts_enabled:
+        if plan.textual_requests:
+            textual_facts, textual_rejections = _prepare_textual_facts(
+                plan,
+                rendered,
+                canonical_soql=canonical_soql,
+                rows=rows,
+            )
+        else:
+            quantitative_aliases = frozenset(
+                alias for claim in claims.claims for alias in claim.columns_used
+            )
+            textual_facts, textual_rejections = _prepare_single_row_lookup_textual_fallback(
+                plan,
+                rendered,
+                canonical_soql=canonical_soql,
+                rows=rows,
+                quantitative_aliases=quantitative_aliases,
+            )
     if not claims.claims and plan.operation is QueryOperation.LOOKUP and not textual_facts_enabled:
         presence_claims = build_claims(
             EvidenceContext(

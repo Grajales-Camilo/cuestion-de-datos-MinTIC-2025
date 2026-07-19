@@ -134,6 +134,30 @@ def intent_relevance_tokens(topic: str, administrative_terms: tuple[str, ...]) -
     return frozenset(_tokens(" ".join((topic, *administrative_terms))))
 
 
+def column_is_explicitly_requested(
+    field_name: str,
+    *,
+    requested_tokens: frozenset[str],
+) -> bool:
+    """Comprueba solapamiento léxico entre una columna y la intención.
+
+    Esta señal es más estricta que ``claim_is_relevant_to_narrative``: no
+    basta con que una columna sea primaria. Se exige que alguno de sus tokens
+    estructurados aparezca en la intención (o comparta una raíz de al menos
+    cuatro caracteres). Sirve para seleccionar de forma conservadora campos
+    textuales de una fila única sin exponer columnas auxiliares que el usuario
+    no pidió. Nunca inspecciona valores, ``case_id`` ni ``dataset_id``.
+    """
+
+    column_tokens = _tokens(field_name)
+    return any(
+        requested == column
+        or (min(len(requested), len(column)) >= 4 and (requested in column or column in requested))
+        for requested in requested_tokens
+        for column in column_tokens
+    )
+
+
 def claim_is_relevant_to_narrative(
     source_columns: tuple[str, ...],
     *,

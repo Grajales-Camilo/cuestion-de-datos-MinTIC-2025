@@ -24,6 +24,8 @@ from app.agent.llm_contracts import (
     materialize_query_plan,
 )
 from app.agent.plan_validator import (
+    ObservedColumn,
+    ObservedDatasetSchema,
     PlanValidationCode,
     PlanValidationError,
     validate_query_plan,
@@ -33,11 +35,21 @@ from app.agent.query_plan import (
     ArgminLabelSelection,
     CanonicalTextSetSelection,
     CategorySelection,
+    ColumnDataType,
+    ColumnOption,
     ColumnReference,
+    DatasetOption,
     DimensionSelection,
     DirectTextSelection,
+    EligibilityStatus,
+    EnumeratedPlanningContext,
+    FilterOperator,
+    FilterSelection,
+    PiiRiskLevel,
     QueryOperation,
     QueryPlan,
+    ScalarType,
+    ScalarValue,
     SortDirection,
     SortSelection,
     SortTargetKind,
@@ -300,12 +312,166 @@ async def test_enabled_lookup_without_accepted_text_never_falls_back_to_count_on
         return {
             "ok": True,
             "canonical_soql": payload["soql"],
-            "rows": [{"dim_1": "Medellín"}],
+            "rows": [{"dim_1": "Medellín"}, {"dim_1": "Bogotá"}],
         }
 
     with pytest.raises(DeterministicExecutionError, match="CLAIMS_REJECTED"):
         await execute_validated_plan(
             _validated(plan),
+            executor=executor,
+            metadata=metadata(),
+            textual_facts_enabled=True,
+        )
+
+
+def _single_project_lookup() -> tuple[QueryPlan, EnumeratedPlanningContext, ObservedDatasetSchema]:
+    columns = (
+        ColumnOption(
+            index=0,
+            field_name="codigo",
+            display_name="Código",
+            data_type=ColumnDataType.TEXT,
+            pii_risk_level=PiiRiskLevel.LOW,
+        ),
+        ColumnOption(
+            index=1,
+            field_name="nombre_proyecto",
+            display_name="Nombre del proyecto",
+            data_type=ColumnDataType.TEXT,
+            pii_risk_level=PiiRiskLevel.LOW,
+        ),
+        ColumnOption(
+            index=2,
+            field_name="tipo_app",
+            display_name="Tipo APP",
+            data_type=ColumnDataType.TEXT,
+            pii_risk_level=PiiRiskLevel.LOW,
+        ),
+        ColumnOption(
+            index=3,
+            field_name="entidad_encargada",
+            display_name="Entidad encargada",
+            data_type=ColumnDataType.TEXT,
+            pii_risk_level=PiiRiskLevel.LOW,
+        ),
+    )
+    planning_context = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="wxyz-9876",
+                title="Proyectos de infraestructura",
+                publisher="Entidad oficial",
+                columns=columns,
+            ),
+        )
+    )
+    observed_schema = ObservedDatasetSchema(
+        dataset_id="wxyz-9876",
+        eligibility_status=EligibilityStatus.ELIGIBLE,
+        pii_risk_level=PiiRiskLevel.LOW,
+        columns=tuple(
+            ObservedColumn(
+                field_name=column.field_name,
+                data_type=column.data_type,
+                pii_risk_level=column.pii_risk_level,
+            )
+            for column in columns
+        ),
+    )
+    plan = QueryPlan(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimensions=tuple(
+            DimensionSelection(
+                column=ColumnReference(column_index=index),
+                provenance=provenance(),
+            )
+            for index in range(len(columns))
+        ),
+        filters=(
+            FilterSelection(
+                column=ColumnReference(column_index=0),
+                operator=FilterOperator.EQ,
+                values=(ScalarValue(type=ScalarType.TEXT, value="ABC123"),),
+                provenance=provenance(),
+            ),
+        ),
+        limit=100,
+        purpose="lookup: ¿Cuál es el tipo y nombre del proyecto APP ABC123?",
+    )
+    return plan, planning_context, observed_schema
+
+
+@pytest.mark.asyncio
+async def test_single_row_lookup_derives_only_requested_text_without_llm_request() -> None:
+    plan, planning_context, observed_schema = _single_project_lookup()
+    validated = validate_query_plan(
+        plan,
+        context=planning_context,
+        schema=observed_schema,
+    )
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [
+                {
+                    "dim_1": "ABC123",
+                    "dim_2": "Corredor del Norte",
+                    "dim_3": "Iniciativa privada",
+                    "dim_4": "Agencia de Infraestructura",
+                }
+            ],
+        }
+
+    result = await execute_validated_plan(
+        validated,
+        executor=executor,
+        metadata=metadata(),
+        textual_facts_enabled=True,
+    )
+
+    assert result.claims.claims == ()
+    assert [fact.spec.operation for fact in result.textual_facts] == [
+        TextualFactOperation.DIRECT_TEXT,
+        TextualFactOperation.DIRECT_TEXT,
+    ]
+    assert [fact.spec.columns for fact in result.textual_facts] == [
+        ("dim_2",),
+        ("dim_3",),
+    ]
+    assert result.textual_rejections == ()
+
+
+@pytest.mark.asyncio
+async def test_single_row_lookup_does_not_promote_unrequested_text() -> None:
+    plan, planning_context, observed_schema = _single_project_lookup()
+    plan = plan.model_copy(update={"purpose": "lookup: Consultar el registro ABC123"})
+    validated = validate_query_plan(
+        plan,
+        context=planning_context,
+        schema=observed_schema,
+    )
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [
+                {
+                    "dim_1": "ABC123",
+                    "dim_2": "Corredor del Norte",
+                    "dim_3": "Iniciativa privada",
+                    "dim_4": "Agencia de Infraestructura",
+                }
+            ],
+        }
+
+    with pytest.raises(DeterministicExecutionError, match="CLAIMS_REJECTED"):
+        await execute_validated_plan(
+            validated,
             executor=executor,
             metadata=metadata(),
             textual_facts_enabled=True,

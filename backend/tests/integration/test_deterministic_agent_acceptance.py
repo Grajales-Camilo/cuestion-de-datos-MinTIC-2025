@@ -82,7 +82,6 @@ from app.agent.query_plan import (
     ColumnOption,
     ColumnReference,
     DatasetOption,
-    DirectTextSelection,
     EligibilityStatus,
     FilterOperator,
     PiiRiskLevel,
@@ -641,7 +640,7 @@ async def test_h1_positive_path_completes_with_evidence_quality_claims_and_singl
     _assert_budgets_respected([event for event in events if event.event_type == "step"])
 
 
-async def test_t615h_text_only_is_rendered_only_after_persistence_without_legacy(
+async def test_t615h_single_row_text_fallback_is_persisted_before_rendering_without_legacy(
     engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
 ) -> None:
     dataset_id = _fresh_dataset_id()
@@ -655,7 +654,7 @@ async def test_t615h_text_only_is_rendered_only_after_persistence_without_legacy
     run_id = await _seed_run(
         engine,
         created,
-        question=f"{QUESTION_PREFIX}hecho textual interno verificable",
+        question=f"{QUESTION_PREFIX}¿Cuál es el municipio observado?",
     )
     executor, calls = _executor([{"dim_1": "  Medellín  "}])
 
@@ -676,12 +675,6 @@ async def test_t615h_text_only_is_rendered_only_after_persistence_without_legacy
             dataset_index=0,
             operation=QueryOperation.LOOKUP,
             dimension_column_indexes=(0,),
-            textual_requests=(
-                DirectTextSelection(
-                    source_row_indexes=(0,),
-                    column=ColumnReference(column_index=0),
-                ),
-            ),
             limit=2,
         )
 
