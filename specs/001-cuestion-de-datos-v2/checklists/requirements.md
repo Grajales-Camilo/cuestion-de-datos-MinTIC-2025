@@ -178,3 +178,21 @@ Get-ChildItem . -Recurse -Filter *.md |
   `golden-v2`; `acceptable_facts` discriminados solo se trabajan en T-616.
 - [x] **R7-10 Entregas.** Aprobar secuencia T-615A…T-615J y autorización
   separada por incremento, migración y cierre.
+
+# Ronda 8 — Utilidad proporcional y verificable (2026-07-19)
+
+- [x] **R8-1 Regla rectora.** Constitución Art. I.5 prioriza respuestas
+  útiles, verificables, suficientemente correctas y transparentes, sin relajar
+  la prohibición de fabricar, la trazabilidad ni la privacidad.
+- [x] **R8-2 Requisito estable.** RF-211 evita convertir una mejora técnica de
+  consulta en abstención automática cuando la respuesta material sigue
+  sustentada.
+- [x] **R8-3 Frontera operativa.** `validacion-calidad.md` separa bloqueos
+  reales de advertencias no bloqueantes sin cambiar pesos, umbrales ni
+  elegibilidad.
+- [x] **R8-4 Evaluación honesta.** `pruebas.md` conserva el veredicto mecánico,
+  cardinalidades, umbrales y golden, y reporta aparte la interpretación
+  cualitativa.
+- [x] **R8-5 Escala y no sobreajuste.** `research.md` §28 y `plan.md` §13.4
+  prohíben reglas por caso y documentan la prioridad de seguridad,
+  correspondencia material, transparencia y optimización.

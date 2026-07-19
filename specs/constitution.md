@@ -1,6 +1,6 @@
 # Constitución del Proyecto — Cuestión de Datos
 
-**Versión:** 1.2.0 · **Ratificada:** 2026-07-06 · **Última enmienda:** 2026-07-06 (revisión documental focalizada de backend: `research.md` incorporado a la jerarquía normativa, Art. IV.2 alineado con puertas RNF-002 por PR/semanal/release, y obligación de configuración completa antes de implementar backend)
+**Versión:** 1.3.0 · **Ratificada:** 2026-07-06 · **Última enmienda:** 2026-07-19 (Art. I.5 incorpora utilidad proporcional a escala de catálogo sin relajar trazabilidad, privacidad ni prohibición de fabricar)
 
 Este documento define los principios que **ninguna funcionalidad, refactor ni decisión técnica puede violar**. Aplica a todo el código del repositorio (frontend, backend, scripts de datos, pruebas y documentación) y a todo agente de IA o humano que contribuya.
 
@@ -12,6 +12,7 @@ Este documento define los principios que **ninguna funcionalidad, refactor ni de
 2. **Trazabilidad completa obligatoria.** Toda evidencia insertada en un documento debe llevar adjuntos, como mínimo: `dataset_id`, nombre del dataset, entidad publicadora, consulta SoQL ejecutada, fecha/hora de ejecución y URL de la fuente. Si falta alguno de estos campos, la evidencia **no se inserta**.
 3. **Si el agente no encuentra datos, lo dice.** La respuesta "no encontré evidencia suficiente en el catálogo" es un resultado válido y preferible a una respuesta especulativa. Está prohibido rellenar vacíos con estimaciones del modelo.
 4. **La capa de validación de calidad no es opcional.** Ningún resultado llega al usuario sin pasar por la validación formal (esquema, completitud, temporalidad, trazabilidad) definida en `contracts/validacion-calidad.md`.
+5. **Utilidad proporcional y verificable.** Ante un catálogo de miles de datasets, cientos de miles de variables y millones de filas, el sistema no tiene que demostrar que produjo la consulta técnicamente perfecta entre todas las alternativas posibles. Debe entregar una respuesta útil para la pregunta, respaldada por datos y fuentes consultables, suficientemente correcta sin inventar cifras y transparente sobre limitaciones, ambigüedades o cobertura parcial. Una consulta mejorable, una selección temporal no óptima, una respuesta incompleta pero materialmente correcta o una precisión menor a la deseable son advertencias, no bloqueos automáticos. Sí bloquean las cifras fabricadas, la fuente equivocada, las contradicciones materiales, la ausencia de evidencia verificable, los riesgos de privacidad y los fallos sistemáticos. Esta proporcionalidad nunca permite eludir los numerales 1–4.
 
 ## Artículo II — Código abierto y reproducibilidad
 
