@@ -620,10 +620,19 @@ renderer. Sin objetos elegibles termina `no_evidence`.
 final; `pilot-038` es ambiguo porque la hora esperada no está en la pregunta.
 Los desacuerdos restantes se mantienen `undetermined` hasta T-616.
 
-**Dependencias y gate.** T-615A…T-615J se detallan en `tasks.md`. T-615G y su
-corrección T-615G-R están cerradas. La decisión anterior reautoriza únicamente
-T-615H; T-615I, T-616 y T-617 continúan bloqueadas. No autoriza cambios de
-golden, métricas, runtime por defecto ni legado.
+**Dependencias y gate al aprobar T-615H.** T-615A…T-615J se detallan en
+`tasks.md`. En ese punto T-615G y su corrección T-615G-R estaban cerradas y la
+decisión anterior reautorizaba únicamente T-615H; T-615I, T-616 y T-617
+permanecían bloqueadas. Esa autorización no incluía cambios de golden,
+métricas, runtime por defecto ni legado.
+
+**Actualización de estado (2026-07-18).** Las autorizaciones y cierres
+posteriores registrados en `tasks.md` completaron T-615H, T-615I/T-615I-R y
+T-615J; T-615 quedó cerrada. T-616A-R fue aprobada y T-616B materializó y
+validó `golden-v2`, por lo que T-616 también quedó cerrada. T-617 está abierta
+en su preflight y ya no está bloqueada por esta decisión de T-615; conserva
+sus propias puertas antes de consumir cuota real o cambiar el runtime
+operativo.
 
 ---
 

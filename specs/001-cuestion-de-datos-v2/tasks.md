@@ -222,7 +222,7 @@ Seguimiento (revisión de código post-merge, dos huecos detectados y cerrados e
 
 **Objetivo:** construir una ruta de validación independiente para el runtime determinista, diagnosticar fallos por etapa y mejorar utilidad sin sobreajustar `golden-v1`. El legado permanece como rollback. La secuencia es estricta: T-610 → T-611 → T-612 → T-613 → T-614 → T-615 → T-616 → T-617.
 
-**Estado para el siguiente agente (2026-07-17):** T-610…T-614 y
+**Estado histórico para el siguiente agente (2026-07-17):** T-610…T-614 y
 T-615A…T-615F están cerradas.
 La aceptación E2E está separada entre `legacy_agent_acceptance` y
 `deterministic_agent_acceptance`; el evaluador persiste `stage_diagnostics`
@@ -231,7 +231,13 @@ v1.0; las dos corridas normativas RNF-010 están verdes.
 aprobada y se ejecuta por incrementos con autorización independiente. La
 matriz terminal ya definida reautorizó T-615G, que cerró junto con T-615G-R.
 T-615H y su corrección de reverificación quedaron cerradas; T-615I es la
-siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
+siguiente tarea autorizable. En ese estado fechado, T-616 y T-617 permanecían
+bloqueadas.
+
+**Estado vigente (2026-07-18):** T-615A…T-615J y T-616 están cerradas con sus
+autorizaciones y evidencias registradas abajo. T-617 está abierta en preflight;
+no depende ya de un incremento anterior, pero no autoriza las corridas reales
+hasta cerrar y auditar su instrumentación mecánica.
 
 **Desviación conocida:** `backend/app/config.py` usa actualmente `deterministic` como default, aunque la política aprobada mantiene `legacy` como runtime operativo durante la validación. T-610 debe registrarlo; los entornos de usuario/producción deben fijar `AGENT_RUNTIME=legacy`. La corrección del default requiere una tarea explícita posterior al incremento solo-pruebas, no un cambio silencioso dentro de T-611/T-612.
 
@@ -270,17 +276,18 @@ siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
   - ✅ **T-614R1 lifecycle (2026-07-16):** cliente Gemini y engine/pool se reutilizan por worker en el Selector loop principal, con cierre idempotente y pruebas de concurrencia/startup/shutdown. RNF-010 mejoró de p50/p95/p99 `1187,6/1659,3/1770,2 ms` a `923,5/1293,6/1696,2 ms`, cobertura 100 %, pero continúa en rojo.
   - ✅ **T-614R2 lexical (2026-07-16):** decisión SDD cerrada; `lexical_search_vector` materializado con GIN y `lexical_rank_vector` exacto, ambos mantenidos por triggers y backfill reversible. SQL+Python p95 bajó de `810,1` a `144,4 ms`; dos corridas normativas consecutivas obtuvieron p50/p95/p99 `376,8/828,0/1635,5 ms` y `359,5/482,0/771,4 ms`, cobertura `100 %` (8394/8394) y cero errores. Suite no integración `653 passed`; aceptación determinista `14 passed, 1 xfailed`; legacy `7 passed`. **T-614 cerrada. T-615 continúa bloqueada y no se inicia automáticamente.** Véase `backend/eval/reports/rnf010-lexical-optimization.md`.
 
-- [ ] **T-615 Diseñar e implementar hechos textuales de primera clase
+- [x] **T-615 Diseñar e implementar hechos textuales de primera clase
   (RF-210/RNF-013 propuestos; RF-208/RNF-003 preservados).**
-  - **Estado:** T-615A aprobada y T-615B/T-615C/T-615D cerradas el
-    2026-07-17 sobre el HEAD normativo
-    `f7725eeced8afc93ccd7fcc250e248a05f2db616`. T-615E y posteriores
-    continúan bloqueadas. Diseño: `research.md` §27 y
-    `proposals/textual-claims.md`.
-  - **Regla global:** no representar texto mediante `raw_value=1`, conteos
-    ficticios ni claims cuantitativos; no editar `golden-v1`; no iniciar
-    T-616/T-617; no retirar el legado; cada incremento requiere autorización
-    explícita y rollback propio.
+  - **Estado vigente:** T-615A…T-615J cerradas mediante incrementos autorizados
+    y revisables; cierre integral en
+    `backend/eval/reports/t615-final-acceptance.md`. Diseño: `research.md` §27
+    y `proposals/textual-claims.md`.
+  - **Regla global aplicada durante T-615:** no representar texto mediante
+    `raw_value=1`, conteos ficticios ni claims cuantitativos; no editar
+    `golden-v1`; no iniciar T-616/T-617 antes del cierre de sus dependencias;
+    no retirar el legado; cada incremento requería autorización explícita y
+    rollback propio. Las dependencias se cerraron posteriormente en el orden
+    aprobado.
 
   - [x] **T-615A Aprobar la enmienda SDD y congelar decisiones.**
     - **Requisitos:** RF-210/RNF-013 propuestos; Constitución Art. I/II/IV;
@@ -573,8 +580,8 @@ siguiente tarea autorizable. T-616 y T-617 permanecen bloqueadas.
     `153.42/153.427`; `pilot-038/039` se reescribieron con
     estación+sensor+hora explícitos. El loader acepta exclusivamente
     `golden-v1`/`golden-v2`; los reportes registran el nombre real de suite.
-    `golden-v1` permanece byte a byte intacto. T-402 sigue abierta como deuda
-    separada y T-617 no se inició.
+    `golden-v1` permanece byte a byte intacto. T-402 permanece formalmente
+    cerrada como trabajo separado y T-617 no se inició dentro de T-616B.
 
 - [ ] **T-617 Ejecutar puerta completa y mantener rollback (RNF-001…005/009).**
   - Orden: unitarias deterministas → no integración → aceptación determinista → integraciones compartidas → smoke 10 → golden-v1 50 → golden-v2 50 → aceptación legacy.

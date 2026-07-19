@@ -491,6 +491,8 @@ convierte en contenido público: sin plan validado y renderizado, no hay
 Cada incremento debe poder revertirse de forma aislada. Antes de activar la
 emisión textual deben estar verdes: modelos y contrato, migración
 up/down, retención, constructor, hash, síntesis estricta, API histórica,
-métricas, no integración, aceptación determinista y aceptación legacy.
-T-616 continúa bloqueada hasta cierre y aprobación expresa de T-615; T-617
-continúa dependiendo de ambas.
+métricas, no integración, aceptación determinista y aceptación legacy. La
+regla de secuencia exigía cerrar y aprobar T-615 antes de iniciar T-616, y
+cerrar T-616 antes de T-617. Ambas dependencias quedaron satisfechas el
+2026-07-18; T-617 conserva únicamente sus puertas propias de §13.3 y
+`pruebas.md` §4.4.
