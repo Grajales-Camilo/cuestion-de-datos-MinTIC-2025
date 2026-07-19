@@ -53,6 +53,120 @@ def test_config_snapshot_registers_deterministic_textual_facts_enabled(monkeypat
     assert snapshot["eval_seed"] == 601000
 
 
+@pytest.mark.parametrize(
+    "run_status,terminal_error_code,expected_failure_code",
+    [
+        ("failed", "LLM_PROVIDER_ERROR", "provider_error"),
+        # T-617B0-R3A #5 (requisito D/E.5): HEARTBEAT_EXPIRED/WORKER_LOST se
+        # persisten con status="interrupted" (app.agent.heartbeat_sweep), no
+        # "failed". La solución adoptada (opción 1 de la auditoría) es leer
+        # AMBOS estados no evaluables; sin esto, esta rama de la
+        # parametrización fallaría con error_code=None.
+        ("interrupted", "HEARTBEAT_EXPIRED", "heartbeat_expired"),
+    ],
+)
+async def test_run_suite_propagates_provider_terminal_from_agent_run(
+    monkeypatch, run_status: str, terminal_error_code: str, expected_failure_code: str
+) -> None:
+    """T-617B0-R3A #1 (prueba integral, requisito E.1): reproduce el punto
+    originalmente defectuoso dentro de `run_suite` — no solo
+    `build_stage_diagnostics`/`evaluate_smoke_gate` por separado. `get_run`
+    devuelve un `status`/`terminal_error_code` no evaluable y
+    `final_answer=None` (como el agent run real
+    235466d2-a403-4c01-bc8e-817713ca3062 del smoke, para el caso
+    `status="failed"`). Sin la lectura de
+    `run.status`/`run.terminal_error_code` en `run_suite`, esta prueba falla
+    contra e74f3522853c75f6ae6ad984048bc327669602bb con
+    `error_code is None` y `failure_code == "intent_mismatch"`."""
+
+    suite = GoldenSuite(
+        name="golden-v1",
+        version="1.0.0",
+        snapshot_at="2026-07-11",
+        cases=(
+            GoldenCase("pilot-005-empleo-publico", "positive", "q1", ("abcd-1234",), (), 1, "n"),
+        ),
+        source_path=None,
+    )
+    suite_id = uuid.uuid4()
+    case_ids = {case.case_id: uuid.uuid4() for case in suite.cases}
+
+    monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
+    monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
+    monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+    monkeypatch.setattr(run_module, "validate_gate_selection", lambda *a, **k: None)
+    monkeypatch.setattr(
+        run_module,
+        "create_app_async_engine",
+        lambda *a, **k: SimpleNamespace(dispose=AsyncMock()),
+    )
+    monkeypatch.setattr(
+        run_module,
+        "sync_golden_suite",
+        AsyncMock(return_value=PersistedGoldenSuite(suite_id=suite_id, case_ids=case_ids)),
+    )
+    monkeypatch.setattr(run_module, "register_worker_instance", AsyncMock(return_value="worker-1"))
+    monkeypatch.setattr(run_module, "mark_worker_shutdown", AsyncMock())
+    monkeypatch.setattr(run_module, "create_eval_run", AsyncMock(return_value=uuid.uuid4()))
+    monkeypatch.setattr(run_module, "execute_agent_run_async", AsyncMock())
+    # No relanza excepción: el agente mismo capturó el 504 de proveedor y
+    # persistió el terminal en `agent_runs`, sin `final_answer`.
+    monkeypatch.setattr(
+        run_module,
+        "get_run",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                status=run_status,
+                terminal_error_code=terminal_error_code,
+                final_answer=None,
+            )
+        ),
+    )
+    monkeypatch.setattr(run_module, "_planner_search_dataset_ids", AsyncMock(return_value=[]))
+    monkeypatch.setattr(run_module, "_stage_observations", AsyncMock(return_value=()))
+
+    persisted_calls = []
+
+    async def fake_persist(engine, **kwargs):
+        persisted_calls.append(kwargs)
+
+    monkeypatch.setattr(run_module, "_persist_case_result", fake_persist)
+    monkeypatch.setattr(run_module, "_finalize_eval_record", AsyncMock())
+    monkeypatch.setattr(run_module, "_write_report", lambda *a, **k: None)
+    monkeypatch.setattr(
+        run_module,
+        "_create_eval_record",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                id=uuid.uuid4(), llm_provider="google", llm_model="gemini-2.5-flash"
+            )
+        ),
+    )
+
+    result = await run_module.run_suite(
+        suite_name="golden-v1", provider=None, model=None, seed=1, limit=None
+    )
+
+    assert len(persisted_calls) == 1
+    call = persisted_calls[0]
+    assert call["error_code"] == terminal_error_code
+    assert call["assessment"].passed is False
+    assert call["stage_diagnostics"]["failure_code"] == expected_failure_code
+    assert call["stage_diagnostics"]["failure_owner"] == "infrastructure"
+    assert call["stage_diagnostics"]["terminal_error_code"] == terminal_error_code
+    assert call["stage_diagnostics"]["failure_code"] != "intent_mismatch"
+
+    assert result.aggregate is not None
+    assert result.aggregate.infrastructure_failure_count == 1
+    assert result.aggregate.infrastructure_failure_case_ids == ("pilot-005-empleo-publico",)
+
+    assert result.verdict is not None
+    assert result.verdict.passed is False
+    infra_metric = next(m for m in result.verdict.metrics if m.name == "infraestructura")
+    assert infra_metric.passed is False
+    assert any("infraestructura" in reason for reason in result.verdict.blocking_reasons)
+
+
 async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch) -> None:
     suite = _fake_suite()
     suite_id = uuid.uuid4()
@@ -137,7 +251,11 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
     assert failed_call["agent_run_id"] is None
     assert failed_call["error_code"] == "RuntimeError"
     assert failed_call["assessment"].passed is False
-    assert failed_call["stage_diagnostics"]["failure_code"] == "query_failed"
+    # T-617B0-R3A: una excepción del arnés (runner/engine/persistencia/
+    # dependencia del evaluador, aquí `create_eval_run` reventando) bloquea
+    # como infraestructura, NUNCA como regresión semántica del agente.
+    assert failed_call["stage_diagnostics"]["failure_code"] == "harness_error"
+    assert failed_call["stage_diagnostics"]["failure_owner"] == "infrastructure"
     assert "boom" in failed_call["assessment"].failure_reason
 
     ok_call = persisted_calls[1]

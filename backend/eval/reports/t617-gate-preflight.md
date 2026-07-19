@@ -769,3 +769,160 @@ este incremento.
 smoke real (y, si pasa, la continuación a golden-v1/golden-v2/aceptación
 legacy) queda sujeto a nueva autorización explícita de Juan Camilo y del
 coordinador.
+
+---
+
+## N. Corrección T-617B0-R3A — huecos de atribución cerrados por auditoría
+
+**Contexto:** una auditoría posterior a T-617B0-R3 (baseline
+`e74f3522853c75f6ae6ad984048bc327669602bb`) encontró que la corrección del 504
+real quedaba bien resuelta, pero la taxonomía introducida tenía cinco huecos
+adicionales. T-617B0-R3A los cierra **sin ejecutar Gemini, Socrata ni
+PostgreSQL real**, exclusivamente en `backend/eval/` (sin tocar
+`backend/app/agent/**`, golden-v1/v2, preguntas, `expected_facts`,
+cardinalidades, umbrales ni contratos normativos). **R3 corrigió el 504
+observado; R3A cierra los huecos que la auditoría encontró en esa misma
+corrección** — ambos incrementos son necesarios y complementarios. El reporte
+real `9bebcb75-53d2-42f6-938f-bfbd45384128.md` permanece **sin modificar**.
+
+### N.1 Hallazgos de la auditoría y corrección aplicada
+
+1. **`STRUCTURED_OUTPUT_INVALID` estaba incluido como infraestructura/
+   proveedor.** CIERTO y contradecía `contracts/api-rest.md` §4: ese código
+   distingue explícitamente una salida estructurada que sigue sin cumplir el
+   esquema tras agotar el repair loop de una falla real del proveedor (`NO`
+   es `retryable`; el problema es de esquema/prompt del agente, no de red,
+   cuota, 5xx ni timeout). **Corregido:** se retira de
+   `_INFRASTRUCTURE_TERMINAL_ERROR_CODE_TO_FAILURE_CODE` y se clasifica
+   aparte con `failure_code="structured_output_invalid"`,
+   `failure_owner="agent"`; si afecta un positivo sólido del smoke, sigue
+   contando como regresión semántica bloqueante en `positivos_sólidos`
+   (distinto de `provider_error`, que se excluye de esa lista).
+2. **Las excepciones del arnés (`infrastructure_error`) conservaban
+   `failure_owner="agent"`.** CIERTO: una excepción propia de
+   `run_suite`/`create_eval_run`/persistencia/dependencias caía en un mapeo
+   por etapa (`profile_failed`, `plan_invalid`, `value_not_resolved`,
+   `query_failed`) con `owner="agent"` implícito — la misma clase de falsa
+   atribución que R3 corrigió para el terminal de `agent_runs`, pero para el
+   arnés mismo. **Corregido:** toda excepción del arnés se clasifica ahora
+   con `failure_code="harness_error"`, `failure_owner="infrastructure"`
+   (nunca regresión semántica), conservando el nombre de la excepción en
+   `EvalCaseResult.error_code` (no en `failure_code`) para diagnóstico.
+3. **`build_stage_diagnostics` evaluaba `golden_ambiguous` antes que la falla
+   de infraestructura/proveedor.** CIERTO: un `LLM_PROVIDER_ERROR` sobre un
+   caso con golden ambiguo podía terminar clasificado como
+   `ambiguous_golden`/`owner="golden"`. **Corregido:** el orden de prioridad
+   ahora es (1) terminal de infraestructura/proveedor/ejecución tipado, (2)
+   `STRUCTURED_OUTPUT_INVALID`, (3) excepción del arnés, y **solo después**
+   (4) `golden_ambiguous` y el resto de clasificaciones semánticas. Los
+   fallos que impiden evaluar el caso nunca terminan como `ambiguous_golden`,
+   `intent_mismatch` ni `plan_invalid`.
+4. **`INTERNAL` se etiquetaba junto con "proveedor".** CIERTO: todos los
+   códigos de infraestructura compartían el mismo `FailureCode.PROVIDER_ERROR`
+   genérico, de modo que un error interno del runtime se leía como si Gemini
+   hubiera fallado externamente. **Corregido:** cada código terminal tiene su
+   propio `FailureCode` inequívoco: `LLM_PROVIDER_ERROR→provider_error`,
+   `RUN_TIMEOUT→run_timeout`, `HEARTBEAT_EXPIRED→heartbeat_expired`,
+   `WORKER_LOST→worker_lost`, `INTERNAL→internal_error`. Todos con
+   `failure_owner="infrastructure"` y bloqueo idéntico por la métrica de
+   puerta; solo cambia el código expuesto para diagnóstico.
+5. **`HEARTBEAT_EXPIRED`/`WORKER_LOST` estaban documentados como soportados
+   pero eran inalcanzables.** CIERTO: `run.py` solo leía
+   `run.status == "failed"`, pero `app.agent.heartbeat_sweep` persiste ambos
+   códigos con `status="interrupted"` (igual que `RUN_INTERRUPTED`, que se
+   mantiene deliberadamente excluido por ser cancelación, no falla).
+   **Corregido (opción 1 de las dos ofrecidas):** se propagan los terminales
+   no evaluables tanto para `status="failed"` como para
+   `status="interrupted"` (`eval.diagnostics.NON_EVALUABLE_RUN_STATUSES`),
+   sin ampliar qué códigos se consideran infraestructura — solo qué
+   `agent_runs.status` puede llevar uno.
+6. **No existía una prueba integral del punto originalmente defectuoso
+   dentro de `run_suite`.** CIERTO: las pruebas previas cubrían
+   `build_stage_diagnostics` y `evaluate_smoke_gate`/`evaluate_full_gate` por
+   separado, nunca la lectura y propagación real de
+   `run.status`/`run.terminal_error_code` dentro del bucle de
+   `run_suite`. **Corregido:** nueva prueba parametrizada
+   `test_run_suite_propagates_provider_terminal_from_agent_run` que mockea
+   `get_run` devolviendo `status`/`terminal_error_code`/`final_answer=None`
+   directamente (sin invocar diagnósticos ni puerta por separado) y verifica
+   de punta a punta `EvalCaseResult.error_code`, `failure_code`,
+   `failure_owner`, `AggregateMetrics.infrastructure_failure_count` y el
+   veredicto de puerta bloqueado por la métrica `infraestructura`.
+
+### N.2 Verificación de que las pruebas fallan contra el baseline sin la corrección
+
+Se creó un worktree temporal en `e74f3522853c75f6ae6ad984048bc327669602bb`
+(`git worktree add`, eliminado después con `git worktree remove --force`; no
+afectó este worktree) y se copiaron únicamente los tres archivos de prueba
+modificados/nuevos, ejecutándolos con el mismo entorno virtual contra el
+código de R3 sin R3A:
+
+```
+9 failed, 87 passed
+FAILED test_diagnostics_classifies_harness_exception_as_infrastructure
+FAILED test_diagnostics_classifies_provider_terminal_error_as_infrastructure[RUN_TIMEOUT-run_timeout]
+FAILED test_diagnostics_classifies_provider_terminal_error_as_infrastructure[HEARTBEAT_EXPIRED-heartbeat_expired]
+FAILED test_diagnostics_classifies_provider_terminal_error_as_infrastructure[WORKER_LOST-worker_lost]
+FAILED test_diagnostics_classifies_provider_terminal_error_as_infrastructure[INTERNAL-internal_error]
+FAILED test_diagnostics_structured_output_invalid_is_not_infrastructure
+FAILED test_diagnostics_provider_error_outranks_golden_ambiguous
+FAILED test_run_suite_propagates_provider_terminal_from_agent_run[interrupted-HEARTBEAT_EXPIRED-heartbeat_expired]
+FAILED test_run_suite_persists_a_failed_case_and_still_finalizes
+```
+
+La variante `[failed-LLM_PROVIDER_ERROR-provider_error]` de
+`test_run_suite_propagates_provider_terminal_from_agent_run` **ya pasaba** en
+el baseline (R3 la había corregido); las nueve fallas restantes son
+exactamente los huecos de esta auditoría. Todas pasan tras aplicar R3A.
+
+### N.3 Tabla código terminal → owner → failure_code → efecto en smoke
+
+| `agent_runs.status` | `terminal_error_code` | `failure_owner` | `failure_code` | ¿Cuenta como regresión semántica de un sólido? | ¿Bloquea la puerta? |
+|---|---|---|---|---|---|
+| `failed` | `LLM_PROVIDER_ERROR` | `infrastructure` | `provider_error` | No | Sí (métrica `infraestructura`) |
+| `failed` | `RUN_TIMEOUT` | `infrastructure` | `run_timeout` | No | Sí (métrica `infraestructura`) |
+| `failed` | `INTERNAL` | `infrastructure` | `internal_error` | No | Sí (métrica `infraestructura`) |
+| `failed` | `STRUCTURED_OUTPUT_INVALID` | `agent` | `structured_output_invalid` | **Sí** | Sí (vía `positivos_sólidos`, si aplica) |
+| `interrupted` | `HEARTBEAT_EXPIRED` | `infrastructure` | `heartbeat_expired` | No | Sí (métrica `infraestructura`) |
+| `interrupted` | `WORKER_LOST` | `infrastructure` | `worker_lost` | No | Sí (métrica `infraestructura`) |
+| `interrupted` | `RUN_INTERRUPTED` | *(sin cambio, clasificación previa)* | *(sin cambio)* | Según clasificación semántica previa | Según clasificación semántica previa |
+| n/a (excepción del arnés) | *(nombre de excepción Python en `error_code`)* | `infrastructure` | `harness_error` | No | Sí (métrica `infraestructura`) |
+
+### N.4 Regresiones añadidas/actualizadas
+
+Nuevas: `test_diagnostics_structured_output_invalid_is_not_infrastructure`,
+`test_diagnostics_provider_error_outranks_golden_ambiguous`,
+`test_run_suite_propagates_provider_terminal_from_agent_run` (parametrizada
+`failed`/`LLM_PROVIDER_ERROR` e `interrupted`/`HEARTBEAT_EXPIRED`),
+`test_smoke_gate_structured_output_invalid_still_blocks_as_semantic_regression`.
+Actualizadas (comportamiento intencionalmente cambiado, ya no "no-daño"):
+`test_diagnostics_classifies_harness_exception_as_infrastructure` (antes
+`..._classifies_profile_failure_from_last_observed_stage`/
+`..._harness_exception_keeps_prior_classification_unaffected`),
+`test_diagnostics_classifies_provider_terminal_error_as_infrastructure`
+(ahora parametrizada con `failure_code` esperado por código,
+`STRUCTURED_OUTPUT_INVALID` retirado de esta parametrización),
+`test_run_suite_persists_a_failed_case_and_still_finalizes` (la excepción del
+arnés ahora persiste `failure_code="harness_error"`/
+`failure_owner="infrastructure"`, antes `"query_failed"`).
+
+### N.5 Verificación (2026-07-18)
+
+`pytest tests/test_eval_metrics.py tests/test_eval_gate.py
+tests/test_eval_run_error_handling.py` = **96 passed**; `pytest -m "not
+integration"` = **938 passed, 122 deselected, 0 fallos**; `ruff check .` =
+**All checks passed!** (tras corregir `UP037` en `eval/diagnostics.py` y
+`E501` en `tests/test_eval_run_error_handling.py`); `ruff format --check`
+sobre los archivos modificados = **5 files already formatted**; `git diff
+--check` limpio (solo advertencia LF/CRLF, sin errores). `golden-v1`/
+`golden-v2` con SHA-256 sin cambios (`ab546062…4630ff72` /
+`1c78264c…54e483`). Sin cambios en `backend/app/`; sin push ni PR; T-617
+sigue abierta; cero llamadas LLM/Socrata/PostgreSQL reales en este
+incremento (worktree temporal de verificación usó únicamente pruebas
+deterministas con dobles, sin red).
+
+**Estado T-617B0-R3A:** los cinco huecos de atribución encontrados por la
+auditoría ya **no** son reproducibles ⇒ **READY_FOR_T617B_SMOKE_RETRY**. El
+reintento del smoke real (y, si pasa, la continuación a
+golden-v1/golden-v2/aceptación legacy) queda sujeto a nueva autorización
+explícita de Juan Camilo y del coordinador.

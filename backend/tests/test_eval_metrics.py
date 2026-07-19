@@ -497,7 +497,11 @@ def test_diagnostics_marks_ambiguous_golden_as_golden_owned() -> None:
     assert diagnostics["failure_owner"] == "golden"
 
 
-def test_diagnostics_classifies_profile_failure_from_last_observed_stage() -> None:
+def test_diagnostics_classifies_harness_exception_as_infrastructure() -> None:
+    """T-617B0-R3A: una excepción del arnés de evaluación (`infrastructure_error`,
+    p. ej. un `TimeoutError` de la propia conexión del evaluador) bloquea
+    como infraestructura, no como regresión semántica del agente."""
+
     diagnostics = build_stage_diagnostics(
         _positive_case(),
         {"status": "eval_error", "evidence": [], "claims": [], "usage": {}},
@@ -516,7 +520,8 @@ def test_diagnostics_classifies_profile_failure_from_last_observed_stage() -> No
     )
 
     assert diagnostics["failure_stage"] == "profiling"
-    assert diagnostics["failure_code"] == "profile_failed"
+    assert diagnostics["failure_code"] == "harness_error"
+    assert diagnostics["failure_owner"] == "infrastructure"
 
 
 def test_diagnostics_approved_case_has_no_failure() -> None:
@@ -547,17 +552,24 @@ def test_diagnostics_approved_case_has_no_failure() -> None:
 
 
 @pytest.mark.parametrize(
-    "provider_error_code",
-    ["LLM_PROVIDER_ERROR", "STRUCTURED_OUTPUT_INVALID", "RUN_TIMEOUT"],
+    "provider_error_code,expected_failure_code",
+    [
+        ("LLM_PROVIDER_ERROR", "provider_error"),
+        ("RUN_TIMEOUT", "run_timeout"),
+        ("HEARTBEAT_EXPIRED", "heartbeat_expired"),
+        ("WORKER_LOST", "worker_lost"),
+        ("INTERNAL", "internal_error"),
+    ],
 )
 def test_diagnostics_classifies_provider_terminal_error_as_infrastructure(
-    provider_error_code: str,
+    provider_error_code: str, expected_failure_code: str
 ) -> None:
-    """Un terminal_error_code tipado de infraestructura/proveedor nunca se
-    clasifica como intent_mismatch, plan_invalid ni ningún otro código
-    semántico: siempre failure_code=provider_error, failure_owner=infrastructure,
-    conservando la etapa observada donde ocurrió el fallo y la última etapa
-    exitosa previa."""
+    """T-617B0-R3A: un terminal_error_code tipado de infraestructura/
+    proveedor/ejecución nunca se clasifica como intent_mismatch, plan_invalid
+    ni ningún otro código semántico: cada código tiene su propio
+    failure_code inequívoco (INTERNAL no se disfraza de "proveedor"),
+    siempre failure_owner=infrastructure, conservando la etapa observada
+    donde ocurrió el fallo y la última etapa exitosa previa."""
 
     final = {"status": "failed", "evidence": [], "claims": [], "usage": {}}
     diagnostics = build_stage_diagnostics(
@@ -571,20 +583,47 @@ def test_diagnostics_classifies_provider_terminal_error_as_infrastructure(
         provider_error_code=provider_error_code,
     )
 
-    assert diagnostics["failure_code"] == "provider_error"
+    assert diagnostics["failure_code"] == expected_failure_code
     assert diagnostics["failure_owner"] == "infrastructure"
     assert diagnostics["failure_stage"] == "planning"
     assert diagnostics["last_successful_stage"] == "profiling"
     assert diagnostics["terminal_error_code"] == provider_error_code
     assert diagnostics["failure_code"] != "intent_mismatch"
     assert diagnostics["failure_code"] != "plan_invalid"
+    assert diagnostics["failure_code"] != "ambiguous_golden"
+
+
+def test_diagnostics_structured_output_invalid_is_not_infrastructure() -> None:
+    """T-617B0-R3A (hallazgo de auditoría #2): STRUCTURED_OUTPUT_INVALID NO es
+    infraestructura/proveedor (contracts/api-rest.md §4: distingue
+    explícitamente una salida que sigue sin cumplir el esquema tras agotar el
+    repair loop de una falla real del proveedor). failure_owner="agent",
+    failure_code="structured_output_invalid", y SIGUE contando como regresión
+    semántica bloqueante si afecta un positivo sólido."""
+
+    final = {"status": "failed", "evidence": [], "claims": [], "usage": {}}
+    diagnostics = build_stage_diagnostics(
+        _positive_case(),
+        final,
+        assess_case(_positive_case(), final),
+        [
+            StageObservation("profile_dataset", {}, {}),
+            StageObservation("build_plan", {}, {}),
+        ],
+        provider_error_code="STRUCTURED_OUTPUT_INVALID",
+    )
+
+    assert diagnostics["failure_code"] == "structured_output_invalid"
+    assert diagnostics["failure_owner"] == "agent"
+    assert diagnostics["failure_code"] != "provider_error"
+    assert diagnostics["terminal_error_code"] == "STRUCTURED_OUTPUT_INVALID"
 
 
 def test_diagnostics_unrecognized_terminal_error_code_does_not_force_infrastructure() -> None:
-    """Un terminal_error_code presente pero fuera de
-    INFRASTRUCTURE_TERMINAL_ERROR_CODES (p. ej. RUN_INTERRUPTED, cancelación)
-    no fuerza la clasificación de infraestructura: conserva el
-    comportamiento previo por etapa/observaciones."""
+    """Un terminal_error_code presente pero fuera del mapeo de infraestructura
+    y distinto de STRUCTURED_OUTPUT_INVALID (p. ej. RUN_INTERRUPTED,
+    cancelación con status="interrupted") no fuerza ninguna clasificación
+    especial: conserva el comportamiento previo por etapa/observaciones."""
 
     final = {"status": "eval_error", "evidence": [], "claims": [], "usage": {}}
     diagnostics = build_stage_diagnostics(
@@ -596,34 +635,29 @@ def test_diagnostics_unrecognized_terminal_error_code_does_not_force_infrastruct
     )
 
     assert diagnostics["failure_code"] != "provider_error"
+    assert diagnostics["failure_code"] != "structured_output_invalid"
     assert diagnostics["failure_owner"] != "infrastructure"
     assert diagnostics["terminal_error_code"] == "RUN_INTERRUPTED"
 
 
-def test_diagnostics_harness_exception_keeps_prior_classification_unaffected() -> None:
-    """Regresión de no-daño: una excepción del arnés (`infrastructure_error`,
-    nombre de clase Python) sin `provider_error_code` sigue clasificándose
-    igual que antes de T-617B0-R3 (comportamiento de
-    test_diagnostics_classifies_profile_failure_from_last_observed_stage)."""
+def test_diagnostics_provider_error_outranks_golden_ambiguous() -> None:
+    """T-617B0-R3A (hallazgo de auditoría #4, requisito B): un caso con golden
+    ambiguo (expected_facts sin expected_value) que ADEMÁS tiene un
+    LLM_PROVIDER_ERROR terminal debe clasificarse como infraestructura, no
+    como ambiguous_golden. Los fallos que impiden evaluar el caso tienen
+    prioridad sobre la evaluación del golden."""
 
+    ambiguous_case = _positive_case(expected_facts=({"description": "sin valor"},))
+    final = {"status": "failed", "evidence": [], "claims": [], "usage": {}}
     diagnostics = build_stage_diagnostics(
-        _positive_case(),
-        {"status": "eval_error", "evidence": [], "claims": [], "usage": {}},
-        _failed_assessment(),
-        [
-            StageObservation(
-                "profile_dataset",
-                {
-                    "retrieved_dataset_ids": ["abcd-1234"],
-                    "attempted_dataset_ids": ["abcd-1234"],
-                },
-                {},
-            )
-        ],
-        infrastructure_error="TimeoutError",
+        ambiguous_case,
+        final,
+        assess_case(ambiguous_case, final),
+        [StageObservation("build_plan", {}, {})],
+        provider_error_code="LLM_PROVIDER_ERROR",
     )
 
-    assert diagnostics["failure_stage"] == "profiling"
-    assert diagnostics["failure_code"] == "profile_failed"
-    assert diagnostics["failure_owner"] == "agent"
-    assert diagnostics["terminal_error_code"] is None
+    assert diagnostics["failure_code"] == "provider_error"
+    assert diagnostics["failure_owner"] == "infrastructure"
+    assert diagnostics["failure_code"] != "ambiguous_golden"
+    assert diagnostics["failure_owner"] != "golden"

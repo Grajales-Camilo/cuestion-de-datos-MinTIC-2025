@@ -24,7 +24,7 @@ from app.agent.worker_lease import mark_worker_shutdown, register_worker_instanc
 from app.config import get_settings
 from app.db.engine import create_app_async_engine
 from app.db.models import AgentRunEvent, AgentStep, EvalCaseResult, EvalRun
-from eval.diagnostics import StageObservation, build_stage_diagnostics
+from eval.diagnostics import NON_EVALUABLE_RUN_STATUSES, StageObservation, build_stage_diagnostics
 from eval.gate import (
     AggregateMetrics,
     CaseOutcome,
@@ -636,6 +636,14 @@ async def run_suite(
             agent_run_id: uuid.UUID | None = None
             error_code: str | None = None
             provider_error_code: str | None = None
+            # T-617B0-R3A: distinto de `provider_error_code` (terminal
+            # tipado leído de `agent_runs`, ver abajo). Solo se puebla en el
+            # `except` del arnés (runner/engine/persistencia/dependencia del
+            # propio evaluador), NUNCA a partir de un terminal_error_code de
+            # `agent_runs` — evita que un terminal reconocido pero no
+            # mapeado (p. ej. `RUN_INTERRUPTED`) se filtre como si fuera una
+            # excepción del arnés.
+            harness_exception_name: str | None = None
             observations: tuple[StageObservation, ...] = ()
             try:
                 agent_run_id = await create_eval_run(
@@ -655,11 +663,16 @@ async def run_suite(
                 # (`intent_mismatch`) en lugar de una falla de infraestructura.
                 # No se usa el texto humano del error para decidir nada: solo
                 # el código tipado persistido.
+                # T-617B0-R3A: se lee también `status="interrupted"`
+                # (`NON_EVALUABLE_RUN_STATUSES`), no solo "failed" — de lo
+                # contrario `HEARTBEAT_EXPIRED`/`WORKER_LOST`
+                # (`app.agent.heartbeat_sweep`) quedaban documentados como
+                # soportados pero eran inalcanzables por esta ruta.
                 run_status = getattr(run, "status", None) if run is not None else None
                 run_terminal_error_code = (
                     getattr(run, "terminal_error_code", None) if run is not None else None
                 )
-                if run_status == "failed" and run_terminal_error_code:
+                if run_status in NON_EVALUABLE_RUN_STATUSES and run_terminal_error_code:
                     provider_error_code = run_terminal_error_code
                     error_code = provider_error_code
                 observations = await _stage_observations(engine, agent_run_id)
@@ -702,7 +715,8 @@ async def run_suite(
                     assessment, recall_hit=recall_hit_at_10(case, search_dataset_ids)
                 )
             except Exception as exc:  # noqa: BLE001 - un caso no puede tumbar los otros 49
-                error_code = type(exc).__name__
+                harness_exception_name = type(exc).__name__
+                error_code = harness_exception_name
                 final = {"status": "eval_error"}
                 assessment = CaseAssessment(
                     passed=False,
@@ -719,7 +733,7 @@ async def run_suite(
                 final,
                 assessment,
                 observations,
-                infrastructure_error=error_code,
+                infrastructure_error=harness_exception_name,
                 provider_error_code=provider_error_code,
             )
             stage_diagnostics["agent_run_id"] = (

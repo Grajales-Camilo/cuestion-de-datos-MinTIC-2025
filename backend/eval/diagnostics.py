@@ -45,30 +45,66 @@ class FailureCode(StrEnum):
     AMBIGUOUS_GOLDEN = "ambiguous_golden"
     BUDGET_EXCEEDED = "budget_exceeded"
     PROVIDER_ERROR = "provider_error"
+    RUN_TIMEOUT = "run_timeout"
+    HEARTBEAT_EXPIRED = "heartbeat_expired"
+    WORKER_LOST = "worker_lost"
+    INTERNAL_ERROR = "internal_error"
+    STRUCTURED_OUTPUT_INVALID = "structured_output_invalid"
+    HARNESS_ERROR = "harness_error"
 
 
 # Códigos terminales tipados de `agent_runs.terminal_error_code`
 # (`app.agent.graph._terminal_error`/`_llm_terminal_error`,
-# `app.agent.heartbeat_sweep`) que representan una falla de infraestructura o
-# proveedor, NUNCA una regresión semántica del agente. Excluye
-# deliberadamente `RUN_INTERRUPTED` (cancelación, `status="interrupted"`, no
-# "failed") y códigos aplicativos que no terminan la corrida (p. ej.
-# `SOCRATA_TIMEOUT`/`SOCRATA_ERROR`, que ocurren dentro de una corrida que
-# puede seguir y terminar `completed`/`no_evidence`). Distinto de
-# `infrastructure_error` (nombre de excepción de Python capturada por el
-# propio arnés de evaluación): un código de esta lista viene de
-# `agent_runs.status="failed"` + `agent_runs.terminal_error_code`, es
-# estructurado y siempre se diagnostica con `failure_owner="infrastructure"`.
+# `app.agent.heartbeat_sweep`, `app.agent.worker_lease`,
+# `contracts/api-rest.md` §4) cuyas corridas NUNCA son evaluables como
+# regresión semántica del agente: representan una falla real de
+# infraestructura, proveedor o ejecución. Cada código mapea a un
+# `FailureCode` propio (T-617B0-R3A: `INTERNAL` no puede leerse como
+# "proveedor", ni `RUN_TIMEOUT`/`HEARTBEAT_EXPIRED`/`WORKER_LOST` deben
+# perder su identidad bajo un rótulo genérico). Excluye deliberadamente:
+# - `STRUCTURED_OUTPUT_INVALID`: por contrato (`contracts/api-rest.md` §4)
+#   distingue explícitamente una salida que sigue sin cumplir el esquema tras
+#   agotar el repair loop de una falla real del proveedor; NO es
+#   `retryable`, el problema es de esquema/prompt del agente, no de
+#   infraestructura. Se clasifica aparte (ver `_STRUCTURED_OUTPUT_INVALID`
+#   abajo) con `failure_owner="agent"` y SÍ puede contar como regresión
+#   semántica bloqueante de un positivo sólido.
+# - `RUN_INTERRUPTED`: cancelación (`status="interrupted"`), un resultado
+#   operativo distinto de una falla, no una regresión ni una falla de
+#   infraestructura no evaluable.
+# - Códigos aplicativos que no terminan la corrida (p. ej.
+#   `SOCRATA_TIMEOUT`/`SOCRATA_ERROR`), que ocurren dentro de una corrida que
+#   puede seguir y terminar `completed`/`no_evidence`.
+# Distinto de `infrastructure_error` (nombre de excepción de Python
+# capturada por el propio arnés de evaluación, ver `FailureCode.HARNESS_ERROR`
+# abajo): un código de este mapeo viene de `agent_runs.terminal_error_code`
+# con `agent_runs.status` en `{"failed", "interrupted"}` (T-617B0-R3A: antes
+# solo se leía "failed", lo que hacía `HEARTBEAT_EXPIRED`/`WORKER_LOST`
+# inalcanzables pese a estar documentados como soportados —ambos se
+# persisten con `status="interrupted"`, `app.agent.heartbeat_sweep`).
+_INFRASTRUCTURE_TERMINAL_ERROR_CODE_TO_FAILURE_CODE: dict[str, FailureCode] = {
+    "LLM_PROVIDER_ERROR": FailureCode.PROVIDER_ERROR,
+    "RUN_TIMEOUT": FailureCode.RUN_TIMEOUT,
+    "HEARTBEAT_EXPIRED": FailureCode.HEARTBEAT_EXPIRED,
+    "WORKER_LOST": FailureCode.WORKER_LOST,
+    "INTERNAL": FailureCode.INTERNAL_ERROR,
+}
 INFRASTRUCTURE_TERMINAL_ERROR_CODES: frozenset[str] = frozenset(
-    {
-        "LLM_PROVIDER_ERROR",
-        "STRUCTURED_OUTPUT_INVALID",
-        "INTERNAL",
-        "RUN_TIMEOUT",
-        "HEARTBEAT_EXPIRED",
-        "WORKER_LOST",
-    }
+    _INFRASTRUCTURE_TERMINAL_ERROR_CODE_TO_FAILURE_CODE
 )
+
+# `STRUCTURED_OUTPUT_INVALID` NUNCA se clasifica como infraestructura o
+# proveedor transitorio (contracts/api-rest.md §4): es un fallo del
+# contrato de ejecución del agente tras agotar el repair loop.
+_STRUCTURED_OUTPUT_INVALID_CODE = "STRUCTURED_OUTPUT_INVALID"
+
+# `agent_runs.status` en los que un `terminal_error_code` es significativo
+# para esta taxonomía (T-617B0-R3A). `RUN_TIMEOUT`/`LLM_PROVIDER_ERROR`/
+# `STRUCTURED_OUTPUT_INVALID`/`INTERNAL` se persisten con "failed"
+# (`app.agent.graph`); `HEARTBEAT_EXPIRED`/`WORKER_LOST`/`RUN_INTERRUPTED`
+# se persisten con "interrupted" (`app.agent.heartbeat_sweep`,
+# `app.agent.worker_lease`).
+NON_EVALUABLE_RUN_STATUSES: frozenset[str] = frozenset({"failed", "interrupted"})
 
 
 _NODE_STAGE = {
@@ -146,17 +182,29 @@ def build_stage_diagnostics(
 ) -> dict[str, Any]:
     """Clasifica un resultado sin convertir texto humano en códigos de control.
 
-    ``provider_error_code`` es el ``terminal_error_code`` tipado y persistido
-    de ``agent_runs`` (T-617B0-R3): cuando pertenece a
-    ``INFRASTRUCTURE_TERMINAL_ERROR_CODES`` la corrida terminó por una falla
-    de infraestructura o proveedor, no por una regresión semántica del
-    agente. Se clasifica SIEMPRE como ``FailureCode.PROVIDER_ERROR`` con
-    ``failure_owner="infrastructure"``, preservando la última etapa
-    observada antes del fallo, y nunca cae en ``intent_mismatch``,
-    ``plan_invalid`` ni ningún otro código semántico. Distinto de
-    ``infrastructure_error`` (nombre de excepción de Python capturada por el
-    arnés de evaluación mismo), que conserva su clasificación previa por
-    etapa."""
+    Los fallos que hacen la corrida NO EVALUABLE tienen prioridad sobre
+    ``golden_ambiguous`` y sobre cualquier clasificación semántica residual
+    (T-617B0-R3A, requisito B): se resuelven primero, en este orden:
+
+    1. ``provider_error_code`` reconocido en
+       ``_INFRASTRUCTURE_TERMINAL_ERROR_CODE_TO_FAILURE_CODE`` (terminal
+       tipado y persistido de ``agent_runs``): ``failure_owner="infrastructure"``
+       con el ``FailureCode`` propio del código (nunca genérico "proveedor"
+       para ``INTERNAL``/``RUN_TIMEOUT``/etc.).
+    2. ``provider_error_code == "STRUCTURED_OUTPUT_INVALID"``: NO es
+       infraestructura (contracts/api-rest.md §4); ``failure_owner="agent"``,
+       ``failure_code="structured_output_invalid"``, cuenta como regresión
+       semántica bloqueante si afecta un positivo sólido.
+    3. ``infrastructure_error`` (nombre de excepción de Python capturada por
+       el arnés de evaluación mismo — runner, engine, persistencia,
+       dependencias): ``failure_owner="infrastructure"``,
+       ``failure_code="harness_error"``. Nunca se convierte en regresión
+       semántica del agente.
+
+    Solo si ninguna de las tres aplica se evalúa ``golden_ambiguous`` y las
+    clasificaciones semánticas (dataset esperado, plan, cifras, síntesis,
+    etc.). Ninguna de las tres puede terminar como ``ambiguous_golden``,
+    ``intent_mismatch`` ni ``plan_invalid``."""
 
     observed = tuple(observations)
     if golden_ambiguous is None:
@@ -205,30 +253,43 @@ def build_stage_diagnostics(
     stage: EvalStage | None = None
     owner: str | None = None
 
-    is_provider_error = bool(
-        provider_error_code and provider_error_code in INFRASTRUCTURE_TERMINAL_ERROR_CODES
+    infra_failure_code = _INFRASTRUCTURE_TERMINAL_ERROR_CODE_TO_FAILURE_CODE.get(
+        provider_error_code or ""
     )
+    is_structured_output_invalid = provider_error_code == _STRUCTURED_OUTPUT_INVALID_CODE
 
     if not assessment.passed:
         owner = "agent"
-        if golden_ambiguous:
-            stage, code, owner = EvalStage.ACCEPTANCE, FailureCode.AMBIGUOUS_GOLDEN, "golden"
-        elif is_provider_error:
-            # Falla terminal de proveedor/infraestructura (T-617B0-R3): nunca
-            # una regresión semántica. Conserva la última etapa observada
-            # ANTES del fallo (p. ej. "planning" con "profiling" como última
-            # etapa exitosa), sin mapear a un código semántico como
-            # `plan_invalid` o `intent_mismatch`.
+        # T-617B0-R3A (requisito B): los fallos que hacen la corrida NO
+        # EVALUABLE se resuelven ANTES de `golden_ambiguous` y de cualquier
+        # clasificación semántica residual. Un `LLM_PROVIDER_ERROR` (o
+        # cualquier otro terminal de infraestructura), una excepción del
+        # arnés, o un `STRUCTURED_OUTPUT_INVALID`, nunca pueden terminar
+        # como `ambiguous_golden`, `intent_mismatch` ni `plan_invalid`.
+        if infra_failure_code is not None:
+            # Falla terminal de infraestructura/proveedor/ejecución
+            # (T-617B0-R3/R3A): nunca una regresión semántica. Conserva la
+            # última etapa observada ANTES del fallo (p. ej. "planning" con
+            # "profiling" como última etapa exitosa) y usa el código propio
+            # del terminal persistido, nunca un código semántico.
             stage = stages[-1] if stages else EvalStage.INTENT
-            code, owner = FailureCode.PROVIDER_ERROR, "infrastructure"
+            code, owner = infra_failure_code, "infrastructure"
+        elif is_structured_output_invalid:
+            # NO es infraestructura (contracts/api-rest.md §4): fallo del
+            # contrato de ejecución del agente tras agotar el repair loop.
+            # Sigue contando como regresión semántica bloqueante.
+            stage = stages[-1] if stages else EvalStage.SYNTHESIS
+            code, owner = FailureCode.STRUCTURED_OUTPUT_INVALID, "agent"
         elif infrastructure_error:
+            # Excepción propia del arnés de evaluación (runner, engine,
+            # persistencia, dependencias) — NUNCA una regresión semántica
+            # del agente (T-617B0-R3A, requisito C). `infrastructure_error`
+            # conserva el nombre de la excepción para diagnóstico (persistido
+            # aparte en `EvalCaseResult.error_code`, no en `failure_code`).
             stage = stages[-1] if stages else EvalStage.QUERY_EXECUTION
-            code = {
-                EvalStage.PROFILING: FailureCode.PROFILE_FAILED,
-                EvalStage.PLANNING: FailureCode.PLAN_INVALID,
-                EvalStage.PLAN_VALIDATION: FailureCode.PLAN_INVALID,
-                EvalStage.VALUE_EXPLORATION: FailureCode.VALUE_NOT_RESOLVED,
-            }.get(stage, FailureCode.QUERY_FAILED)
+            code, owner = FailureCode.HARNESS_ERROR, "infrastructure"
+        elif golden_ambiguous:
+            stage, code, owner = EvalStage.ACCEPTANCE, FailureCode.AMBIGUOUS_GOLDEN, "golden"
         elif stop_reason and "BUDGET" in stop_reason:
             stage, code = (
                 (stages[-1] if stages else EvalStage.ACCEPTANCE),

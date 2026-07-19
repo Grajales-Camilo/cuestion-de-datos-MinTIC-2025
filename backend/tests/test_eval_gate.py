@@ -617,6 +617,49 @@ def test_smoke_gate_blocks_on_infra_failure_without_counting_it_as_semantic_regr
     assert any("pilot-005-empleo-publico" in reason for reason in smoke.blocking_reasons)
 
 
+def _structured_output_invalid_outcome(case_id: str) -> CaseOutcome:
+    """Un CaseOutcome fallido por STRUCTURED_OUTPUT_INVALID: NO es
+    infraestructura/proveedor (contracts/api-rest.md §4, eval.diagnostics
+    failure_owner='agent'); `infrastructure_failure` es False."""
+
+    return CaseOutcome(
+        case_id=case_id,
+        case_type="positive",
+        passed=False,
+        fabrication=False,
+        recall_hit=False,
+        failure_stage="synthesis",
+        failure_code="structured_output_invalid",
+        complexity="multistep",
+        latency_ms=1000,
+        cost_usd=Decimal("0.01"),
+        claims_integrity=_trivial_integrity(),
+        socrata_successes=0,
+        socrata_attempts=0,
+        infrastructure_failure=False,
+    )
+
+
+def test_smoke_gate_structured_output_invalid_still_blocks_as_semantic_regression() -> None:
+    """T-617B0-R3A #4 (hallazgo de auditoría #2): STRUCTURED_OUTPUT_INVALID NO
+    se clasifica como infraestructura/proveedor (contracts/api-rest.md §4):
+    si afecta un positivo sólido, SIGUE contando como regresión semántica
+    bloqueante en `positivos_sólidos`, a diferencia de `provider_error`."""
+
+    outcomes = _smoke_canonical_outcomes()
+    for i, o in enumerate(outcomes):
+        if o.case_id == "pilot-005-empleo-publico":
+            outcomes[i] = _structured_output_invalid_outcome(o.case_id)
+    smoke = evaluate_smoke_gate(outcomes)
+
+    assert smoke.passed is False
+    solid_metric = next(m for m in smoke.metrics if m.name == "positivos_sólidos")
+    assert solid_metric.passed is False  # SÍ cuenta como retroceso semántico
+    assert any("sólidos" in reason for reason in smoke.blocking_reasons)
+    infra_metric = next(m for m in smoke.metrics if m.name == "infraestructura")
+    assert infra_metric.passed is True  # no es una falla de infraestructura
+
+
 def test_full_gate_blocks_on_any_infrastructure_failure_even_with_perfect_metrics() -> None:
     """T-617B0-R3 #3: una puerta full con cualquier corrida de infraestructura
     tampoco puede PASS, aunque el resto de la puerta sea perfecto (40/40
