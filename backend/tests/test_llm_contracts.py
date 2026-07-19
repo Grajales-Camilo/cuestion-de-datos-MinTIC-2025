@@ -21,6 +21,7 @@ from app.agent.llm_contracts import (
     normalize_lookup_output_columns,
     normalize_ranked_aggregate,
     normalize_sort_references,
+    normalize_source_observation_cutoff_filters,
     normalize_system_owned_operation,
     normalize_temporal_year_filters,
     validate_candidate_ranking,
@@ -211,6 +212,123 @@ def test_explicit_spanish_date_becomes_datetime_day_range() -> None:
     assert normalized.filters[0].value_type is ScalarType.DATETIME
     assert normalized.filters[0].values == ("2019-02-11T00:00:00",)
     assert normalized.filters[1].values == ("2019-02-12T00:00:00",)
+
+
+def _period_context() -> EnumeratedPlanningContext:
+    return EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="peri-1234",
+                title="Eventos por periodo",
+                publisher="Entidad oficial",
+                columns=(
+                    ColumnOption(
+                        index=0,
+                        field_name="ano",
+                        display_name="Año",
+                        data_type=ColumnDataType.INTEGER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=1,
+                        field_name="semana",
+                        display_name="Semana",
+                        data_type=ColumnDataType.INTEGER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=2,
+                        field_name="conteo",
+                        display_name="Conteo",
+                        data_type=ColumnDataType.NUMBER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                ),
+            ),
+        )
+    )
+
+
+def test_source_observation_date_is_not_materialized_as_row_period() -> None:
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.SUM,
+        metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=2),),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.INTEGER,
+                values=("2024",),
+            ),
+            FilterChoice(
+                column_index=1,
+                operator=FilterOperator.LTE,
+                value_type=ScalarType.INTEGER,
+                values=("42",),
+            ),
+        ),
+    )
+
+    normalized = normalize_source_observation_cutoff_filters(
+        selection,
+        question=(
+            "¿Qué evento tuvo mayor volumen acumulado en la fuente observada "
+            "al 17 de octubre de 2024?"
+        ),
+        context=_period_context(),
+    )
+
+    assert normalized.filters == ()
+
+
+def test_explicit_period_outside_source_cutoff_clause_is_preserved() -> None:
+    year_filter = FilterChoice(
+        column_index=0,
+        operator=FilterOperator.EQ,
+        value_type=ScalarType.INTEGER,
+        values=("2024",),
+    )
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.SUM,
+        metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=2),),
+        filters=(year_filter,),
+    )
+
+    normalized = normalize_source_observation_cutoff_filters(
+        selection,
+        question=(
+            "¿Cuál fue el total durante 2024 según la fuente observada al 17 de octubre de 2024?"
+        ),
+        context=_period_context(),
+    )
+
+    assert normalized.filters == (year_filter,)
+
+
+def test_plain_user_date_keeps_normal_date_filter_semantics() -> None:
+    date_filter = FilterChoice(
+        column_index=0,
+        operator=FilterOperator.EQ,
+        value_type=ScalarType.INTEGER,
+        values=("2024",),
+    )
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.SUM,
+        metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=2),),
+        filters=(date_filter,),
+    )
+
+    normalized = normalize_source_observation_cutoff_filters(
+        selection,
+        question="¿Cuál fue el total al 17 de octubre de 2024?",
+        context=_period_context(),
+    )
+
+    assert normalized.filters == (date_filter,)
 
 
 def test_materialization_rejects_invented_column_index() -> None:

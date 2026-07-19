@@ -65,6 +65,38 @@ def test_config_snapshot_registers_deterministic_textual_facts_enabled(monkeypat
     assert snapshot["eval_seed"] == 601000
 
 
+@pytest.mark.parametrize("gate_mode", ["smoke", "full"])
+def test_golden_v2_certification_requires_textual_capability(gate_mode: str) -> None:
+    with pytest.raises(RuntimeError, match="golden-v2 exige"):
+        run_module._validate_eval_capabilities(
+            schema_version="golden-v2",
+            gate_mode=gate_mode,
+            settings=_settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=False),
+        )
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "gate_mode", "enabled"),
+    [
+        ("golden-v2", "smoke", True),
+        ("golden-v2", "full", True),
+        ("golden-v2", "directed", False),
+        ("golden-v1", "smoke", False),
+        ("golden-v1", "full", False),
+    ],
+)
+def test_eval_capability_preflight_preserves_compatible_modes(
+    schema_version: str,
+    gate_mode: str,
+    enabled: bool,
+) -> None:
+    run_module._validate_eval_capabilities(
+        schema_version=schema_version,
+        gate_mode=gate_mode,
+        settings=_settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=enabled),
+    )
+
+
 def test_failed_run_snapshot_preserves_persisted_usage_without_final_answer() -> None:
     snapshot = run_module._final_snapshot_from_run(
         SimpleNamespace(
@@ -694,6 +726,49 @@ async def test_run_suite_preflight_rejects_unknown_gate_mode_before_engine(monke
         )
 
     assert engine_calls == []
+
+
+async def test_golden_v2_capability_preflight_fails_before_engine_and_llm(
+    monkeypatch,
+) -> None:
+    suite = GoldenSuite(
+        name="golden-v2",
+        version="2.0.0",
+        snapshot_at="2026-07-18",
+        cases=_fake_suite().cases,
+        source_path=None,
+        schema_version="golden-v2",
+    )
+    engine_calls: list[object] = []
+    llm_calls = AsyncMock()
+
+    monkeypatch.setattr(
+        run_module,
+        "get_settings",
+        lambda: _settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=False),
+    )
+    monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
+    monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+    monkeypatch.setattr(
+        run_module,
+        "create_app_async_engine",
+        lambda *a, **k: engine_calls.append((a, k)),
+    )
+    monkeypatch.setattr(run_module, "execute_agent_run_async", llm_calls)
+
+    with pytest.raises(RuntimeError, match="golden-v2 exige"):
+        await run_module.run_suite(
+            suite_name="golden-v2",
+            provider="google",
+            model="gemini-2.5-flash",
+            seed=601000,
+            limit=None,
+            gate_mode="smoke",
+            textual_facts_enabled=False,
+        )
+
+    assert engine_calls == []
+    llm_calls.assert_not_awaited()
 
 
 def test_select_cases_supports_exact_generic_case_ids() -> None:

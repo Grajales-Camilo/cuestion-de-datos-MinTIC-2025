@@ -117,6 +117,20 @@ def _config_snapshot(settings, seed: int) -> dict[str, object]:
     }
 
 
+def _validate_eval_capabilities(*, schema_version: str, gate_mode: str, settings) -> None:
+    """Impide certificar golden-v2 sin la capa textual que su contrato exige."""
+
+    if (
+        schema_version == "golden-v2"
+        and gate_mode in {"smoke", "full"}
+        and not settings.deterministic_textual_facts_enabled
+    ):
+        raise RuntimeError(
+            "golden-v2 exige DETERMINISTIC_TEXTUAL_FACTS_ENABLED=true para "
+            "certificar hechos textuales; use --textual-facts-enabled"
+        )
+
+
 def _final_snapshot_from_run(run: object | None) -> dict[str, object]:
     """Proyecta telemetría persistida también para terminales sin respuesta."""
 
@@ -664,6 +678,7 @@ async def run_suite(
     limit: int | None,
     case_ids: list[str] | None = None,
     gate_mode: str = "full",
+    textual_facts_enabled: bool | None = None,
 ) -> RunSuiteResult:
     settings = get_settings()
     if not settings.eval_mode:
@@ -672,9 +687,19 @@ async def run_suite(
         update={
             "llm_provider": provider or settings.llm_provider,
             "llm_model": model or settings.llm_model,
+            "deterministic_textual_facts_enabled": (
+                settings.deterministic_textual_facts_enabled
+                if textual_facts_enabled is None
+                else textual_facts_enabled
+            ),
         }
     )
     suite = load_golden_suite(default_suite_path(suite_name))
+    _validate_eval_capabilities(
+        schema_version=suite.schema_version,
+        gate_mode=gate_mode,
+        settings=settings,
+    )
     selected_cases = _select_cases(suite.cases, limit=limit, case_ids=case_ids)
     # Fail-fast ANTES de crear el engine, abrir conexiones o invocar cualquier
     # proveedor externo: si --limit/--case-id o un gate_mode desconocido dejan
@@ -903,6 +928,15 @@ def main() -> int:
             "persiste un subconjunto explícito de --case-id sin certificar ninguna puerta "
             "normativa (sin veredicto PASS/FAIL) — sólo para validaciones dirigidas de casos "
             "concretos."
+        ),
+    )
+    parser.add_argument(
+        "--textual-facts-enabled",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Activa explícitamente la planificación, persistencia y síntesis de hechos "
+            "textuales. Es obligatorio para certificar golden-v2 con --gate smoke/full."
         ),
     )
     args = parser.parse_args()

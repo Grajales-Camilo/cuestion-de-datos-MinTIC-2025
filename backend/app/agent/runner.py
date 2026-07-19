@@ -420,6 +420,70 @@ async def execute_deterministic_agent_run_async(
                 return retrieval
 
             dependencies = dataclasses.replace(dependencies, retrieve=retrieve_with_diagnostics)
+            original_explore = dependencies.explore
+
+            async def explore_with_observability(profile, selection, explored, max_tool_calls):
+                explored_indexes = {item.column_index for item in explored}
+                target = next(
+                    (
+                        item
+                        for item in selection.filters
+                        if item.value_type is not None
+                        and item.value_type.value == "text"
+                        and item.values
+                        and item.column_index not in explored_indexes
+                    ),
+                    None,
+                )
+                tool_input = {
+                    "dataset_id": profile.option.dataset_id,
+                    "column_index": target.column_index if target is not None else None,
+                    "proposed_values": list(target.values) if target is not None else [],
+                    "max_tool_calls": max_tool_calls,
+                }
+                tool_started = time.monotonic()
+                try:
+                    exploration = await original_explore(
+                        profile,
+                        selection,
+                        explored,
+                        max_tool_calls,
+                    )
+                except (LookupError, ValueError) as exc:
+                    await update_step_tool_result(
+                        engine,
+                        run_id,
+                        step_number=observed_steps,
+                        tool_input=tool_input,
+                        tool_output={
+                            "tool": "explorar_valores",
+                            "ok": False,
+                            "error": {"code": "EXPLORATION_ERROR"},
+                        },
+                        latency_ms=round((time.monotonic() - tool_started) * 1000),
+                        error=str(exc),
+                    )
+                    raise
+                await update_step_tool_result(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    tool_input=tool_input,
+                    tool_output={
+                        "tool": "explorar_valores",
+                        "ok": bool(exploration.values),
+                        "values": list(exploration.values),
+                        "search_term": exploration.search_term,
+                        "tool_calls": exploration.tool_calls,
+                    },
+                    latency_ms=round((time.monotonic() - tool_started) * 1000),
+                )
+                return exploration
+
+            dependencies = dataclasses.replace(
+                dependencies,
+                explore=explore_with_observability,
+            )
             original_execute = dependencies.execute
 
             async def execute_with_observability(validated):

@@ -411,8 +411,10 @@ def socrata_success_rate(observations: Iterable[Any]) -> tuple[int, int] | None:
     """(éxitos, intentos) de llamadas T5 observables o ``None`` si no hay
     ninguna medible.
 
-    Una observación cuenta como llamada T5 cuando expone el resultado crudo de
-    la herramienta ``ejecutar_soql`` (dict con clave ``ok`` o ``error``). Un
+    Una observación cuenta como llamada T5 solo cuando su nodo es
+    ``execute_query`` y expone el resultado crudo de la herramienta
+    ``ejecutar_soql`` (dict con clave ``ok`` o ``error``). La observabilidad de
+    otras herramientas, como ``explorar_valores``, nunca altera esta tasa. Un
     fallo de transporte Socrata es un ``error.code`` en
     ``{SOCRATA_TIMEOUT, SOCRATA_ERROR}``; los rechazos posteriores de
     elegibilidad ocurren en T6 y no descuentan aquí. No inventa 100%: si
@@ -422,6 +424,8 @@ def socrata_success_rate(observations: Iterable[Any]) -> tuple[int, int] | None:
     attempts = 0
     successes = 0
     for observation in observations:
+        if getattr(observation, "node", None) != "execute_query":
+            continue
         output = getattr(observation, "output", None)
         if not isinstance(output, Mapping):
             continue

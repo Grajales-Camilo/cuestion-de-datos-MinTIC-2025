@@ -178,7 +178,7 @@ async def update_step_tool_result(
     latency_ms: int,
     error: str | None = None,
 ) -> None:
-    """Completa la observación T5 del paso ya creado por el supervisor."""
+    """Completa la observación de herramienta del paso creado por el supervisor."""
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session, session.begin():

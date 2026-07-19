@@ -656,18 +656,39 @@ def test_p95_uses_complexity_partition() -> None:
 
 
 def test_socrata_success_rate_none_when_no_t5_calls() -> None:
-    obs = [SimpleNamespace(output={"detail": "no t5"})]
+    obs = [SimpleNamespace(node="build_plan", output={"detail": "no t5"})]
     assert socrata_success_rate(obs) is None
 
 
 def test_socrata_success_rate_counts_ok_and_transport_failures() -> None:
     obs = [
-        SimpleNamespace(output={"ok": True, "rows": []}),
-        SimpleNamespace(output={"ok": False, "error": {"code": "SOCRATA_TIMEOUT"}}),
-        SimpleNamespace(output={"ok": False, "error": {"code": "SOQL_SYNTAX"}}),
+        SimpleNamespace(node="execute_query", output={"ok": True, "rows": []}),
+        SimpleNamespace(
+            node="execute_query",
+            output={"ok": False, "error": {"code": "SOCRATA_TIMEOUT"}},
+        ),
+        SimpleNamespace(
+            node="execute_query",
+            output={"ok": False, "error": {"code": "SOQL_SYNTAX"}},
+        ),
     ]
     # 2 éxitos (ok + error no-transporte) sobre 3 llamadas T5
     assert socrata_success_rate(obs) == (2, 3)
+
+
+def test_socrata_success_rate_ignores_other_observable_tools() -> None:
+    obs = [
+        SimpleNamespace(
+            node="explore_value",
+            output={"tool": "explorar_valores", "ok": True, "values": ["BOGOTÁ"]},
+        ),
+        SimpleNamespace(
+            node="execute_query",
+            output={"tool": "ejecutar_soql", "ok": True, "rows": [{"total": "1"}]},
+        ),
+    ]
+
+    assert socrata_success_rate(obs) == (1, 1)
 
 
 # --- E. Veredicto de puerta ---------------------------------------------------

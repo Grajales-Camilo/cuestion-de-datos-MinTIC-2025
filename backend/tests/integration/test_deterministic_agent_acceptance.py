@@ -1172,7 +1172,25 @@ async def test_h4_single_pending_categorical_column_is_resolved_without_repeated
     assert "CONFIRMADO" in calls[0]["soql"]
 
     steps = await _load_steps(engine, run_id)
-    assert [step.node for step in steps].count("explore_value") == 1
+    explore_steps = [step for step in steps if step.node == "explore_value"]
+    assert len(explore_steps) == 1
+    explore_step = explore_steps[0]
+    assert explore_step.tool_input == {
+        "dataset_id": dataset_id,
+        "column_index": 0,
+        "proposed_values": ["pendiente-de-confirmar"],
+        "max_tool_calls": 6,
+    }
+    assert explore_step.tool_output_summary == {
+        "tool": "explorar_valores",
+        "ok": True,
+        "values": ["CONFIRMADO"],
+        "search_term": "pendiente-de-confirmar",
+        "tool_calls": 1,
+    }
+    assert explore_step.latency_ms is not None
+    assert explore_step.latency_ms >= 0
+    assert explore_step.error is None
 
     events = await _load_events(engine, run_id)
     _assert_budgets_respected([event for event in events if event.event_type == "step"])

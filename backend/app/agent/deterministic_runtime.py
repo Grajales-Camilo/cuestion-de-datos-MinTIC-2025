@@ -43,6 +43,7 @@ from app.agent.llm_contracts import (
     normalize_lookup_total_column,
     normalize_ranked_aggregate,
     normalize_sort_references,
+    normalize_source_observation_cutoff_filters,
     normalize_system_owned_operation,
     normalize_temporal_year_filters,
     validate_grounded_synthesis,
@@ -611,6 +612,11 @@ async def run_deterministic_agent(
                 context=profile.context,
             )
             selection = normalize_explicit_date_filter(
+                selection,
+                question=question,
+                context=profile.context,
+            )
+            selection = normalize_source_observation_cutoff_filters(
                 selection,
                 question=question,
                 context=profile.context,

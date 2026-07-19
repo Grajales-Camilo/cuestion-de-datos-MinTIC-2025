@@ -299,6 +299,85 @@ def normalize_explicit_date_filter(
     return selection.model_copy(update={"filters": (*selection.filters, *date_filters)})
 
 
+_SOURCE_OBSERVATION_DATE_RE = re.compile(
+    r"\b(?:fuente|datos|dataset|portal)\b"
+    r"[^.?!]{0,36}\b(?:observad[oa]s?|consultad[oa]s?|actualizad[oa]s?|disponibles?)\b"
+    r"\s+(?:con\s+corte\s+)?al\s+"
+    r"(?P<day>\d{1,2})\s+de\s+"
+    r"(?P<month>" + "|".join(_SPANISH_MONTHS) + r")\s+de\s+(?P<year>\d{4})\b"
+)
+_YEAR_COLUMN_TOKENS = frozenset({"ano", "anio", "year", "vigencia"})
+_WEEK_COLUMN_TOKENS = frozenset({"semana", "week"})
+_MONTH_COLUMN_TOKENS = frozenset({"mes", "month"})
+_DAY_COLUMN_TOKENS = frozenset({"dia", "day"})
+_DATE_COLUMN_TOKENS = frozenset({"fecha", "date", "datetime", "timestamp"})
+
+
+def normalize_source_observation_cutoff_filters(
+    selection: EnumeratedPlanSelection,
+    *,
+    question: str,
+    context: EnumeratedPlanningContext,
+) -> EnumeratedPlanSelection:
+    """No convierte la fecha de observación de la fuente en periodo de filas.
+
+    RF-211 distingue la cobertura/corte conocido de la fuente de una
+    restricción pedida por el usuario. La regla es genérica y conservadora:
+    solo actúa cuando la fecha está ligada explícitamente a
+    ``fuente/datos/dataset/portal`` observados, consultados o actualizados.
+    Si el mismo periodo aparece fuera de esa cláusula, conserva el filtro.
+    """
+
+    if selection.dataset_index >= len(context.candidates):
+        return selection
+    normalized_question = _normalized_phrase(question)
+    match = _SOURCE_OBSERVATION_DATE_RE.search(normalized_question)
+    if match is None:
+        return selection
+
+    day = int(match.group("day"))
+    month = _SPANISH_MONTHS[match.group("month")]
+    year = int(match.group("year"))
+    observed_date = date(year, month, day)
+    observed_week = observed_date.isocalendar().week
+    residual = f"{normalized_question[: match.start()]} {normalized_question[match.end() :]}"
+    columns = context.candidates[selection.dataset_index].columns
+
+    def derived_only_from_source_cutoff(item: FilterChoice) -> bool:
+        if item.column_index >= len(columns) or not item.values:
+            return False
+        column = columns[item.column_index]
+        tokens = _semantic_tokens(f"{column.field_name} {column.display_name}")
+        values = {str(value).casefold() for value in item.values}
+        if tokens & _YEAR_COLUMN_TOKENS:
+            return str(year) in values and not re.search(rf"\b{year}\b", residual)
+        if tokens & _WEEK_COLUMN_TOKENS:
+            return str(observed_week) in values and "semana" not in residual
+        if tokens & _MONTH_COLUMN_TOKENS:
+            return str(month) in values and not (
+                match.group("month") in residual or "mes" in residual
+            )
+        if tokens & _DAY_COLUMN_TOKENS:
+            return str(day) in values and "dia" not in residual
+        if (
+            column.data_type in {ColumnDataType.DATE, ColumnDataType.DATETIME}
+            or tokens & _DATE_COLUMN_TOKENS
+        ):
+            day_iso = observed_date.isoformat()
+            return any(value.startswith(day_iso) for value in values) and not re.search(
+                r"\b\d{1,2}\s+de\s+(?:" + "|".join(_SPANISH_MONTHS) + r")\s+de\s+\d{4}\b",
+                residual,
+            )
+        return False
+
+    filters = tuple(item for item in selection.filters if not derived_only_from_source_cutoff(item))
+    return (
+        selection
+        if filters == selection.filters
+        else selection.model_copy(update={"filters": filters})
+    )
+
+
 def normalize_system_owned_operation(
     selection: EnumeratedPlanSelection,
     intent: IntentExtraction,
