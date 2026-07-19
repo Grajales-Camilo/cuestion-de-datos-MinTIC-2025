@@ -415,7 +415,13 @@ async def test_single_row_lookup_derives_only_requested_text_without_llm_request
     async def executor(payload: dict) -> dict:
         return {
             "ok": True,
-            "canonical_soql": payload["soql"],
+            # La herramienta real normaliza keywords y agrega OFFSET 0 a la
+            # misma consulta renderizada antes de persistirla.
+            "canonical_soql": (
+                "SELECT codigo AS dim_1, nombre_proyecto AS dim_2, "
+                "tipo_app AS dim_3, entidad_encargada AS dim_4 "
+                "WHERE codigo = 'ABC123' LIMIT 100 OFFSET 0"
+            ),
             "rows": [
                 {
                     "dim_1": "ABC123",

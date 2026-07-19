@@ -32,11 +32,10 @@ Se añadió un fallback determinista de `direct_text` con activación conservado
 1. la operación debe ser `LOOKUP`;
 2. el plan no debe contener solicitudes textuales explícitas;
 3. la consulta debe devolver exactamente una fila;
-4. el SoQL ejecutado debe coincidir con el SoQL canónico renderizado;
-5. solo se consideran dimensiones `TEXT` seleccionadas;
-6. el nombre real de cada columna debe solaparse léxicamente con la intención
+4. solo se consideran dimensiones `TEXT` seleccionadas;
+5. el nombre real de cada columna debe solaparse léxicamente con la intención
    vigente;
-7. se excluyen aliases que ya produjeron un claim cuantitativo.
+6. se excluyen aliases que ya produjeron un claim cuantitativo.
 
 El fallback no elige entre filas, no inspecciona valores para decidir qué
 publicar y no usa `case_id`, `dataset_id`, preguntas, códigos ni respuestas
@@ -91,3 +90,35 @@ hechos reproducibles para tipo y nombre, producir una respuesta útil y no
 registrar fabricación, huérfanos ni infraestructura. El `full` permanece
 bloqueado; solo una validación dirigida satisfactoria permite repetir el smoke
 canónico.
+
+## C8A — auditoría de la primera validación real
+
+La corrida dirigida `80d4bbec-2ea7-4d71-ba21-d22bb86218dd` sobre `c9009ae`
+volvió a terminar en `no_evidence`, sin infraestructura ni fabricación. La
+consulta real sí recuperó la misma fila correcta de `tmk8-iihq`, pero expuso un
+defecto en la condición 4 original: `render_soql` produce la consulta interna
+sin `OFFSET`, mientras `ejecutar_soql` devuelve para persistencia la misma
+consulta normalizada por el parser (keywords en mayúsculas y `OFFSET 0`). La
+comparación literal siempre era falsa en producción aunque la consulta fuera
+semánticamente idéntica; el doble unitario devolvía el payload sin normalizar y
+ocultó el defecto.
+
+Se retiró esa igualdad de cadenas. No se relaja la procedencia de la consulta:
+el ejecutor interno continúa recibiendo exclusivamente
+`rendered.canonical_soql`, y la forma canónica que devuelve sigue siendo la
+fuente de verdad para evidencia, persistencia, hash y reverificación. La
+regresión ahora imita explícitamente la salida real normalizada con `OFFSET 0`.
+
+Verificación posterior:
+
+- Pruebas focalizadas: `60 passed`.
+- `pytest -m "not integration" -q`: `1085 passed, 122 deselected`.
+- Aceptación determinista con PostgreSQL local:
+  `19 passed, 1188 deselected`.
+- El primer intento de esa aceptación sin `DATABASE_URL` exportada produjo 19
+  errores de setup (`KeyError`) antes de ejecutar las pruebas; al cargar la URL
+  local desde `.env` solo para el proceso, pasó completa. No es un fallo de la
+  implementación.
+- Ruff check/formato y `git diff --check`: limpios.
+
+Estado: `READY_FOR_DIRECTED_PILOT013_RETRY` / `FULL_GATE_BLOCKED`.

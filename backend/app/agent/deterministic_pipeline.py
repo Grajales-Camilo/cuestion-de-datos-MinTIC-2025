@@ -346,14 +346,14 @@ def _prepare_single_row_lookup_textual_fallback(
     explícitas se procesan por la ruta normal y nunca llegan aquí.
     """
 
-    if (
-        plan.operation is not QueryOperation.LOOKUP
-        or plan.textual_requests
-        or len(rows) != 1
-        or canonical_soql != rendered.canonical_soql
-    ):
+    if plan.operation is not QueryOperation.LOOKUP or plan.textual_requests or len(rows) != 1:
         return (), ()
 
+    # `ejecutar_soql` recibe exclusivamente `rendered.canonical_soql`, pero
+    # devuelve la forma canónica persistible del parser (keywords en
+    # mayúsculas y `OFFSET 0`). Comparar ambas cadenas literalmente descartaba
+    # la misma consulta en producción aunque no cambiara su semántica. La
+    # consulta ejecutada continúa siendo la única fuente del hash/evidencia.
     requested_tokens = intent_relevance_tokens(plan.purpose, ())
     prepared: list[PreparedTextualFact] = []
     rejected: list[TextualRejection] = []
