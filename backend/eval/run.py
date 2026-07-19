@@ -36,6 +36,7 @@ from eval.gate import (
     evaluate_full_gate,
     evaluate_smoke_gate,
     socrata_success_rate,
+    validate_gate_selection,
 )
 from eval.loader import default_suite_path, load_golden_suite
 from eval.metrics import (
@@ -568,6 +569,11 @@ async def run_suite(
     )
     suite = load_golden_suite(default_suite_path(suite_name))
     selected_cases = _select_cases(suite.cases, limit=limit, case_ids=case_ids)
+    # Fail-fast ANTES de crear el engine, abrir conexiones o invocar cualquier
+    # proveedor externo: si --limit/--case-id o un gate_mode desconocido dejan
+    # una selección incompatible con la puerta pedida, aborta aquí sin consumir
+    # cuota de Gemini ni Socrata (T-617B0-R2).
+    validate_gate_selection(selected_cases, gate_mode)
     engine = create_app_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
     worker_id: str | None = None
     try:

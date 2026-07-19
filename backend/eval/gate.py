@@ -28,6 +28,7 @@ booleanos y códigos de fallo enumerados.
 from __future__ import annotations
 
 import math
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, DecimalException, InvalidOperation
@@ -52,6 +53,16 @@ RECALL_AT_10_THRESHOLD = 0.85  # RNF-004
 LATENCY_SIMPLE_P95_MS = 20_000  # RNF-001
 LATENCY_MULTISTEP_P95_MS = 75_000  # RNF-001
 AVG_COST_USD_THRESHOLD = Decimal("0.05")  # RNF-009
+
+# Cardinalidad exacta de una suite golden completa (pruebas.md §4.2/§4.4). La
+# puerta `full` representa la ejecución COMPLETA de la suite: exactamente 50
+# resultados, 40 positivos, 10 negativos y 50 case_ids únicos. Una muestra
+# parcial —aunque todas sus métricas observadas sean perfectas— NUNCA puede
+# certificarse como puerta completa. No son umbrales normativos de calidad:
+# describen la composición fija de la suite y no relajan RNF-###.
+FULL_GATE_TOTAL = 50
+FULL_GATE_POSITIVES = 40
+FULL_GATE_NEGATIVES = 10
 
 # Positivos "sólidos" del smoke dirigido (pruebas.md §4.4). Ninguno puede
 # retroceder en la puerta de smoke.
@@ -384,6 +395,7 @@ class CaseOutcome:
 @dataclass(frozen=True)
 class AggregateMetrics:
     measured_total: int
+    distinct_case_id_count: int
     positive_total: int
     positive_passed: int
     negative_total: int
@@ -456,6 +468,7 @@ def aggregate_metrics(outcomes: Sequence[CaseOutcome]) -> AggregateMetrics:
 
     return AggregateMetrics(
         measured_total=len(outcomes),
+        distinct_case_id_count=len({o.case_id for o in outcomes}),
         positive_total=len(positives),
         positive_passed=positive_passed,
         negative_total=len(negatives),
@@ -526,6 +539,42 @@ def evaluate_full_gate(aggregate: AggregateMetrics) -> GateVerdict:
     def add(name, threshold, observed, passed, reason):
         metrics.append(GateMetric(name, threshold, observed, passed, None if passed else reason))
 
+    # Cardinalidad de suite completa (pruebas.md §4.2/§4.4): la puerta `full`
+    # representa la ejecución COMPLETA de la suite. Una muestra parcial —aunque
+    # todas sus métricas observadas sean perfectas— NUNCA puede certificarse
+    # como puerta completa. Se exige, ANTES de cualquier umbral de calidad,
+    # exactamente 50 resultados, 40 positivos, 10 negativos y 50 case_ids
+    # únicos. Esta condición no relaja ningún umbral normativo: describe la
+    # composición fija de la suite.
+    total = aggregate.measured_total
+    cardinality_parts: list[str] = []
+    if total != FULL_GATE_TOTAL:
+        cardinality_parts.append(f"total={total} (esperado {FULL_GATE_TOTAL})")
+    if aggregate.positive_total != FULL_GATE_POSITIVES:
+        cardinality_parts.append(
+            f"positivos={aggregate.positive_total} (esperado {FULL_GATE_POSITIVES})"
+        )
+    if aggregate.negative_total != FULL_GATE_NEGATIVES:
+        cardinality_parts.append(
+            f"negativos={aggregate.negative_total} (esperado {FULL_GATE_NEGATIVES})"
+        )
+    if aggregate.distinct_case_id_count != total:
+        cardinality_parts.append(
+            f"case_ids únicos={aggregate.distinct_case_id_count} (esperado {total})"
+        )
+    add(
+        "cardinalidad_suite",
+        f"{FULL_GATE_TOTAL} resultados = {FULL_GATE_POSITIVES} positivos "
+        f"+ {FULL_GATE_NEGATIVES} negativos, {FULL_GATE_TOTAL} case_ids únicos",
+        f"{total} resultados = {aggregate.positive_total} positivos "
+        f"+ {aggregate.negative_total} negativos, "
+        f"{aggregate.distinct_case_id_count} case_ids únicos",
+        not cardinality_parts,
+        "selección incompatible con la puerta completa: " + "; ".join(cardinality_parts)
+        if cardinality_parts
+        else None,
+    )
+
     # RNF-002: positivos >= 80%
     sr = aggregate.success_rate
     add(
@@ -581,7 +630,6 @@ def evaluate_full_gate(aggregate: AggregateMetrics) -> GateVerdict:
     # Completitud de medición (RNF-001/RNF-009): la puerta completa NO puede
     # certificarse con latencia o costo sin medir. Cualquier caso sin latencia
     # o sin costo observado produce FAIL con conteo medido/esperado explícito.
-    total = aggregate.measured_total
     add(
         "latencia_medida",
         f"medida en {total}/{total} casos",
@@ -642,25 +690,33 @@ def evaluate_smoke_gate(
 
     metrics: list[GateMetric] = []
 
-    # Cobertura canónica: faltar o añadir casos invalida el smoke ANTES de
-    # cualquier otro veredicto (pruebas.md §4.4). El denominador es el conjunto
-    # exacto de 10; ejecutar solo un subconjunto (p. ej. dos negativos) nunca
-    # puede aprobar.
-    present_ids = {o.case_id for o in outcomes}
+    # Cobertura canónica: faltar, añadir o REPETIR casos invalida el smoke ANTES
+    # de cualquier otro veredicto (pruebas.md §4.4). El smoke ejecuta EXACTAMENTE
+    # los 10 case_ids canónicos, una sola vez cada uno; ejecutar solo un
+    # subconjunto (p. ej. dos negativos) o repetir un caso —lo que infla el
+    # número de resultados sin cambiar el conjunto de IDs únicos— nunca puede
+    # aprobar.
+    id_counts = Counter(o.case_id for o in outcomes)
+    present_ids = set(id_counts)
     missing = sorted(canonical_ids - present_ids)
     extra = sorted(present_ids - canonical_ids)
+    duplicates = sorted(cid for cid, count in id_counts.items() if count > 1)
     coverage_reason_parts: list[str] = []
     if missing:
         coverage_reason_parts.append(f"faltan: {', '.join(missing)}")
     if extra:
         coverage_reason_parts.append(f"sobran: {', '.join(extra)}")
+    if duplicates:
+        coverage_reason_parts.append(f"duplicados: {', '.join(duplicates)}")
     metrics.append(
         GateMetric(
             "cobertura_canónica",
-            f"exactamente {len(canonical_ids)} canónicos",
-            f"{len(present_ids & canonical_ids)}/{len(canonical_ids)} canónicos"
-            + (f", {len(extra)} no canónicos" if extra else ""),
-            not missing and not extra,
+            f"exactamente {len(canonical_ids)} canónicos, uno por caso",
+            f"{len(present_ids & canonical_ids)}/{len(canonical_ids)} canónicos, "
+            f"{len(outcomes)} resultados"
+            + (f", {len(extra)} no canónicos" if extra else "")
+            + (f", {len(duplicates)} duplicados" if duplicates else ""),
+            not missing and not extra and not duplicates,
             None if not coverage_reason_parts else "; ".join(coverage_reason_parts),
         )
     )
@@ -706,3 +762,64 @@ def evaluate_smoke_gate(
 
     passed = all(m.passed for m in metrics)
     return GateVerdict(mode="smoke", passed=passed, metrics=tuple(metrics))
+
+
+# --- Preflight de selección (fail-fast antes de gastar cuota) -----------------
+
+
+def validate_gate_selection(cases: Iterable[Any], gate_mode: str) -> None:
+    """Valida que la selección de casos sea compatible con la puerta ANTES de
+    crear el engine, abrir conexiones o invocar cualquier proveedor externo.
+
+    Función PURA (sin I/O): recibe un iterable de casos con atributos
+    ``case_id`` y ``case_type`` y lanza ``RuntimeError`` con un mensaje claro y
+    sin datos sensibles si la selección no puede certificar la puerta pedida.
+    No aprueba ni ejecuta nada: solo evita gastar cuota cuando ``--limit`` o
+    ``--case-id`` dejan una selección incompatible.
+
+    - ``full``: exactamente 50 casos, 40 positivos, 10 negativos, sin case_ids
+      duplicados (la ejecución completa de la suite golden, pruebas.md
+      §4.2/§4.4).
+    - ``smoke``: exactamente los 10 ``SMOKE_CANONICAL_IDS``, una sola vez cada
+      uno; sin faltantes, extras ni duplicados (pruebas.md §4.4).
+    - Cualquier otro ``gate_mode`` se rechaza explícitamente.
+    """
+
+    selected = list(cases)
+    case_ids = [case.case_id for case in selected]
+    id_counts = Counter(case_ids)
+    duplicates = sorted(cid for cid, count in id_counts.items() if count > 1)
+
+    if gate_mode == "full":
+        total = len(case_ids)
+        positives = sum(1 for case in selected if getattr(case, "case_type", None) == "positive")
+        negatives = sum(1 for case in selected if getattr(case, "case_type", None) == "negative")
+        problems: list[str] = []
+        if total != FULL_GATE_TOTAL:
+            problems.append(f"total={total} (esperado {FULL_GATE_TOTAL})")
+        if positives != FULL_GATE_POSITIVES:
+            problems.append(f"positivos={positives} (esperado {FULL_GATE_POSITIVES})")
+        if negatives != FULL_GATE_NEGATIVES:
+            problems.append(f"negativos={negatives} (esperado {FULL_GATE_NEGATIVES})")
+        if duplicates:
+            problems.append(f"case_ids duplicados: {', '.join(duplicates)}")
+        if problems:
+            raise RuntimeError("selección incompatible con la puerta full: " + "; ".join(problems))
+        return
+
+    if gate_mode == "smoke":
+        present_ids = set(id_counts)
+        missing = sorted(SMOKE_CANONICAL_IDS - present_ids)
+        extra = sorted(present_ids - SMOKE_CANONICAL_IDS)
+        problems = []
+        if missing:
+            problems.append(f"faltan: {', '.join(missing)}")
+        if extra:
+            problems.append(f"sobran: {', '.join(extra)}")
+        if duplicates:
+            problems.append(f"duplicados: {', '.join(duplicates)}")
+        if problems:
+            raise RuntimeError("selección incompatible con la puerta smoke: " + "; ".join(problems))
+        return
+
+    raise RuntimeError(f"gate_mode desconocido: {gate_mode!r} (esperado 'full' o 'smoke')")

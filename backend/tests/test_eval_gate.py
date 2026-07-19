@@ -11,9 +11,12 @@ import uuid
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+
 from app.quality.claims import ClaimSpec, EvidenceContext, build_claims
 from eval.gate import (
     AVG_COST_USD_THRESHOLD,
+    SMOKE_CANONICAL_IDS,
     CaseOutcome,
     ClaimsIntegrityAssessment,
     aggregate_metrics,
@@ -23,6 +26,7 @@ from eval.gate import (
     evaluate_smoke_gate,
     percentile,
     socrata_success_rate,
+    validate_gate_selection,
 )
 from eval.run import _case_result_model, _gate_summary_lines, apply_aggregate_metrics
 
@@ -598,6 +602,131 @@ def test_classify_zero_queries_is_not_simple() -> None:
         classify_run_complexity({"evidence_count": 1, "query_count": 1, "exploration_count": 0})
         == "simple"
     )
+
+
+# --- G. Regresiones T-617B0-R2 (falsos positivos mecánicos remanentes) --------
+
+
+@pytest.mark.parametrize("positives,negatives", [(1, 1), (8, 2)])
+def test_full_gate_rejects_perfect_partial_sample(positives: int, negatives: int) -> None:
+    """T-617B0-R2 #1: una muestra parcial perfecta (2 o 10 resultados) NUNCA
+    puede certificarse como puerta completa. La cardinalidad de suite bloquea
+    aunque todas las métricas observadas sean perfectas."""
+
+    outcomes = _suite(positives, negatives, positives=positives, negatives=negatives)
+    aggregate = aggregate_metrics(outcomes)
+    verdict = evaluate_full_gate(aggregate)
+
+    # Métricas observadas perfectas: sin la guarda de cardinalidad, aprobaría.
+    assert aggregate.success_rate == 1.0
+    assert aggregate.negative_success_rate == 1.0
+    assert aggregate.measured_total == positives + negatives
+    assert verdict.passed is False
+    assert any("puerta completa" in reason for reason in verdict.blocking_reasons)
+
+
+def test_full_gate_cardinality_passes_with_exactly_40_positives_10_negatives() -> None:
+    """La puerta completa aprueba con exactamente 40 positivos + 10 negativos
+    únicos cuando todas las demás métricas cumplen (50 case_ids distintos)."""
+
+    aggregate = aggregate_metrics(_suite(40, 10))
+    verdict = evaluate_full_gate(aggregate)
+
+    cardinality = next(m for m in verdict.metrics if m.name == "cardinalidad_suite")
+    assert aggregate.distinct_case_id_count == 50
+    assert cardinality.passed is True
+    assert verdict.passed is True
+    assert verdict.blocking_reasons == ()
+
+
+def test_full_gate_rejects_duplicated_case_ids_even_with_fifty_results() -> None:
+    """50 resultados pero con un case_id repetido (49 únicos) NO es la suite
+    completa: la unicidad de case_ids es parte de la cardinalidad."""
+
+    outcomes = _suite(40, 10)
+    object.__setattr__(outcomes[1], "case_id", outcomes[0].case_id)  # colapsa 2 IDs en 1
+    aggregate = aggregate_metrics(outcomes)
+    verdict = evaluate_full_gate(aggregate)
+
+    assert aggregate.measured_total == 50
+    assert aggregate.distinct_case_id_count == 49
+    assert verdict.passed is False
+    assert any("únicos" in reason for reason in verdict.blocking_reasons)
+
+
+def test_smoke_gate_fails_with_duplicated_canonical_case() -> None:
+    """T-617B0-R2 #2: los 10 canónicos más la repetición de uno (11 resultados,
+    10 IDs únicos) NO pueden aprobar el smoke; se ejecutó un caso dos veces."""
+
+    outcomes = _smoke_canonical_outcomes()
+    outcomes.append(_outcome("pilot-002-seguridad-homicidios", "positive", True))
+    smoke = evaluate_smoke_gate(outcomes)
+
+    assert len(outcomes) == 11
+    assert len({o.case_id for o in outcomes}) == 10
+    assert smoke.passed is False
+    assert any("duplicados" in reason for reason in smoke.blocking_reasons)
+
+
+# Preflight puro de selección (fail-fast antes de gastar cuota).
+
+
+def _ns_cases(pairs):
+    return [SimpleNamespace(case_id=cid, case_type=ctype) for cid, ctype in pairs]
+
+
+def _ctype(case_id: str) -> str:
+    return "negative" if "negativo" in case_id else "positive"
+
+
+def _smoke_canonical_cases():
+    return _ns_cases((cid, _ctype(cid)) for cid in sorted(SMOKE_CANONICAL_IDS))
+
+
+def test_validate_gate_selection_rejects_unknown_mode() -> None:
+    with pytest.raises(RuntimeError, match="gate_mode desconocido"):
+        validate_gate_selection([], "weird")
+
+
+@pytest.mark.parametrize("positives,negatives", [(1, 1), (40, 9), (39, 10)])
+def test_validate_gate_selection_full_rejects_incompatible(positives: int, negatives: int) -> None:
+    cases = _ns_cases(
+        [(f"p{i}", "positive") for i in range(positives)]
+        + [(f"n{i}", "negative") for i in range(negatives)]
+    )
+    with pytest.raises(RuntimeError, match="puerta full"):
+        validate_gate_selection(cases, "full")
+
+
+def test_validate_gate_selection_full_rejects_duplicates() -> None:
+    cases = _ns_cases(
+        [(f"p{i}", "positive") for i in range(40)] + [(f"n{i}", "negative") for i in range(10)]
+    )
+    cases[1].case_id = cases[0].case_id  # 50 casos pero 49 únicos
+    with pytest.raises(RuntimeError, match="duplicados"):
+        validate_gate_selection(cases, "full")
+
+
+def test_validate_gate_selection_full_accepts_complete_suite() -> None:
+    cases = _ns_cases(
+        [(f"p{i}", "positive") for i in range(40)] + [(f"n{i}", "negative") for i in range(10)]
+    )
+    validate_gate_selection(cases, "full")  # no lanza
+
+
+def test_validate_gate_selection_smoke_rejects_missing_and_duplicate() -> None:
+    only_one = _ns_cases([("pilot-045-negativo-dato-personal", "negative")])
+    with pytest.raises(RuntimeError, match="faltan"):
+        validate_gate_selection(only_one, "smoke")
+
+    dup = _smoke_canonical_cases()
+    dup.append(dup[0])
+    with pytest.raises(RuntimeError, match="duplicados"):
+        validate_gate_selection(dup, "smoke")
+
+
+def test_validate_gate_selection_smoke_accepts_exactly_ten_canonical() -> None:
+    validate_gate_selection(_smoke_canonical_cases(), "smoke")  # no lanza
 
 
 # --- Persistencia y reportes --------------------------------------------------

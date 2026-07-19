@@ -46,6 +46,11 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
     monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
     monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
     monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+    # Esta prueba aísla la resiliencia del bucle por-caso, no la puerta: el
+    # preflight de selección (validate_gate_selection) se cubre en sus propias
+    # pruebas dedicadas y aquí se neutraliza como un colaborador más, igual que
+    # engine/sync/register, para conservar el mini-suite de 2 casos.
+    monkeypatch.setattr(run_module, "validate_gate_selection", lambda *a, **k: None)
     monkeypatch.setattr(
         run_module,
         "create_app_async_engine",
@@ -147,6 +152,9 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
     monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
     monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
     monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+    # Igual que la prueba anterior: se aísla la resiliencia del bucle, no la
+    # puerta; el preflight se neutraliza para conservar el mini-suite de 2 casos.
+    monkeypatch.setattr(run_module, "validate_gate_selection", lambda *a, **k: None)
     monkeypatch.setattr(
         run_module,
         "create_app_async_engine",
@@ -207,6 +215,94 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
     assert persisted_calls[1]["agent_run_id"] is None
     assert persisted_calls[1]["error_code"] == "RuntimeError"
     assert persisted_calls[2]["agent_run_id"] is not None
+
+
+@pytest.mark.parametrize(
+    "gate_mode,match",
+    [("full", "puerta full"), ("smoke", "puerta smoke")],
+)
+async def test_run_suite_preflight_rejects_incompatible_selection_before_engine(
+    monkeypatch, gate_mode: str, match: str
+) -> None:
+    """T-617B0-R2: el preflight rechaza una selección incompatible con la puerta
+    ANTES de crear el engine o invocar el agente/LLM. `_fake_suite` tiene solo 2
+    positivos: ni completa la puerta full (50 casos) ni cubre los 10 canónicos
+    del smoke. Espías demuestran que no se gastó cuota."""
+
+    suite = _fake_suite()
+    monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
+    monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
+    monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+
+    engine_calls: list[object] = []
+
+    def spy_engine(*a, **k):
+        engine_calls.append((a, k))
+        return SimpleNamespace(dispose=AsyncMock())
+
+    monkeypatch.setattr(run_module, "create_app_async_engine", spy_engine)
+
+    llm_calls: list[int] = []
+    monkeypatch.setattr(
+        run_module,
+        "create_eval_run",
+        AsyncMock(side_effect=lambda *a, **k: llm_calls.append(1)),
+    )
+    monkeypatch.setattr(
+        run_module,
+        "execute_agent_run_async",
+        AsyncMock(side_effect=lambda *a, **k: llm_calls.append(1)),
+    )
+    # Otros colaboradores de I/O: si el preflight fallara en abortar, estos
+    # revelarían la fuga; deben quedar intactos (nunca invocados).
+    sync_spy = AsyncMock()
+    monkeypatch.setattr(run_module, "sync_golden_suite", sync_spy)
+    register_spy = AsyncMock(return_value="worker-1")
+    monkeypatch.setattr(run_module, "register_worker_instance", register_spy)
+
+    with pytest.raises(RuntimeError, match=match):
+        await run_module.run_suite(
+            suite_name="golden-v1",
+            provider=None,
+            model=None,
+            seed=1,
+            limit=None,
+            gate_mode=gate_mode,
+        )
+
+    assert engine_calls == []  # engine nunca creado
+    assert llm_calls == []  # agente/LLM nunca invocado
+    sync_spy.assert_not_awaited()
+    register_spy.assert_not_awaited()
+
+
+async def test_run_suite_preflight_rejects_unknown_gate_mode_before_engine(monkeypatch) -> None:
+    """Un gate_mode programático desconocido se rechaza explícitamente antes de
+    tocar el engine (defensa contra invocaciones internas mal formadas)."""
+
+    suite = _fake_suite()
+    monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
+    monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
+    monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+
+    engine_calls: list[object] = []
+    monkeypatch.setattr(
+        run_module,
+        "create_app_async_engine",
+        lambda *a, **k: engine_calls.append((a, k)) or SimpleNamespace(dispose=AsyncMock()),
+    )
+
+    with pytest.raises(RuntimeError, match="gate_mode desconocido"):
+        await run_module.run_suite(
+            suite_name="golden-v1",
+            provider=None,
+            model=None,
+            seed=1,
+            limit=None,
+            gate_mode="bogus",
+        )
+
+    assert engine_calls == []
 
 
 def test_select_cases_supports_exact_generic_case_ids() -> None:

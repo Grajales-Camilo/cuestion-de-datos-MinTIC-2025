@@ -510,3 +510,105 @@ push ni PR; `tasks.md` sin cerrar.
 cuarto de complejidad) ya **no** son reproducibles ⇒ **READY_FOR_REAL_T617B**.
 La ejecución de las 110 corridas reales queda sujeta a la autorización de Juan
 Camilo y del coordinador (plan §F).
+
+---
+
+## L. Corrección T-617B0-R2 — dos falsos positivos mecánicos remanentes
+
+**Contexto:** tras T-617B0-R, Codex encontró **dos** bordes adicionales en los
+que la instrumentación de `backend/eval/gate.py` todavía podía emitir un PASS
+espurio: una **muestra parcial** certificada como puerta completa y una corrida
+de smoke con un **resultado duplicado**. T-617B0-R2 los cierra **sin ejecutar
+Gemini, Socrata real ni PostgreSQL real**, exclusivamente en `backend/eval/`
+(runtime `backend/app/**`, contratos, umbrales normativos, `specs/**`,
+`tasks.md` y golden-v1/v2 intactos). Cada uno se reprodujo primero
+mecánicamente contra el código real (script mínimo, sin LLM) y luego se cubrió
+con pruebas de regresión que fallan antes del fix.
+
+### L.1 Defectos reproducidos (antes del fix)
+
+1. **Puerta `full` con muestra parcial.** CIERTO. `evaluate_full_gate` no
+   verificaba la cardinalidad de la suite: una muestra perfecta de solo **1
+   positivo simple + 1 negativo multipaso** producía `passed=True` (2 casos,
+   `success_rate=1.0`, negativos `1.0`, ambas particiones p95 pobladas). La
+   puerta completa representa la ejecución COMPLETA de la suite golden y debe
+   exigir exactamente **50 resultados, 40 positivos, 10 negativos y 50 case_ids
+   únicos**.
+2. **Smoke con resultado duplicado.** CIERTO. `evaluate_smoke_gate` calculaba la
+   cobertura con un `set` de case_ids, de modo que los **10 canónicos más la
+   repetición de uno** (11 resultados, 10 IDs únicos) daban `passed=True`. El
+   smoke debe exigir exactamente los 10 `SMOKE_CANONICAL_IDS`, **una sola vez
+   cada uno**.
+
+### L.2 Corrección aplicada
+
+- **Cardinalidad de suite completa (`eval/gate.py`).** `AggregateMetrics` gana
+  `distinct_case_id_count`. `evaluate_full_gate` añade una métrica bloqueante
+  `cardinalidad_suite`, evaluada **antes** de cualquier umbral de calidad, que
+  exige `total==50`, `positivos==40`, `negativos==10` y `case_ids únicos==total`
+  (constantes `FULL_GATE_TOTAL/POSITIVES/NEGATIVES`, que describen la
+  composición fija de la suite, **no** relajan ni introducen umbrales
+  normativos). Una muestra parcial —aunque sus métricas observadas sean
+  perfectas— produce FAIL con razón explícita.
+- **Unicidad en el smoke (`eval/gate.py`).** `evaluate_smoke_gate` detecta
+  duplicados con `Counter`: la cobertura canónica ahora falla ante **faltantes,
+  extras o duplicados**, exigiendo exactamente los 10 canónicos una sola vez.
+- **Fail-fast del runner (`eval/run.py`).** Nuevo helper puro
+  `validate_gate_selection(cases, gate_mode)` que se invoca en `run_suite`
+  **inmediatamente después de `_select_cases` y antes de crear el engine, los
+  registros de evaluación, abrir conexiones o invocar el agente/LLM**. Rechaza
+  con `RuntimeError` claro (sin datos sensibles): selección `full` que no sea 50
+  casos con distribución 40/10 e IDs únicos; selección `smoke` que no sean
+  exactamente los 10 `SMOKE_CANONICAL_IDS` sin faltantes/extras/duplicados; y un
+  `gate_mode` programático desconocido. Así, si `--limit`/`--case-id` dejan una
+  selección incompatible, la corrida termina **antes de consumir cuota**.
+
+Ningún umbral normativo se modifica; `socrata_success_rate` se mantiene como en
+§I/§K (`None` = "no observable", no bloqueante; `backend/app/agent/` congelado,
+no instrumentado).
+
+### L.3 Reproducción antes/después
+
+| Defecto | Antes | Después |
+|---|---|---|
+| `full` con 1 pos + 1 neg perfectos | `passed=True` | `passed=False` (razón: "selección incompatible con la puerta completa") |
+| `smoke` 10 canónicos + 1 duplicado (11 resultados) | `passed=True` | `passed=False` (razón: "duplicados: …") |
+
+### L.4 Regresiones añadidas
+
+`tests/test_eval_gate.py`:
+`test_full_gate_rejects_perfect_partial_sample` (parametrizada 2 y 10
+resultados), `test_full_gate_cardinality_passes_with_exactly_40_positives_10_negatives`,
+`test_full_gate_rejects_duplicated_case_ids_even_with_fifty_results`,
+`test_smoke_gate_fails_with_duplicated_canonical_case`,
+`test_validate_gate_selection_rejects_unknown_mode`,
+`test_validate_gate_selection_full_rejects_incompatible` (parametrizada),
+`test_validate_gate_selection_full_rejects_duplicates`,
+`test_validate_gate_selection_full_accepts_complete_suite`,
+`test_validate_gate_selection_smoke_rejects_missing_and_duplicate`,
+`test_validate_gate_selection_smoke_accepts_exactly_ten_canonical`.
+`tests/test_eval_run_error_handling.py`:
+`test_run_suite_preflight_rejects_incompatible_selection_before_engine`
+(parametrizada full/smoke, con espías que demuestran que **no** se creó el
+engine ni se invocó el agente/LLM) y
+`test_run_suite_preflight_rejects_unknown_gate_mode_before_engine`. Las dos
+pruebas de resiliencia del bucle preexistentes neutralizan el preflight como un
+colaborador más (aíslan el bucle, no la puerta), y su cobertura de puerta queda
+en las pruebas dedicadas nuevas.
+
+### L.5 Verificación (2026-07-18)
+
+`pytest tests/test_eval_gate.py tests/test_eval_run_error_handling.py` = **57
+passed**; `pytest -m "not integration"` = **921 passed, 122 deselected, 0
+fallos**; `ruff check .` = **All checks passed!**; `ruff format --check
+eval/gate.py eval/run.py tests/test_eval_gate.py
+tests/test_eval_run_error_handling.py` = **4 files already formatted**;
+`git diff --check` limpio. `golden-v1`/`golden-v2` con SHA-256 sin cambios
+(`ab546062…4630ff72` / `1c78264c…54e483`). Sin cambios en `backend/app/`,
+`specs/**` ni `tasks.md`; sin push ni PR; T-617 sigue abierta; no se ejecutaron
+las 110 corridas reales ni se consumió cuota.
+
+**Estado T-617B0-R2:** los dos falsos positivos remanentes (muestra parcial y
+resultado duplicado) ya **no** son reproducibles ⇒ **READY_FOR_REAL_T617B**. La
+ejecución de las 110 corridas reales queda sujeta a la autorización de Juan
+Camilo y del coordinador (plan §F).
