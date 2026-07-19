@@ -76,7 +76,34 @@ class RuntimeLLMUsage:
         )
 
 
-def _model[T: BaseModel](settings: Settings, schema: type[T]) -> Runnable:
+# T-617B0-R4: presupuesto de razonamiento del planificador Gemini
+# (diagnóstico `backend/eval/reports/t617b-d1-pilot005-timeout-diagnosis.md`
+# §8/§9: build_plan sin thinking_budget respondió en ~1.4 s o agotó los dos
+# intentos de 30 s con 504; con thinking_budget=1024 respondió en ~5.2 s pero
+# con salida estructurada inválida; con thinking_budget=4096 respondió en
+# ~2.9 s con salida estructurada válida). Constante única, sin excepción por
+# `case_id`/`dataset_id`/pregunta: se aplica a TODAS las invocaciones del
+# planificador, para todos los casos.
+PLANNER_THINKING_BUDGET_TOKENS = 4096
+
+
+def _model[T: BaseModel](
+    settings: Settings,
+    schema: type[T],
+    *,
+    thinking_budget: int | None = None,
+) -> Runnable:
+    """Construye el modelo estructurado (RF-206).
+
+    ``thinking_budget`` es específico de ``ChatGoogleGenerativeAI``
+    (``langchain_google_genai._common.thinking_budget``, en tokens): NUNCA se
+    envía cuando ``settings.llm_provider != "google"`` (Anthropic no expone
+    este parámetro). No modifica ``timeout``/``max_retries``, que se
+    mantienen fijos en 30/2 para todos los modelos y proveedores."""
+
+    provider_kwargs: dict[str, Any] = {}
+    if thinking_budget is not None and settings.llm_provider == "google":
+        provider_kwargs["thinking_budget"] = thinking_budget
     return get_structured_chat_model(
         settings.llm_provider,
         settings.llm_model,
@@ -87,6 +114,7 @@ def _model[T: BaseModel](settings: Settings, schema: type[T]) -> Runnable:
         temperature=0,
         timeout=30,
         max_retries=2,
+        **provider_kwargs,
     )
 
 
@@ -161,7 +189,9 @@ def build_real_runtime_dependencies(
         if settings.deterministic_textual_facts_enabled
         else QuantitativePlanSelection
     )
-    planner_model = _model(settings, planner_schema)
+    # T-617B0-R4: solo el planificador recibe thinking_budget; intent,
+    # síntesis y plan de síntesis quedan sin cambios (ver _model).
+    planner_model = _model(settings, planner_schema, thinking_budget=PLANNER_THINKING_BUDGET_TOKENS)
     synthesis_model = _model(settings, GroundedSynthesis)
     synthesis_plan_model = (
         _model(settings, GroundedSynthesisPlan)
