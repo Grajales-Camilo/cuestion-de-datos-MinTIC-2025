@@ -95,6 +95,7 @@ class SupervisorSnapshot(BaseModel):
     evidence_eligible: bool = False
     safe_aggregate_possible: bool = False
     claims_available: bool = False
+    claims_materially_relevant: bool = True
     textual_result_available: bool = False
     textual_rejected: bool = False
     synthesis_deferred: bool = False
@@ -115,10 +116,6 @@ def _budget_stop(state: SupervisorSnapshot) -> Transition | None:
     usage, limits = state.usage, state.budgets
     checks = (
         (usage.elapsed_ms >= limits.max_duration_ms, StopReason.DURATION_BUDGET_EXCEEDED),
-        (usage.candidates >= limits.max_candidates, StopReason.CANDIDATE_BUDGET_EXCEEDED),
-        (usage.queries >= limits.max_queries, StopReason.QUERY_BUDGET_EXCEEDED),
-        (usage.plan_repairs >= limits.max_plan_repairs, StopReason.PLAN_REPAIR_BUDGET_EXCEEDED),
-        (usage.llm_calls >= limits.max_llm_calls, StopReason.LLM_BUDGET_EXCEEDED),
     )
     for exhausted, reason in checks:
         if exhausted:
@@ -133,7 +130,12 @@ def _has_unseen_candidate(state: SupervisorSnapshot) -> bool:
 def decide_next_transition(state: SupervisorSnapshot) -> Transition:
     """Decide el siguiente nodo usando solo hechos verificables del estado."""
 
-    if state.synthesis_valid and state.claims_available and state.evidence_eligible:
+    if (
+        state.synthesis_valid
+        and state.claims_available
+        and state.claims_materially_relevant
+        and state.evidence_eligible
+    ):
         return Transition(node=SupervisorNode.COMPLETE, reason="síntesis verificada desde claims")
 
     budget_stop = _budget_stop(state)
@@ -146,6 +148,12 @@ def decide_next_transition(state: SupervisorSnapshot) -> Transition:
             reason="todavía no se recuperaron candidatos",
         )
     if state.current_candidate_index is None:
+        if state.usage.candidates >= state.budgets.max_candidates:
+            return Transition(
+                node=SupervisorNode.ABSTAIN,
+                reason=StopReason.CANDIDATE_BUDGET_EXCEEDED.value,
+                stop_reason=StopReason.CANDIDATE_BUDGET_EXCEEDED,
+            )
         if _has_unseen_candidate(state):
             return Transition(
                 node=SupervisorNode.SELECT_CANDIDATE,
@@ -159,6 +167,12 @@ def decide_next_transition(state: SupervisorSnapshot) -> Transition:
     if not state.schema_available:
         return Transition(node=SupervisorNode.PROFILE_DATASET, reason="falta esquema observado")
     if not state.plan_available:
+        if state.usage.llm_calls >= state.budgets.max_llm_calls:
+            return Transition(
+                node=SupervisorNode.ABSTAIN,
+                reason=StopReason.LLM_BUDGET_EXCEEDED.value,
+                stop_reason=StopReason.LLM_BUDGET_EXCEEDED,
+            )
         return Transition(node=SupervisorNode.BUILD_PLAN, reason="falta plan tipado")
     if state.exploration_required:
         if state.usage.explorations >= state.budgets.max_explorations:
@@ -176,12 +190,30 @@ def decide_next_transition(state: SupervisorSnapshot) -> Transition:
             state.plan_error_correctable
             and state.usage.plan_repairs < state.budgets.max_plan_repairs
         ):
+            if state.usage.llm_calls >= state.budgets.max_llm_calls:
+                return Transition(
+                    node=SupervisorNode.ABSTAIN,
+                    reason=StopReason.LLM_BUDGET_EXCEEDED.value,
+                    stop_reason=StopReason.LLM_BUDGET_EXCEEDED,
+                )
             return Transition(node=SupervisorNode.BUILD_PLAN, reason="reparar plan inválido")
+        if state.plan_error_correctable and not _has_unseen_candidate(state):
+            return Transition(
+                node=SupervisorNode.ABSTAIN,
+                reason=StopReason.PLAN_REPAIR_BUDGET_EXCEEDED.value,
+                stop_reason=StopReason.PLAN_REPAIR_BUDGET_EXCEEDED,
+            )
         return Transition(
             node=SupervisorNode.NEXT_CANDIDATE,
             reason="plan incompatible con esquema",
         )
     if not state.query_executed:
+        if state.usage.queries >= state.budgets.max_queries:
+            return Transition(
+                node=SupervisorNode.ABSTAIN,
+                reason=StopReason.QUERY_BUDGET_EXCEEDED.value,
+                stop_reason=StopReason.QUERY_BUDGET_EXCEEDED,
+            )
         return Transition(node=SupervisorNode.EXECUTE_QUERY, reason="plan validado listo para T5")
     if not state.evidence_eligible:
         if state.safe_aggregate_possible and state.usage.queries < state.budgets.max_queries:
@@ -194,10 +226,17 @@ def decide_next_transition(state: SupervisorSnapshot) -> Transition:
             stop_reason=StopReason.EVIDENCE_NOT_ELIGIBLE,
         )
     if state.synthesis_deferred and state.claims_available:
-        return Transition(
-            node=SupervisorNode.PERSIST_FACTS,
-            reason="claims derivados listos para persistencia y reverificación",
-        )
+        # T-617B-C2 (corrección posterior): un claim cuantitativo irrelevante
+        # no puede persistirse solo porque exista. Se exige o bien que algún
+        # claim sea pertinente, o bien que haya un resultado textual
+        # pertinente (T-615F/RF-212) que igual deba conservarse — nunca se
+        # bloquea la persistencia de un hecho textual válido por culpa de
+        # claims cuantitativos irrelevantes.
+        if state.claims_materially_relevant or state.textual_result_available:
+            return Transition(
+                node=SupervisorNode.PERSIST_FACTS,
+                reason="claims derivados listos para persistencia y reverificación",
+            )
     if state.textual_rejected:
         return Transition(
             node=SupervisorNode.ABSTAIN,
@@ -217,6 +256,21 @@ def decide_next_transition(state: SupervisorSnapshot) -> Transition:
                 stop_reason=StopReason.CLAIMS_NOT_AVAILABLE,
             )
         return Transition(node=SupervisorNode.DERIVE_CLAIMS, reason="evidencia elegible sin claims")
+    if not state.claims_materially_relevant:
+        # T-617B-C2: evidencia técnicamente elegible cuyos claims no derivan
+        # de ninguna columna pertinente a la intención (RF-205/RF-211) no
+        # debe sintetizarse. Se agota primero el resto de candidatos, como ya
+        # ocurre con `evidence_eligible`, antes de abstenerse.
+        if _has_unseen_candidate(state):
+            return Transition(
+                node=SupervisorNode.NEXT_CANDIDATE,
+                reason="ningún claim deriva de una columna pertinente a la intención",
+            )
+        return Transition(
+            node=SupervisorNode.ABSTAIN,
+            reason="ninguna evidencia recuperada es pertinente a la intención",
+            stop_reason=StopReason.CLAIMS_NOT_AVAILABLE,
+        )
     if not state.synthesis_valid:
         return Transition(node=SupervisorNode.SYNTHESIZE, reason="claims aceptados listos")
     raise AssertionError("estado exhaustivo no cubierto")

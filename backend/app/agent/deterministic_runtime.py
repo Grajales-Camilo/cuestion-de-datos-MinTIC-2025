@@ -69,6 +69,10 @@ from app.quality.grounded_facts import GroundedSynthesisPlan
 from app.quality.grounded_synthesis import AllowedGroundedFacts
 
 
+class SynthesisIntegrityError(ValueError):
+    """La síntesis sigue violando RNF-003 después del fallback seguro."""
+
+
 @dataclass(frozen=True)
 class ProfiledCandidate:
     option: DatasetOption
@@ -124,7 +128,12 @@ Planner = Callable[
     Awaitable[EnumeratedPlanSelection],
 ]
 Explorer = Callable[
-    [ProfiledCandidate, EnumeratedPlanSelection, tuple[ExploredColumnValues, ...]],
+    [
+        ProfiledCandidate,
+        EnumeratedPlanSelection,
+        tuple[ExploredColumnValues, ...],
+        int,
+    ],
     Awaitable[ExploredColumnValues],
 ]
 Executor = Callable[[ValidatedQueryPlan], Awaitable[DeterministicExecutionResult]]
@@ -180,9 +189,19 @@ def _validate_explored_filters(
     selection: EnumeratedPlanSelection,
     explored: tuple[ExploredColumnValues, ...],
 ) -> None:
+    """Valida solo filtros categóricos EQ/IN que RF-205 manda observar.
+
+    Comparaciones textuales como NE no usan el diccionario categórico y no
+    deben consumir reparaciones ni bloquear una consulta verificable.
+    """
+
     allowed = {item.column_index: {_fold_text(value) for value in item.values} for item in explored}
     for item in selection.filters:
-        if item.value_type is not ScalarType.TEXT or not item.values:
+        if (
+            item.value_type is not ScalarType.TEXT
+            or item.operator not in {FilterOperator.EQ, FilterOperator.IN}
+            or not item.values
+        ):
             continue
         values = allowed.get(item.column_index)
         if values is None:
@@ -297,7 +316,78 @@ def _unsupported_question(question: str) -> bool:
     medical_advice = "tratamiento medico" in normalized and (
         "debe recibir" in normalized or "diagnostico" in normalized
     )
-    return bool(exact_prediction or real_time or personal_rows or medical_advice)
+    strong_causal_attribution = _requests_strong_causal_attribution(normalized)
+    social_media_sentiment_analysis = _requests_social_media_sentiment_analysis(normalized)
+    return bool(
+        exact_prediction
+        or real_time
+        or personal_rows
+        or medical_advice
+        or strong_causal_attribution
+        or social_media_sentiment_analysis
+    )
+
+
+def _requests_strong_causal_attribution(normalized: str) -> bool:
+    """Detecta preguntas que exigen atribución causal fuerte o exclusiva —
+    una capacidad analítica que un catálogo estructurado descriptivo no
+    puede demostrar sin un diseño causal (RF-205/T-617B-C3). Genérico por
+    capacidad, no por tema: nunca se ancla a un dataset, `case_id` ni al
+    texto completo de una pregunta concreta.
+
+    No basta con que aparezcan "causa", "efecto" o "relación" sueltos —
+    exige un verbo causal explícito combinado con una marca de exclusividad
+    en la misma cláusula (p. ej. "causó ... por sí sola"), o una expresión
+    de atribución única/exclusiva por sí misma (p. ej. "única causa",
+    "responsable exclusivo de", "fue la única causa"). Una asociación,
+    comparación o correlación descriptiva sin esa exclusividad explícita no
+    activa esta regla.
+    """
+
+    causal_verb_with_exclusivity = re.search(
+        r"\b(causo|causaron|provoco|provocaron|origino|originaron)\b"
+        r"[^.?!]{0,40}\bpor si (sola|solo)\b"
+        r"|\bpor si (sola|solo)\b[^.?!]{0,40}"
+        r"\b(causo|causaron|provoco|provocaron|origino|originaron)\b",
+        normalized,
+    )
+    exclusive_attribution_phrase = re.search(
+        r"\b(unic[oa]|exclusiv[oa])\s+(causa|responsable|factor|explicacion)\b"
+        r"|\bresponsable\s+(unic[oa]|exclusiv[oa])(\s+de)?\b"
+        r"|\bcausa\s+(exclusiva|unica|determinante)\b"
+        r"|\bfue\s+la\s+unica\s+causa\b"
+        r"|\batribu(ible|ye|yo)\s+(unicamente|exclusivamente)\b",
+        normalized,
+    )
+    return bool(causal_verb_with_exclusivity or exclusive_attribution_phrase)
+
+
+def _requests_social_media_sentiment_analysis(normalized: str) -> bool:
+    """Detecta preguntas de polarización, sentimiento, opinión o análisis
+    discursivo de ciudadanía ligadas explícitamente a redes sociales,
+    publicaciones o comentarios digitales — capacidad de NLP/análisis de
+    discurso no estructurado que el catálogo estructurado no incorpora
+    (RF-205/T-617B-C3). Genérico por capacidad: exige la combinación de un
+    término de análisis de opinión/sentimiento CON un término de medio
+    digital/redes en la misma cláusula; ninguno de los dos por separado
+    activa la regla. "red vial" u otras redes de infraestructura no son
+    redes sociales, y "social" fuera de ese contexto (p. ej. "gasto
+    social") tampoco.
+    """
+
+    social_media_terms = (
+        r"(redes sociales|publicaciones digitales|publicaciones en redes"
+        r"|comentarios digitales|comentarios en redes|discurso digital"
+        r"|debate digital)"
+    )
+    sentiment_terms = r"(polarizacion|polarizada|polarizado|sentimiento|opinion|postura|percepcion)"
+    return bool(
+        re.search(
+            rf"\b{sentiment_terms}\b[^.?!]{{0,60}}\b{social_media_terms}\b"
+            rf"|\b{social_media_terms}\b[^.?!]{{0,60}}\b{sentiment_terms}\b",
+            normalized,
+        )
+    )
 
 
 async def run_deterministic_agent(
@@ -358,6 +448,21 @@ async def run_deterministic_agent(
         if is_cancelled is not None and is_cancelled():
             raise DeterministicRunCancelled("corrida cancelada")
         elapsed_ms = round((time.monotonic() - started) * 1000)
+        # T-617B-C2 (RF-205/RF-211): evidencia elegible por calidad puede
+        # seguir siendo ajena a la intención de la pregunta. Reutiliza la
+        # misma señal estructurada ya aprobada en T-617C (RF-212) que
+        # clasifica cada columna fuente de un claim frente a los tokens de
+        # la intención — sin heurísticas nuevas, sin `case_id`/`dataset_id`,
+        # sin juicio de LLM.
+        claims_materially_relevant = True
+        if execution is not None and execution.claims.claims:
+            requested_tokens = intent_relevance_tokens(intent.topic, intent.administrative_terms)
+            claims_materially_relevant = any(
+                claim_is_relevant_to_narrative(
+                    getattr(claim, "public_columns", ()), requested_tokens=requested_tokens
+                )
+                for claim in execution.claims.claims
+            )
         snapshot = SupervisorSnapshot(
             candidates=tuple(candidates),
             current_candidate_index=current,
@@ -371,11 +476,15 @@ async def run_deterministic_agent(
                 execution is not None and execution.quality.eligibility_status == "eligible"
             ),
             claims_available=execution is not None and bool(execution.claims.claims),
+            claims_materially_relevant=claims_materially_relevant,
+            # T-617B-C2 (corrección R3): `textual_result_available` señala
+            # exclusivamente hechos textuales ACEPTADOS. Un rechazo no es un
+            # resultado disponible para persistir — mezclarlos permitía que
+            # un rechazo textual puro disfrazara de "hecho pertinente" la
+            # persistencia de un claim cuantitativo irrelevante. `textual_
+            # rejected` (abajo) es la señal independiente para rechazos.
             textual_result_available=execution is not None
-            and bool(
-                getattr(execution, "textual_facts", ())
-                or getattr(execution, "textual_rejections", ())
-            ),
+            and bool(getattr(execution, "textual_facts", ())),
             textual_rejected=execution is not None
             and bool(getattr(execution, "textual_rejections", ())),
             synthesis_deferred=defer_synthesis_until_persisted,
@@ -563,8 +672,17 @@ async def run_deterministic_agent(
         if transition.node is SupervisorNode.EXPLORE_VALUE:
             assert profile is not None
             assert selection is not None
+            # RNF-002: el límite es por llamada T4 real, no por transición.
+            # El adaptador recibe únicamente el saldo para que una búsqueda
+            # con varias variantes nunca pueda rebasar el presupuesto.
+            remaining_explorations = limits.max_explorations - explorations
             try:
-                item = await dependencies.explore(profile, selection, explored)
+                item = await dependencies.explore(
+                    profile,
+                    selection,
+                    explored,
+                    remaining_explorations,
+                )
             except (LookupError, ValueError):
                 assert current is not None
                 _replace_status(candidates, current, CandidateStatus.REJECTED)
@@ -610,17 +728,23 @@ async def run_deterministic_agent(
             raise AssertionError("execute ya deriva claims de forma determinista")
         if transition.node is SupervisorNode.SYNTHESIZE:
             assert execution is not None
-            try:
-                synthesis = await dependencies.synthesize(intent, execution.claims)
-                llm_calls += 1
-            except LLMProviderError:
-                llm_calls += 1
+            if llm_calls >= limits.max_llm_calls:
                 synthesis = _deterministic_synthesis(execution.claims, intent)
+            else:
+                try:
+                    synthesis = await dependencies.synthesize(intent, execution.claims)
+                    llm_calls += 1
+                except LLMProviderError:
+                    llm_calls += 1
+                    synthesis = _deterministic_synthesis(execution.claims, intent)
             try:
                 validate_grounded_synthesis(synthesis, execution.claims.claims)
             except ValueError:
                 synthesis = _deterministic_synthesis(execution.claims, intent)
-                validate_grounded_synthesis(synthesis, execution.claims.claims)
+                try:
+                    validate_grounded_synthesis(synthesis, execution.claims.claims)
+                except ValueError as exc:
+                    raise SynthesisIntegrityError(str(exc)) from exc
             assert current is not None
             _replace_status(candidates, current, CandidateStatus.ACCEPTED)
             continue

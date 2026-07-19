@@ -137,10 +137,6 @@ def test_blocked_evidence_builds_safe_aggregate_when_possible() -> None:
     ("usage", "reason"),
     [
         (SupervisorUsage(elapsed_ms=75_000), StopReason.DURATION_BUDGET_EXCEEDED),
-        (SupervisorUsage(candidates=5), StopReason.CANDIDATE_BUDGET_EXCEEDED),
-        (SupervisorUsage(queries=4), StopReason.QUERY_BUDGET_EXCEEDED),
-        (SupervisorUsage(plan_repairs=2), StopReason.PLAN_REPAIR_BUDGET_EXCEEDED),
-        (SupervisorUsage(llm_calls=6), StopReason.LLM_BUDGET_EXCEEDED),
     ],
 )
 def test_independent_budgets_force_explicit_abstention(
@@ -149,6 +145,127 @@ def test_independent_budgets_force_explicit_abstention(
     transition = decide_next_transition(state(usage=usage))
     assert transition.node is SupervisorNode.ABSTAIN
     assert transition.stop_reason is reason
+
+
+def test_candidate_budget_blocks_only_before_selecting_an_additional_candidate() -> None:
+    at_limit_with_current = state(usage=SupervisorUsage(candidates=5))
+    at_limit_without_current = SupervisorSnapshot(
+        candidates=tuple(
+            CandidateProgress(dataset_index=index, status=CandidateStatus.REJECTED)
+            for index in range(5)
+        )
+        + (CandidateProgress(dataset_index=5),),
+        budgets=SupervisorBudgets(max_candidates=5),
+        usage=SupervisorUsage(candidates=5),
+    )
+
+    assert decide_next_transition(at_limit_with_current).node is SupervisorNode.PROFILE_DATASET
+    blocked = decide_next_transition(at_limit_without_current)
+    assert blocked.node is SupervisorNode.ABSTAIN
+    assert blocked.stop_reason is StopReason.CANDIDATE_BUDGET_EXCEEDED
+
+
+def test_query_budget_blocks_only_a_new_query_not_processing_an_existing_result() -> None:
+    before_query = state(
+        schema_available=True,
+        plan_available=True,
+        plan_valid=True,
+        usage=SupervisorUsage(queries=4),
+    )
+    after_query = before_query.model_copy(
+        update={
+            "query_executed": True,
+            "evidence_eligible": True,
+            "claims_available": True,
+        }
+    )
+
+    blocked = decide_next_transition(before_query)
+    assert blocked.stop_reason is StopReason.QUERY_BUDGET_EXCEEDED
+    assert decide_next_transition(after_query).node is SupervisorNode.SYNTHESIZE
+
+
+def test_repair_budget_moves_to_next_candidate_before_final_abstention() -> None:
+    with_unseen = state(
+        candidates=(candidate(), CandidateProgress(dataset_index=1)),
+        schema_available=True,
+        plan_available=True,
+        plan_error_correctable=True,
+        usage=SupervisorUsage(plan_repairs=2),
+    )
+    without_unseen = with_unseen.model_copy(update={"candidates": (candidate(),)})
+
+    assert decide_next_transition(with_unseen).node is SupervisorNode.NEXT_CANDIDATE
+    blocked = decide_next_transition(without_unseen)
+    assert blocked.node is SupervisorNode.ABSTAIN
+    assert blocked.stop_reason is StopReason.PLAN_REPAIR_BUDGET_EXCEEDED
+
+
+def test_llm_budget_blocks_only_a_new_plan_not_deterministic_postprocessing() -> None:
+    before_plan = state(
+        schema_available=True,
+        usage=SupervisorUsage(llm_calls=6),
+    )
+    after_plan = before_plan.model_copy(
+        update={
+            "plan_available": True,
+            "plan_valid": True,
+        }
+    )
+
+    blocked = decide_next_transition(before_plan)
+    assert blocked.stop_reason is StopReason.LLM_BUDGET_EXCEEDED
+    assert decide_next_transition(after_plan).node is SupervisorNode.EXECUTE_QUERY
+
+
+def test_claims_not_materially_relevant_tries_next_candidate_before_abstaining() -> None:
+    """T-617B-C2: evidencia elegible con claims disponibles pero ninguno
+    pertinente a la intención no debe sintetizarse. Con un candidato sin
+    intentar, intenta ese primero, igual que `evidence_eligible=False`."""
+
+    snapshot = state(
+        candidates=(candidate(), CandidateProgress(dataset_index=1)),
+        schema_available=True,
+        plan_available=True,
+        plan_valid=True,
+        query_executed=True,
+        evidence_eligible=True,
+        claims_available=True,
+        claims_materially_relevant=False,
+    )
+    transition = decide_next_transition(snapshot)
+    assert transition.node is SupervisorNode.NEXT_CANDIDATE
+    assert "pertinente" in transition.reason
+
+
+def test_claims_not_materially_relevant_abstains_when_no_candidates_remain() -> None:
+    snapshot = state(
+        schema_available=True,
+        plan_available=True,
+        plan_valid=True,
+        query_executed=True,
+        evidence_eligible=True,
+        claims_available=True,
+        claims_materially_relevant=False,
+    )
+    transition = decide_next_transition(snapshot)
+    assert transition.node is SupervisorNode.ABSTAIN
+    assert transition.stop_reason is StopReason.CLAIMS_NOT_AVAILABLE
+
+
+def test_claims_materially_relevant_defaults_true_and_preserves_synthesize_path() -> None:
+    """Regresión: sin fijar el nuevo campo explícitamente, el camino feliz
+    existente (claims disponibles y pertinentes) sigue llegando a SYNTHESIZE."""
+
+    snapshot = state(
+        schema_available=True,
+        plan_available=True,
+        plan_valid=True,
+        query_executed=True,
+        evidence_eligible=True,
+        claims_available=True,
+    )
+    assert decide_next_transition(snapshot).node is SupervisorNode.SYNTHESIZE
 
 
 def test_exploration_budget_moves_to_next_candidate_not_global_finish() -> None:

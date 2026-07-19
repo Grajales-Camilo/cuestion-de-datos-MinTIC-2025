@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import uuid
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -62,6 +63,151 @@ def test_config_snapshot_registers_deterministic_textual_facts_enabled(monkeypat
 
     assert snapshot["deterministic_textual_facts_enabled"] is True
     assert snapshot["eval_seed"] == 601000
+
+
+def test_failed_run_snapshot_preserves_persisted_usage_without_final_answer() -> None:
+    snapshot = run_module._final_snapshot_from_run(
+        SimpleNamespace(
+            status="failed",
+            terminal_error_code="STRUCTURED_OUTPUT_INVALID",
+            final_answer=None,
+            steps_used=7,
+            latency_ms=18062,
+            input_tokens=11305,
+            output_tokens=2608,
+            estimated_cost_usd=0.009912,
+        )
+    )
+
+    assert snapshot == {
+        "status": "failed",
+        "usage": {
+            "steps_used": 7,
+            "latency_ms": 18062,
+            "input_tokens": 11305,
+            "output_tokens": 2608,
+            "estimated_cost_usd": 0.009912,
+            "termination_reason": "STRUCTURED_OUTPUT_INVALID",
+        },
+    }
+
+
+def test_final_snapshot_preserves_existing_completed_answer_without_technical_overlay() -> None:
+    final_answer = {
+        "status": "completed",
+        "summary": "Respuesta pública persistida.",
+        "evidence": [{"dataset_id": "abcd-1234"}],
+        "claims": [{"display_value": "42"}],
+        "usage": {"estimated_cost_usd": 0.001},
+    }
+    snapshot = run_module._final_snapshot_from_run(
+        SimpleNamespace(
+            status="failed",
+            terminal_error_code="INTERNAL",
+            final_answer=final_answer,
+            estimated_cost_usd=Decimal("9.99"),
+        )
+    )
+
+    assert snapshot == final_answer
+    assert snapshot is not final_answer
+
+
+def test_final_snapshot_from_none_is_safe_and_does_not_fabricate_public_answer() -> None:
+    snapshot = run_module._final_snapshot_from_run(None)
+
+    assert snapshot == {
+        "status": "failed",
+        "usage": {
+            "steps_used": None,
+            "latency_ms": None,
+            "input_tokens": None,
+            "output_tokens": None,
+            "estimated_cost_usd": None,
+            "termination_reason": None,
+        },
+    }
+    assert "summary" not in snapshot
+    assert "narrative" not in snapshot
+    assert "evidence" not in snapshot
+    assert "claims" not in snapshot
+
+
+def test_structured_output_invalid_decimal_cost_reaches_case_metrics_and_aggregate() -> None:
+    case = GoldenCase(
+        "case-structured-output-invalid",
+        "positive",
+        "pregunta privada que no debe persistirse en métricas",
+        ("abcd-1234",),
+        (),
+        2,
+        "n",
+    )
+    final = run_module._final_snapshot_from_run(
+        SimpleNamespace(
+            status="failed",
+            terminal_error_code="STRUCTURED_OUTPUT_INVALID",
+            final_answer=None,
+            steps_used=7,
+            latency_ms=18062,
+            input_tokens=11305,
+            output_tokens=2608,
+            estimated_cost_usd=Decimal("0.009912"),
+        )
+    )
+    assessment = run_module.CaseAssessment(
+        False,
+        True,
+        False,
+        ("abcd-1234",),
+        (),
+        "síntesis inválida",
+    )
+    observations = (
+        run_module.StageObservation(
+            node="synthesize",
+            detail={"usage": {"llm_calls": 3, "queries": 1}},
+            output={},
+        ),
+    )
+    diagnostics = run_module.build_stage_diagnostics(
+        case,
+        final,
+        assessment,
+        observations,
+        provider_error_code="STRUCTURED_OUTPUT_INVALID",
+    )
+    claims_integrity = run_module.evaluate_claims_integrity(final)
+    outcome = run_module._build_case_outcome(
+        case,
+        assessment,
+        diagnostics,
+        claims_integrity,
+        observations,
+    )
+    aggregate = run_module.aggregate_metrics([outcome])
+    persisted = run_module._case_result_model(
+        eval_run_id=uuid.uuid4(),
+        case_db_id=uuid.uuid4(),
+        agent_run_id=uuid.uuid4(),
+        final=final,
+        assessment=assessment,
+        stage_diagnostics=diagnostics,
+        claims_integrity=claims_integrity,
+        error_code="STRUCTURED_OUTPUT_INVALID",
+    )
+
+    assert final["usage"]["estimated_cost_usd"] == Decimal("0.009912")
+    assert diagnostics["estimated_cost_usd"] == Decimal("0.009912")
+    assert diagnostics["failure_owner"] == "agent"
+    assert diagnostics["failure_code"] == "structured_output_invalid"
+    assert outcome.cost_usd == Decimal("0.009912")
+    assert outcome.infrastructure_failure is False
+    assert aggregate.avg_cost_usd == Decimal("0.009912")
+    assert aggregate.infrastructure_failure_count == 0
+    assert persisted.metrics["usage"]["estimated_cost_usd"] == Decimal("0.009912")
+    assert persisted.metrics["stage_diagnostics"]["estimated_cost_usd"] == Decimal("0.009912")
+    assert case.question not in repr(persisted.metrics)
 
 
 @pytest.mark.parametrize(

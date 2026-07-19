@@ -573,7 +573,7 @@ async def test_h1_positive_path_completes_with_evidence_quality_claims_and_singl
     async def plan(intent, context, explored, validation_error) -> EnumeratedPlanSelection:
         return _sum_selection(metric_column_index=1)
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         raise AssertionError("historia 1 no debe requerir exploración")
 
     async def execute(validated):
@@ -624,6 +624,11 @@ async def test_h1_positive_path_completes_with_evidence_quality_claims_and_singl
         "synthesize",
         "complete",
     ]
+    execute_step = next(step for step in steps if step.node == "execute_query")
+    assert execute_step.tool_output_summary["ok"] is True
+    assert execute_step.tool_output_summary["rows"] == [{"metric_sum_1": "1250.50"}]
+    assert execute_step.tool_input["dataset_id"] == dataset_id
+    assert execute_step.latency_ms is not None
     events = await _load_events(engine, run_id)
     terminal_events = [event for event in events if event.event_type in ("answer", "error")]
     assert len(terminal_events) == 1
@@ -965,7 +970,7 @@ async def test_h2_first_candidate_rejected_second_candidate_completes_without_ea
     async def plan(intent, context, explored, validation_error) -> EnumeratedPlanSelection:
         return _sum_selection(metric_column_index=1)
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         raise AssertionError("historia 2 no debe requerir exploración")
 
     async def execute(validated):
@@ -1040,7 +1045,7 @@ async def test_h3_first_invalid_plan_is_typed_and_repaired_within_budget_no_inva
         # segundo intento: plan corregido, columna real (1 = monto)
         return _sum_selection(metric_column_index=1)
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         raise AssertionError("historia 3 no debe requerir exploración")
 
     async def execute(validated):
@@ -1131,7 +1136,7 @@ async def test_h4_single_pending_categorical_column_is_resolved_without_repeated
             )
         return _sum_selection(metric_column_index=1, filters=filters)
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         explore_calls.append(selection.filters[0].values[0])
         return ExploredColumnValues(
             column_index=0,
@@ -1208,7 +1213,7 @@ async def test_h5a_high_pii_dataset_is_rejected_before_any_query(
             needs_value_exploration=False,
         )
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         raise AssertionError("historia 5a no debe requerir exploración")
 
     async def execute(validated):
@@ -1280,7 +1285,7 @@ async def test_h5b_medium_pii_with_insufficient_aggregation_is_rejected(
             needs_value_exploration=False,
         )
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         raise AssertionError("historia 5b no debe requerir exploración")
 
     async def execute(validated):
@@ -1358,7 +1363,7 @@ async def test_h5c_medium_pii_with_sufficient_aggregation_is_permitted(
             needs_value_exploration=False,
         )
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         raise AssertionError("historia 5c no debe requerir exploración")
 
     async def execute(validated):
@@ -1421,7 +1426,7 @@ async def test_h6_no_candidates_abstains_honestly_without_fabricated_evidence(
     async def plan(intent, context, explored, validation_error) -> EnumeratedPlanSelection:
         raise AssertionError("historia 6 no debe planificar")
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         raise AssertionError("historia 6 no debe explorar")
 
     async def execute(validated):
@@ -1489,7 +1494,7 @@ async def test_h7a_synthesis_provider_failure_falls_back_to_deterministic_synthe
     async def plan(intent, context, explored, validation_error) -> EnumeratedPlanSelection:
         return _sum_selection(metric_column_index=1)
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         raise AssertionError("historia 7a no debe requerir exploración")
 
     async def execute(validated):
@@ -1542,7 +1547,7 @@ async def test_h7b_provider_failure_outside_synthesis_terminates_controlled(
     async def plan(intent, context, explored, validation_error) -> EnumeratedPlanSelection:
         raise AssertionError("historia 7b no debe planificar")
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         raise AssertionError("historia 7b no debe explorar")
 
     async def execute(validated):
@@ -1571,6 +1576,82 @@ async def test_h7b_provider_failure_outside_synthesis_terminates_controlled(
     run = await _load_run(engine, run_id)
     assert run.status == "failed"
     assert run.terminal_error_code == "LLM_PROVIDER_ERROR"
+
+    events = await _load_events(engine, run_id)
+    terminal_events = [event for event in events if event.event_type in ("answer", "error")]
+    assert len(terminal_events) == 1
+    assert terminal_events[0].event_type == "error"
+
+
+async def test_h7c_irreparable_synthesis_is_agent_failure_with_persisted_telemetry(
+    engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
+) -> None:
+    """RNF-003 bloquea la salida, pero no borra la telemetría de la corrida."""
+
+    dataset_id = _fresh_dataset_id()
+    columns = _CATEGORIA_MONTO_COLUMNS
+    await _seed_dataset(
+        engine, created, dataset_id=dataset_id, columns=(("categoria", "Text"), ("monto", "Number"))
+    )
+    run_id = await _seed_run(
+        engine, created, question=f"{QUESTION_PREFIX}historia 7c: síntesis inválida"
+    )
+    executor, _calls = _executor([{"metric_sum_1": "88.0"}])
+
+    async def extract_intent(question: str) -> IntentExtraction:
+        return IntentExtraction(topic="monto observado", operation=QueryOperation.SUM)
+
+    async def retrieve(intent: IntentExtraction) -> MultiQueryRetrievalResult:
+        return MultiQueryRetrievalResult(queries=("prueba",), candidates=(_candidate(dataset_id),))
+
+    async def profile(dataset: str) -> ProfiledCandidate:
+        return _profile(dataset_id, columns)
+
+    async def plan(intent, context, explored, validation_error) -> EnumeratedPlanSelection:
+        return _sum_selection(metric_column_index=1)
+
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
+        raise AssertionError("historia 7c no debe explorar")
+
+    async def execute(validated):
+        return await execute_validated_plan(validated, executor=executor, metadata=_metadata())
+
+    async def synthesize(intent, claims) -> GroundedSynthesis:
+        return GroundedSynthesis(answer="El monto observado fue 16.", cited_claim_indexes=(0,))
+
+    dependencies = DeterministicRuntimeDependencies(
+        extract_intent=extract_intent,
+        retrieve=retrieve,
+        profile=profile,
+        plan=plan,
+        explore=explore,
+        execute=execute,
+        synthesize=synthesize,
+    )
+    _patch_runtime(monkeypatch, dependencies)
+    monkeypatch.setattr(
+        "app.agent.deterministic_runtime._deterministic_synthesis",
+        lambda claims, intent: GroundedSynthesis(
+            answer="El monto observado fue 16.",
+            cited_claim_indexes=(0,),
+        ),
+    )
+
+    result = await execute_deterministic_agent_run_async(settings(), run_id)
+
+    assert result["terminal_error"]["error"]["code"] == "STRUCTURED_OUTPUT_INVALID"
+    assert "cifras huérfanas" in result["terminal_error"]["error"]["message_dev"]
+    run = await _load_run(engine, run_id)
+    assert run.status == "failed"
+    assert run.terminal_error_code == "STRUCTURED_OUTPUT_INVALID"
+    assert run.final_answer is None
+    assert run.steps_used is not None and run.steps_used > 0
+    assert run.latency_ms is not None
+    assert run.input_tokens == 0
+    assert run.output_tokens == 0
+    assert float(run.estimated_cost_usd) == 0.0
+    assert await _count_evidence(engine, run_id) == 0
+    assert await _count_claims(engine, run_id) == 0
 
     events = await _load_events(engine, run_id)
     terminal_events = [event for event in events if event.event_type in ("answer", "error")]
@@ -1607,7 +1688,7 @@ async def test_h8_cooperative_cancellation_leaves_no_completed_or_double_termina
     async def plan(intent, context, explored, validation_error) -> EnumeratedPlanSelection:
         raise AssertionError("la corrida debe cancelarse antes de planificar")
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         raise AssertionError("historia 8 no debe explorar")
 
     async def execute(validated):
@@ -1651,14 +1732,10 @@ async def test_h8_cooperative_cancellation_leaves_no_completed_or_double_termina
 
 # --- Historia 9: presupuesto de candidatos ------------------------------------
 #
-# CORRECCIÓN 3 (ronda de revisión): el bloque siguiente documenta un
-# DEFECTO/AMBIGÜEDAD PRODUCTIVA PENDIENTE, no una protección correcta. No se
-# modifica `deterministic_runtime.py` ni `deterministic_graph.py` en esta
-# ronda (fuera de alcance; requiere autorización explícita del coordinador
-# antes de T-614, research.md §25). Se conserva una prueba que reproduce el
-# comportamiento ACTUAL y se añade una prueba `xfail(strict=True)` que
-# expresa la semántica ESPERADA (ocho candidatos permitidos implican hasta
-# ocho candidatos perfilados) y que falla contra el comportamiento actual.
+# T-617B-C6 corrige el defecto documentado previamente: el presupuesto se
+# comprueba antes de seleccionar un candidato adicional, no después de
+# seleccionar el último permitido. Ocho candidatos permitidos implican hasta
+# ocho candidatos procesados por completo.
 
 
 async def _run_h9_candidate_budget_scenario(
@@ -1693,7 +1770,7 @@ async def _run_h9_candidate_budget_scenario(
     async def plan(intent, context, explored, validation_error) -> EnumeratedPlanSelection:
         return _sum_selection(metric_column_index=1)
 
-    async def explore(profile_arg, selection, explored) -> ExploredColumnValues:
+    async def explore(profile_arg, selection, explored, max_tool_calls) -> ExploredColumnValues:
         raise AssertionError("historia 9 no debe requerir exploración")
 
     async def execute(validated):
@@ -1720,24 +1797,10 @@ async def _run_h9_candidate_budget_scenario(
     return result, profiled, dataset_ids, step_events, run_id
 
 
-async def test_h9_candidate_budget_off_by_one_defect_documents_current_behavior(
+async def test_h9_candidate_budget_allows_exactly_eight_candidates(
     engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
 ) -> None:
-    """DEFECTO/AMBIGÜEDAD PRODUCTIVA PENDIENTE — documenta, no certifica.
-
-    `usage.candidates` (deterministic_graph.py `SupervisorSnapshot`/
-    `_budget_stop`) cuenta un candidato como "gastado" en cuanto pasa a
-    SELECTED, no cuando termina de procesarse. Con `max_candidates=8`
-    (hardcodeado en `execute_deterministic_agent_run_async`), eso significa
-    que el 8º candidato se selecciona pero el presupuesto ya aparece
-    agotado en la siguiente iteración, así que NUNCA llega a perfilarse:
-    de ocho candidatos nominalmente permitidos, solo siete se perfilan y
-    rechazan por completo. No está autorizado concluir que esto es
-    normativamente correcto (puede ser un off-by-one productivo). La
-    corrección de runtime, si procede, es una tarea posterior autorizada
-    por el coordinador — no se toca aquí. Ver también
-    `test_h9_expected_semantics_eight_candidate_budget_should_allow_profiling_eight`.
-    """
+    """El límite nominal permite procesar ocho candidatos, no sólo siete."""
 
     result, profiled, dataset_ids, step_events, run_id = await _run_h9_candidate_budget_scenario(
         engine, monkeypatch, created
@@ -1746,11 +1809,8 @@ async def test_h9_candidate_budget_off_by_one_defect_documents_current_behavior(
     final_answer = result["final_answer"]
     assert final_answer["status"] == "no_evidence"
     assert final_answer["usage"]["termination_reason"] == "CANDIDATE_BUDGET_EXCEEDED"
-    assert profiled == dataset_ids[:7], (
-        "comportamiento ACTUAL (defecto/ambigüedad pendiente): el 8º candidato "
-        "se selecciona pero nunca se perfila; ver docstring de esta prueba"
-    )
-    assert len(profiled) == 7
+    assert profiled == dataset_ids
+    assert len(profiled) == 8
 
     _assert_budgets_respected(step_events)
     last_usage = step_events[-1].payload["detail"]["usage"]
@@ -1759,35 +1819,6 @@ async def test_h9_candidate_budget_off_by_one_defect_documents_current_behavior(
 
     assert await _count_evidence(engine, run_id) == 0
     assert await _count_claims(engine, run_id) == 0
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Defecto/ambigüedad productiva pendiente (Corrección 3, ronda de "
-        "revisión T-611/T-612). Semántica ESPERADA: max_candidates=8 debería "
-        "permitir perfilar hasta 8 candidatos antes de abstenerse. "
-        "Comportamiento ACTUAL: `usage.candidates` cuenta un candidato como "
-        "gastado en cuanto se SELECCIONA (no cuando termina de procesarse), "
-        "así que el 8º candidato se selecciona pero nunca se perfila — solo "
-        "7 de 8 llegan a completarse. No se corrige en esta ronda: "
-        "`deterministic_runtime.py`/`deterministic_graph.py` están fuera de "
-        "alcance sin autorización explícita del coordinador (research.md "
-        "§25); queda como trabajo pendiente antes de usar este "
-        "comportamiento para T-614. Esta prueba debe pasar a XPASS (y "
-        "fallar por `strict=True`, señal correcta de que hay que quitar el "
-        "marcador) el día que se corrija el runtime."
-    ),
-)
-async def test_h9_expected_semantics_eight_candidate_budget_should_allow_profiling_eight(
-    engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
-) -> None:
-    _result, profiled, dataset_ids, _step_events, _run_id = await _run_h9_candidate_budget_scenario(
-        engine, monkeypatch, created
-    )
-
-    assert profiled == dataset_ids
-    assert len(profiled) == 8
 
 
 # --- Historia 10: ensamblaje productivo real (Corrección 2) -----------------

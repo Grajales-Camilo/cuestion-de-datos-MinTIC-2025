@@ -363,7 +363,11 @@ def build_real_runtime_dependencies(
             return selection
         return EnumeratedPlanSelection.model_validate(selection.model_dump())
 
-    async def explore(profile, selection, explored):
+    async def explore(profile, selection, explored, max_tool_calls):
+        # RNF-002: `explorar_valores` puede probar hasta tres variantes, pero
+        # cada una es una llamada real y debe respetar el saldo del supervisor.
+        if max_tool_calls <= 0:
+            raise ValueError("no queda presupuesto para explorar valores")
         explored_indexes = {item.column_index for item in explored}
         target = next(
             (
@@ -387,7 +391,7 @@ def build_real_runtime_dependencies(
         )
         terms = tuple(
             dict.fromkeys((proposed, plain, *(part for part in plain.split() if len(part) >= 4)))
-        )[:3]
+        )[: min(3, max_tool_calls)]
         output: dict[str, Any] = {"ok": True, "values": ()}
         search_term = proposed
         calls = 0

@@ -22,6 +22,7 @@ from eval.gate import (
     aggregate_metrics,
     classify_run_complexity,
     evaluate_claims_integrity,
+    evaluate_directed_gate,
     evaluate_full_gate,
     evaluate_smoke_gate,
     percentile,
@@ -1180,6 +1181,61 @@ def test_validate_gate_selection_smoke_rejects_missing_and_duplicate() -> None:
 
 def test_validate_gate_selection_smoke_accepts_exactly_ten_canonical() -> None:
     validate_gate_selection(_smoke_canonical_cases(), "smoke")  # no lanza
+
+
+# --- T-617B-C2: modo `directed`, validación dirigida de casos concretos ------
+
+
+def test_validate_gate_selection_directed_rejects_empty_selection() -> None:
+    with pytest.raises(RuntimeError, match="selección vacía"):
+        validate_gate_selection([], "directed")
+
+
+def test_validate_gate_selection_directed_rejects_duplicates() -> None:
+    cases = _ns_cases([("pilot-044-negativo-causalidad-politica", "negative")])
+    cases.append(cases[0])
+    with pytest.raises(RuntimeError, match="duplicados"):
+        validate_gate_selection(cases, "directed")
+
+
+def test_validate_gate_selection_directed_accepts_arbitrary_subset() -> None:
+    """Un subconjunto arbitrario (ni 50 ni los 10 canónicos de smoke) que
+    `full`/`smoke` rechazarían es válido en modo `directed`."""
+
+    cases = _ns_cases(
+        [
+            ("pilot-044-negativo-causalidad-politica", "negative"),
+            ("pilot-048-negativo-ranking-corrupcion", "negative"),
+        ]
+    )
+    validate_gate_selection(cases, "directed")  # no lanza
+
+
+def test_evaluate_directed_gate_never_blocks() -> None:
+    """`directed` no certifica ninguna condición normativa: metrics vacío,
+    passed=True siempre (no hay condición de fallo por diseño)."""
+
+    verdict = evaluate_directed_gate()
+    assert verdict.mode == "directed"
+    assert verdict.passed is True
+    assert verdict.metrics == ()
+    assert verdict.blocking_reasons == ()
+
+
+def test_gate_summary_lines_directed_has_no_pass_fail_verdict() -> None:
+    """El reporte de modo `directed` no debe imprimir 'Resultado: PASS/FAIL'
+    (sección de puerta normativa): sólo conteos informativos por caso."""
+
+    outcomes = [_outcome("pilot-044-negativo-causalidad-politica", "negative", False)]
+    aggregate = aggregate_metrics(outcomes)
+    verdict = evaluate_directed_gate()
+
+    lines = _gate_summary_lines(aggregate, verdict)
+    text = "\n".join(lines)
+    assert "Resultado: PASS" not in text
+    assert "Resultado: FAIL" not in text
+    assert "| Métrica | Umbral | Observado |" not in text
+    assert "sin veredicto de puerta" in text
 
 
 # --- Persistencia y reportes --------------------------------------------------

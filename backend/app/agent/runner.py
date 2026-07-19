@@ -40,11 +40,13 @@ from app.agent.deterministic_dependencies import (
 )
 from app.agent.deterministic_graph import SupervisorBudgets
 from app.agent.deterministic_pipeline import (
+    DeterministicExecutionError,
     DeterministicPersistenceCancelled,
     persist_deterministic_execution,
 )
 from app.agent.deterministic_runtime import (
     DeterministicRunCancelled,
+    SynthesisIntegrityError,
     run_deterministic_agent,
 )
 from app.agent.durability import get_run, touch_run_heartbeat, write_terminal_event_once
@@ -61,7 +63,9 @@ from app.agent.persistence import (
     load_allowed_grounded_facts,
     load_dataset_evidence_metadata,
     persist_final_answer,
+    persist_run_telemetry,
     record_step_and_event,
+    update_step_tool_result,
 )
 from app.agent.toy_graph import NODES, build_toy_graph
 from app.config import Settings
@@ -351,6 +355,8 @@ async def execute_deterministic_agent_run_async(
     cancel_event = cancel_event or threading.Event()
     engine = create_app_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
     started = time.monotonic()
+    llm_usage = RuntimeLLMUsage()
+    observed_steps = 0
     try:
         run = await get_run(engine, run_id)
         if run is None:
@@ -362,8 +368,6 @@ async def execute_deterministic_agent_run_async(
             google_api_key=_secret_value(settings.google_api_key),
         )
         async with httpx.AsyncClient(base_url=SOCRATA_RESOURCE_BASE_URL) as http_client:
-            llm_usage = RuntimeLLMUsage()
-            observed_steps = 0
             retrieved_dataset_ids: list[str] = []
             attempted_dataset_ids: list[str] = []
 
@@ -416,6 +420,38 @@ async def execute_deterministic_agent_run_async(
                 return retrieval
 
             dependencies = dataclasses.replace(dependencies, retrieve=retrieve_with_diagnostics)
+            original_execute = dependencies.execute
+
+            async def execute_with_observability(validated):
+                tool_started = time.monotonic()
+                tool_input = {
+                    "dataset_id": validated.dataset_id,
+                    "plan_hash": validated.source_plan_hash,
+                }
+                try:
+                    execution = await original_execute(validated)
+                except DeterministicExecutionError as exc:
+                    await update_step_tool_result(
+                        engine,
+                        run_id,
+                        step_number=observed_steps,
+                        tool_input=tool_input,
+                        tool_output=exc.tool_output or {},
+                        latency_ms=round((time.monotonic() - tool_started) * 1000),
+                        error=str(exc),
+                    )
+                    raise
+                await update_step_tool_result(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    tool_input=tool_input,
+                    tool_output=execution.tool_output,
+                    latency_ms=round((time.monotonic() - tool_started) * 1000),
+                )
+                return execution
+
+            dependencies = dataclasses.replace(dependencies, execute=execute_with_observability)
             result = await run_deterministic_agent(
                 run.question,
                 dependencies=dependencies,
@@ -658,6 +694,39 @@ async def execute_deterministic_agent_run_async(
         return {"final_answer": final_answer, "runtime": "deterministic"}
     except (DeterministicRunCancelled, DeterministicPersistenceCancelled):
         return {}
+    except SynthesisIntegrityError as exc:
+        latency_ms = round((time.monotonic() - started) * 1000)
+        await persist_run_telemetry(
+            engine,
+            run_id,
+            steps_used=observed_steps,
+            latency_ms=latency_ms,
+            llm_provider=settings.llm_provider,
+            llm_model=settings.llm_model,
+            input_tokens=llm_usage.input_tokens,
+            output_tokens=llm_usage.output_tokens,
+            estimated_cost_usd=llm_usage.estimated_cost_usd,
+        )
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code="STRUCTURED_OUTPUT_INVALID",
+                status="failed",
+                message_user=(
+                    "No fue posible producir una respuesta sin cifras "
+                    "no respaldadas por la evidencia."
+                ),
+                message_dev=str(exc),
+                retryable=False,
+            )
+        ).model_dump()
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status="failed",
+            error_code="STRUCTURED_OUTPUT_INVALID",
+            payload=payload,
+        )
+        return {"terminal_error": payload, "runtime": "deterministic"}
     except (LLMProviderError, LLMConfigurationError) as exc:
         payload = ErrorEnvelope(
             error=ErrorDetail(

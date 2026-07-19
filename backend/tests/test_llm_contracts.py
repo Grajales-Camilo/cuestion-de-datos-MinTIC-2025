@@ -282,6 +282,42 @@ def _entity_intent(entity: str | None) -> IntentExtraction:
     )
 
 
+def _entity_identifier_context() -> EnumeratedPlanningContext:
+    return EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="proj-1234",
+                title="Proyectos APP",
+                publisher="Entidad oficial",
+                columns=(
+                    ColumnOption(
+                        index=0,
+                        field_name="codigo",
+                        display_name="Código",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=1,
+                        field_name="nombre_entidad",
+                        display_name="Nombre entidad",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=2,
+                        field_name="nombre_proyecto",
+                        display_name="Nombre proyecto",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                ),
+            ),
+        )
+    )
+
+
 def test_materialization_rejects_plan_that_omits_explicit_entity_filter() -> None:
     selection = EnumeratedPlanSelection(
         dataset_index=0,
@@ -320,6 +356,55 @@ def test_materialization_accepts_plan_with_equivalent_entity_filter() -> None:
         context=_entity_context(),
     )
     assert plan.filters[0].column.column_index == 0
+
+
+def test_materialization_accepts_specific_entity_identifier_filter() -> None:
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(2,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("PRY00062",),
+            ),
+        ),
+        limit=1,
+    )
+
+    plan = materialize_query_plan(
+        selection,
+        intent=_entity_intent("APP PRY00062"),
+        context=_entity_identifier_context(),
+    )
+
+    assert plan.filters[0].column.column_index == 0
+
+
+def test_identifier_filter_does_not_replace_unrelated_institution_filter() -> None:
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("PRY00062",),
+            ),
+        ),
+        limit=1,
+    )
+
+    with pytest.raises(ValueError, match="entidad solicitada"):
+        materialize_query_plan(
+            selection,
+            intent=_entity_intent("Ministerio de Relaciones Exteriores"),
+            context=_entity_identifier_context(),
+        )
 
 
 def test_materialization_rejects_plan_that_contradicts_entity_filter() -> None:

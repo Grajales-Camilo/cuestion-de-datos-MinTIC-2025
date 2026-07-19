@@ -14,6 +14,7 @@ from app.agent.deterministic_runtime import (
     DeterministicRuntimeDependencies,
     ExploredColumnValues,
     ProfiledCandidate,
+    SynthesisIntegrityError,
     run_deterministic_agent,
 )
 from app.agent.llm_contracts import (
@@ -196,9 +197,9 @@ def _dependencies(
             raise DeterministicExecutionError("dataset no consultable")
         return _execution()
 
-    async def explore(profile, selection, explored) -> ExploredColumnValues:
+    async def explore(profile, selection, explored, max_tool_calls) -> ExploredColumnValues:
         nonlocal explorations
-        del profile, selection, explored
+        del profile, selection, explored, max_tool_calls
         explorations += 1
         if fail_first_exploration and explorations == 1:
             raise ValueError("la columna observada no admite LIKE")
@@ -322,6 +323,17 @@ async def test_runtime_abstains_when_retrieval_has_no_candidates() -> None:
         "¿Qué bus llegará primero en los próximos cinco minutos?",
         "¿Cuál es el nombre, edad y salario de cada servidor público?",
         "¿Qué tratamiento médico debe recibir una persona según su síntoma?",
+        # T-617B-C3 (1): atribución causal exclusiva explícita.
+        "¿Qué política causó por sí sola la reducción de la pobreza en cada barrio de Colombia?",
+        # T-617B-C3 (2): paráfrasis genérica de atribución causal fuerte,
+        # sin repetir "causó ... por sí sola" ni el texto de ningún piloto.
+        "¿Qué intervención fue la única causa del descenso en la tasa de mortalidad infantil?",
+        # T-617B-C3 (3): polarización en redes sociales.
+        "¿Cuál es la polarización de la ciudadanía en redes sociales frente a las políticas "
+        "de educación en Antioquia?",
+        # T-617B-C3 (4): sentimiento ciudadano en publicaciones/comentarios digitales.
+        "¿Cuál es el sentimiento ciudadano expresado en los comentarios digitales sobre la "
+        "reforma tributaria?",
     ),
 )
 async def test_runtime_abstains_early_for_unverifiable_or_sensitive_requests(
@@ -335,6 +347,122 @@ async def test_runtime_abstains_early_for_unverifiable_or_sensitive_requests(
     assert [entry.node for entry in result.trace] == [SupervisorNode.ABSTAIN]
 
 
+# --- T-617B-C3: guard determinista de capacidades analíticas no respaldadas --
+# (causalidad exclusiva, análisis de sentimiento/polarización en redes
+# sociales). Reglas por capacidad, nunca por `case_id`, dataset ni texto
+# literal de un piloto concreto.
+
+
+def _exploding_dependencies() -> DeterministicRuntimeDependencies:
+    """Doble que falla ruidosamente si `extract_intent` o `retrieve` llegan
+    a invocarse. Usado para demostrar que el guard de T-617B-C3 corta el
+    flujo ANTES de esas dos dependencias — cero llamadas LLM, cero
+    candidatos, cero evidencia, cero claims por construcción."""
+
+    async def extract(_question: str) -> IntentExtraction:
+        raise AssertionError("extract_intent no debe invocarse tras el guard de T-617B-C3")
+
+    async def retrieve(_intent: IntentExtraction) -> MultiQueryRetrievalResult:
+        raise AssertionError("retrieve no debe invocarse tras el guard de T-617B-C3")
+
+    async def profile(_dataset_id: str) -> ProfiledCandidate:
+        raise AssertionError("profile no debe invocarse tras el guard de T-617B-C3")
+
+    async def plan(*_args, **_kwargs):
+        raise AssertionError("plan no debe invocarse tras el guard de T-617B-C3")
+
+    async def explore(*_args, **_kwargs):
+        raise AssertionError("explore no debe invocarse tras el guard de T-617B-C3")
+
+    async def execute(*_args, **_kwargs):
+        raise AssertionError("execute no debe invocarse tras el guard de T-617B-C3")
+
+    async def synthesize(*_args, **_kwargs):
+        raise AssertionError("synthesize no debe invocarse tras el guard de T-617B-C3")
+
+    return DeterministicRuntimeDependencies(
+        extract, retrieve, profile, plan, explore, execute, synthesize
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "question",
+    (
+        "¿Qué política causó por sí sola la reducción de la pobreza en cada barrio de Colombia?",
+        "¿Qué intervención fue la única causa del descenso en la tasa de mortalidad infantil?",
+        "¿Cuál es la polarización de la ciudadanía en redes sociales frente a las políticas "
+        "de educación en Antioquia?",
+        "¿Cuál es el sentimiento ciudadano expresado en los comentarios digitales sobre la "
+        "reforma tributaria?",
+    ),
+)
+async def test_unsupported_capability_guard_never_invokes_dependencies(question: str) -> None:
+    """T-617B-C3 (10): dobles explosivos prueban que ni `extract_intent` ni
+    `retrieve` (ni ningún paso posterior) se invocan cuando el guard
+    dispara — la abstención ocurre estrictamente antes de esas
+    dependencias."""
+
+    result = await run_deterministic_agent(question, dependencies=_exploding_dependencies())
+
+    assert result.status == "abstained"
+    assert result.stop_reason is StopReason.NO_CANDIDATES
+    assert result.usage.llm_calls == 0
+    assert result.retrieval.candidates == ()
+    assert result.execution is None
+    assert result.synthesis is None
+    assert [entry.node for entry in result.trace] == [SupervisorNode.ABSTAIN]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "question",
+    (
+        # T-617B-C3 (5): pregunta descriptiva sobre una política pública.
+        "¿Qué política de vivienda aplica el municipio de Pasto?",
+        # T-617B-C3 (6): tasa educativa en Antioquia (sin causalidad ni redes).
+        "¿Cuál fue la tasa de deserción escolar en Antioquia en 2011?",
+        # T-617B-C3 (7): "red vial" no es una red social.
+        "¿Cuántos kilómetros de la red vial secundaria están pavimentados en el departamento?",
+        # T-617B-C3 (8): asociación/comparación descriptiva sin atribución causal.
+        "¿Cómo se relaciona la tasa de deserción escolar con el nivel de pobreza municipal?",
+        # T-617B-C3 (9): "social" fuera del contexto de redes sociales.
+        "¿Cuál es el gasto social ejecutado por el municipio en 2023?",
+        # T-617B-C3 (corrección de sobrebloqueo): "principal causa" es
+        # descriptivo (categoría más frecuente en una columna de causa), no
+        # atribución exclusiva — "principal" no equivale a "única".
+        "¿Cuál fue la principal causa de accidentes registrada por la entidad?",
+        "¿Qué causa aparece con mayor frecuencia en el registro?",
+        # T-617B-C5: controles literales pedidos por la auditoría consolidada.
+        "¿Existe asociación entre cobertura educativa y deserción?",
+        "¿Cuál es el estado de la red vial?",
+        "¿Cuál fue el gasto social?",
+        "¿Cuál es la opinión registrada por los usuarios de la biblioteca?",
+        "¿Cuántas publicaciones existen en redes sociales por mes?",
+    ),
+)
+async def test_unsupported_capability_guard_does_not_block_descriptive_questions(
+    question: str,
+) -> None:
+    """Controles anti-sobrebloqueo: estas preguntas deben seguir su curso
+    normal hasta `extract_intent`/`retrieve` (el guard no las intercepta),
+    aunque contengan palabras sueltas como "política", "social", "red",
+    "efecto" o "relación" que por sí solas no deben activar ninguna regla."""
+
+    intent = IntentExtraction(topic=question, operation=QueryOperation.LOOKUP)
+    result = await run_deterministic_agent(
+        question,
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(ClaimsBuildResult(claims=(_relevant_claim("1"),), rejected=()),),
+        ),
+    )
+
+    assert result.status == "completed"
+    assert result.usage.llm_calls > 0
+    assert result.retrieval.candidates != ()
+
+
 @pytest.mark.asyncio
 async def test_runtime_enforces_llm_budget_before_planning() -> None:
     result = await run_deterministic_agent(
@@ -344,6 +472,21 @@ async def test_runtime_enforces_llm_budget_before_planning() -> None:
     )
     assert result.status == "abstained"
     assert result.stop_reason is StopReason.LLM_BUDGET_EXCEEDED
+
+
+@pytest.mark.asyncio
+async def test_runtime_finishes_deterministically_when_plan_uses_last_llm_call() -> None:
+    result = await run_deterministic_agent(
+        "¿Cuál es el total?",
+        dependencies=_dependencies(),
+        budgets=SupervisorBudgets(max_llm_calls=2),
+    )
+
+    assert result.status == "completed"
+    assert result.usage.llm_calls == 2
+    assert result.execution is not None
+    assert result.synthesis is not None
+    assert "Total: 42" in result.synthesis.answer
 
 
 @pytest.mark.asyncio
@@ -368,6 +511,26 @@ async def test_runtime_retries_synthesis_with_orphan_figures() -> None:
     assert (
         result.synthesis.answer == "Resultados calculados con la evidencia consultada: Total: 42."
     )
+
+
+@pytest.mark.asyncio
+async def test_runtime_types_synthesis_that_remains_invalid_after_fallback(monkeypatch) -> None:
+    from app.agent import deterministic_runtime
+
+    monkeypatch.setattr(
+        deterministic_runtime,
+        "_deterministic_synthesis",
+        lambda claims, intent: GroundedSynthesis(
+            answer="El total observado fue 16.",
+            cited_claim_indexes=(0,),
+        ),
+    )
+
+    with pytest.raises(SynthesisIntegrityError, match="cifras huérfanas.*16"):
+        await run_deterministic_agent(
+            "¿Cuál es el total?",
+            dependencies=_dependencies(invalid_synthesis_first=True),
+        )
 
 
 @pytest.mark.asyncio
@@ -396,11 +559,84 @@ async def test_runtime_forces_text_value_exploration_and_replanning() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_passes_only_remaining_exploration_budget() -> None:
+    dependencies = _dependencies(text_filter=True)
+    observed_budgets: list[int] = []
+
+    async def explore(profile, selection, explored, max_tool_calls) -> ExploredColumnValues:
+        del profile, selection, explored
+        observed_budgets.append(max_tool_calls)
+        return ExploredColumnValues(
+            column_index=1,
+            search_term="Pasto",
+            values=("PASTO",),
+            tool_calls=max_tool_calls,
+        )
+
+    dependencies = DeterministicRuntimeDependencies(
+        dependencies.extract_intent,
+        dependencies.retrieve,
+        dependencies.profile,
+        dependencies.plan,
+        explore,
+        dependencies.execute,
+        dependencies.synthesize,
+    )
+    result = await run_deterministic_agent(
+        "¿Cuál es el total en Pasto?",
+        dependencies=dependencies,
+        budgets=SupervisorBudgets(max_explorations=2),
+    )
+
+    assert result.status == "completed"
+    assert result.usage.explorations == 2
+    assert observed_budgets == [2]
+
+
+@pytest.mark.asyncio
+async def test_runtime_does_not_require_categorical_exploration_for_text_ne_filter() -> None:
+    dependencies = _dependencies()
+
+    async def plan(intent, context, explored, error):
+        del intent, context, explored, error
+        return EnumeratedPlanSelection(
+            dataset_index=0,
+            operation=QueryOperation.SUM,
+            metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=0),),
+            filters=(
+                FilterChoice(
+                    column_index=1,
+                    operator=FilterOperator.NE,
+                    value_type=ScalarType.TEXT,
+                    values=("Bogotá",),
+                ),
+            ),
+        )
+
+    dependencies = DeterministicRuntimeDependencies(
+        dependencies.extract_intent,
+        dependencies.retrieve,
+        dependencies.profile,
+        plan,
+        dependencies.explore,
+        dependencies.execute,
+        dependencies.synthesize,
+    )
+    result = await run_deterministic_agent(
+        "¿Cuál es el total fuera de Bogotá?",
+        dependencies=dependencies,
+    )
+
+    assert result.status == "completed"
+    assert result.usage.explorations == 0
+
+
+@pytest.mark.asyncio
 async def test_runtime_canonicalizes_explored_values_without_diacritics() -> None:
     dependencies = _dependencies(text_filter=True)
 
-    async def explore(profile, selection, explored) -> ExploredColumnValues:
-        del profile, selection, explored
+    async def explore(profile, selection, explored, max_tool_calls) -> ExploredColumnValues:
+        del profile, selection, explored, max_tool_calls
         return ExploredColumnValues(
             column_index=1,
             search_term="Villamaria",
@@ -683,3 +919,482 @@ def test_deterministic_fallback_marks_ambiguous_claim_without_inventing_label() 
     # Nunca inventa una categoría combinando "categoria_a"/"categoria_b".
     assert "categoria_a" not in synthesis.answer
     assert "categoria_b" not in synthesis.answer
+
+
+# --- T-617B-C2: abstención determinista ante evidencia temáticamente ------
+# irrelevante (RF-205/RF-211). Fixtures genéricas: ningún nombre de columna,
+# `case_id` ni dataset concreto de la suite golden aparece aquí. La única
+# señal es la clasificación léxica de columna ya aprobada en T-617C
+# (`app.quality.claim_labels`) frente a los tokens de la intención.
+
+
+def _irrelevant_claim(display_value: str = "15") -> BuiltClaim:
+    """Claim cuya única columna fuente es un identificador auxiliar
+    (categoría léxica `auxiliary`, nunca solicitado por las intenciones de
+    prueba a continuación)."""
+
+    return _labeled_claim(
+        display_value=display_value,
+        public_columns=("codigo_referencia",),
+        label="Codigo referencia",
+        label_status="verified",
+    )
+
+
+def _relevant_claim(display_value: str = "42") -> BuiltClaim:
+    """Claim cuya columna fuente no es auxiliar ni temporal (categoría
+    `primary`): siempre pertinente, sin importar la intención."""
+
+    return _labeled_claim(
+        display_value=display_value,
+        public_columns=("total_observado",),
+        label="Total observado",
+        label_status="verified",
+    )
+
+
+def _relevance_dependencies(
+    *,
+    intent: IntentExtraction,
+    claims_by_candidate: tuple[ClaimsBuildResult, ...],
+    textual_facts_by_candidate: tuple[tuple[str, ...], ...] | None = None,
+    textual_rejections_by_candidate: tuple[tuple[object, ...], ...] | None = None,
+) -> DeterministicRuntimeDependencies:
+    """Doble local sin red ni LLM real: cada candidato recuperado, en orden,
+    devuelve el `ClaimsBuildResult` correspondiente en `claims_by_candidate`,
+    los hechos textuales aceptados (T-615F) en `textual_facts_by_candidate` y
+    los rechazos textuales en `textual_rejections_by_candidate` — señales
+    independientes entre sí: una tupla no vacía en cada una simula, en la
+    posición del candidato, un hecho aceptado y/o un rechazo simultáneos.
+    Su contenido no se inspecciona, sólo su presencia/ausencia."""
+
+    textual_facts_source = textual_facts_by_candidate or tuple(() for _ in claims_by_candidate)
+    textual_rejections_source = textual_rejections_by_candidate or tuple(
+        () for _ in claims_by_candidate
+    )
+
+    async def extract(question: str) -> IntentExtraction:
+        assert question
+        return intent
+
+    async def retrieve(_intent: IntentExtraction) -> MultiQueryRetrievalResult:
+        return MultiQueryRetrievalResult(
+            queries=("q",),
+            candidates=tuple(
+                _candidate(f"rlv{index}-cand") for index in range(len(claims_by_candidate))
+            ),
+        )
+
+    async def profile(dataset_id: str) -> ProfiledCandidate:
+        return _profile(dataset_id)
+
+    async def plan(intent, context, explored, error):
+        del intent, context, explored, error
+        return EnumeratedPlanSelection(
+            dataset_index=0,
+            operation=QueryOperation.SUM,
+            metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=0),),
+            filters=(),
+        )
+
+    calls = 0
+
+    async def execute(validated) -> DeterministicExecutionResult:
+        nonlocal calls
+        del validated
+        claims = claims_by_candidate[calls]
+        textual_facts = textual_facts_source[calls]
+        textual_rejections = textual_rejections_source[calls]
+        calls += 1
+        return cast(
+            DeterministicExecutionResult,
+            SimpleNamespace(
+                quality=SimpleNamespace(eligibility_status="eligible"),
+                claims=claims,
+                textual_facts=textual_facts,
+                textual_rejections=textual_rejections,
+            ),
+        )
+
+    async def explore(profile, selection, explored, max_tool_calls) -> ExploredColumnValues:
+        raise AssertionError("este doble no requiere exploración de valores")
+
+    async def synthesize(intent, claims) -> GroundedSynthesis:
+        del intent
+        return GroundedSynthesis(
+            answer="Resultado calculado con la evidencia consultada.",
+            cited_claim_indexes=tuple(range(len(claims.claims))),
+        )
+
+    return DeterministicRuntimeDependencies(
+        extract, retrieve, profile, plan, explore, execute, synthesize
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_abstains_when_only_evidence_is_eligible_but_irrelevant() -> None:
+    """Evidencia técnicamente elegible (`eligibility_status="eligible"`) pero
+    cuyos claims no derivan de ninguna columna pertinente a la intención debe
+    terminar en abstención, no en `completed` con claims irrelevantes."""
+
+    intent = IntentExtraction(
+        topic="composición del personal por categoría", operation=QueryOperation.SUM
+    )
+    result = await run_deterministic_agent(
+        "¿Cuál es la composición del personal por categoría?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),),
+        ),
+    )
+
+    assert result.status == "abstained"
+    assert result.stop_reason is StopReason.CLAIMS_NOT_AVAILABLE
+    assert result.synthesis is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_causal_question_without_causal_evidence_abstains_cleanly() -> None:
+    """Pregunta de tono causal (sin exclusividad explícita, así que no la
+    intercepta el guard previo de T-617B-C3) cuya única evidencia recuperada
+    es ajena a la intención: debe producir abstención limpia vía la puerta
+    de relevancia post-recuperación (T-617B-C2), sin narrativa cuantitativa
+    inventada."""
+
+    intent = IntentExtraction(
+        topic="qué factores explican la reducción de un fenómeno social",
+        operation=QueryOperation.LOOKUP,
+    )
+    result = await run_deterministic_agent(
+        "¿Qué factores explican la reducción de un fenómeno social?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(
+                ClaimsBuildResult(claims=(_irrelevant_claim("88"),), rejected=()),
+            ),
+        ),
+    )
+
+    assert result.status == "abstained"
+    assert result.stop_reason is StopReason.CLAIMS_NOT_AVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_runtime_network_analysis_question_without_network_evidence_abstains_cleanly() -> (
+    None
+):
+    """Pregunta sobre redes sociales sin pedir polarización/sentimiento
+    (así que no la intercepta el guard previo de T-617B-C3) cuya evidencia
+    recuperada (identificadores administrativos) es ajena a la intención:
+    debe abstenerse vía la puerta de relevancia post-recuperación
+    (T-617B-C2), no replegarse a una narrativa irrelevante."""
+
+    intent = IntentExtraction(
+        topic="uso de redes sociales por parte de la ciudadanía frente a una política",
+        operation=QueryOperation.LOOKUP,
+    )
+    result = await run_deterministic_agent(
+        "¿Cómo usa la ciudadanía las redes sociales frente a esta política?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(ClaimsBuildResult(claims=(_irrelevant_claim("5"),), rejected=()),),
+        ),
+    )
+
+    assert result.status == "abstained"
+    assert result.stop_reason is StopReason.CLAIMS_NOT_AVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_runtime_completes_and_preserves_claims_when_evidence_is_materially_relevant() -> (
+    None
+):
+    """Control positivo: evidencia cuyas columnas sí son pertinentes a la
+    intención debe completarse normalmente y conservar sus claims."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(ClaimsBuildResult(claims=(_relevant_claim(),), rejected=()),),
+        ),
+    )
+
+    assert result.status == "completed"
+    assert result.execution is not None
+    assert [claim.display_value for claim in result.execution.claims.claims] == ["42"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_completes_with_partially_relevant_evidence() -> None:
+    """RF-211: una evidencia con claims mixtos (uno pertinente, uno auxiliar
+    no solicitado) sigue produciendo una respuesta entregable — pertinencia
+    parcial no es lo mismo que irrelevancia total."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    mixed = ClaimsBuildResult(claims=(_relevant_claim(), _irrelevant_claim()), rejected=())
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(intent=intent, claims_by_candidate=(mixed,)),
+    )
+
+    assert result.status == "completed"
+    assert result.execution is not None
+    assert len(result.execution.claims.claims) == 2
+
+
+@pytest.mark.asyncio
+async def test_runtime_tries_next_candidate_before_abstaining_on_irrelevant_claims() -> None:
+    """El rechazo por pertinencia queda trazado: el primer candidato se
+    marca rechazado y sólo se abstiene tras agotar los candidatos, igual que
+    el patrón ya existente para `evidence_eligible`."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(
+                ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),
+                ClaimsBuildResult(claims=(_relevant_claim(),), rejected=()),
+            ),
+        ),
+    )
+
+    assert result.status == "completed"
+    next_candidate_reasons = [
+        entry.reason for entry in result.trace if entry.node is SupervisorNode.NEXT_CANDIDATE
+    ]
+    assert any("pertinente" in reason for reason in next_candidate_reasons)
+    assert sum(entry.node is SupervisorNode.SELECT_CANDIDATE for entry in result.trace) == 2
+
+
+@pytest.mark.asyncio
+async def test_runtime_abstains_cleanly_when_all_candidates_are_irrelevant() -> None:
+    """Trazabilidad de datasets revisados/rechazados: con dos candidatos
+    ajenos a la intención, ambos quedan rechazados por pertinencia antes de
+    la abstención final."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(
+                ClaimsBuildResult(claims=(_irrelevant_claim("1"),), rejected=()),
+                ClaimsBuildResult(claims=(_irrelevant_claim("2"),), rejected=()),
+            ),
+        ),
+    )
+
+    assert result.status == "abstained"
+    assert result.stop_reason is StopReason.CLAIMS_NOT_AVAILABLE
+    next_candidate_count = sum(
+        entry.node is SupervisorNode.NEXT_CANDIDATE for entry in result.trace
+    )
+    assert next_candidate_count == 1
+    assert result.execution is not None
+
+
+# --- T-617B-C2 (corrección): la ruta de síntesis diferida (T-615F,
+# `defer_synthesis_until_persisted=True`) tiene su propia rama de transición
+# a PERSIST_FACTS que, antes de esta corrección, no consultaba
+# `claims_materially_relevant` y dejaba pasar claims irrelevantes a
+# persistencia. Las pruebas siguientes fijan ese comportamiento en ambos
+# modos (diferido e inmediato) sin bloquear un hecho textual pertinente.
+
+
+@pytest.mark.asyncio
+async def test_deferred_mode_with_only_irrelevant_claims_never_reaches_persist_facts() -> None:
+    """Reproducción del hueco reportado: en modo diferido, un único candidato
+    con claims irrelevantes y sin hecho textual debe terminar en NEXT_CANDIDATE
+    seguido de ABSTAIN — nunca en PERSIST_FACTS/`ready_for_synthesis`."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),),
+        ),
+        defer_synthesis_until_persisted=True,
+    )
+
+    assert result.status == "abstained"
+    assert result.stop_reason is StopReason.CLAIMS_NOT_AVAILABLE
+    assert all(entry.node is not SupervisorNode.PERSIST_FACTS for entry in result.trace)
+
+
+@pytest.mark.asyncio
+async def test_deferred_mode_tries_next_candidate_and_persists_the_relevant_one() -> None:
+    """Modo diferido + siguiente candidato relevante: el primer candidato
+    (irrelevante) se rechaza y el segundo (relevante) sí llega a
+    PERSIST_FACTS/`ready_for_synthesis`, con solo su propio claim expuesto."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(
+                ClaimsBuildResult(claims=(_irrelevant_claim("1"),), rejected=()),
+                ClaimsBuildResult(claims=(_relevant_claim("42"),), rejected=()),
+            ),
+        ),
+        defer_synthesis_until_persisted=True,
+    )
+
+    assert result.status == "ready_for_synthesis"
+    assert result.trace[-1].node is SupervisorNode.PERSIST_FACTS
+    assert result.execution is not None
+    # El claim del candidato rechazado ("1") no sobrevive: el estado de
+    # ejecución se resetea en cada NEXT_CANDIDATE (ver `_replace_status` +
+    # reseteo de `execution` en `run_deterministic_agent`), así que sólo
+    # queda expuesto el claim del candidato aceptado.
+    assert [claim.display_value for claim in result.execution.claims.claims] == ["42"]
+
+
+@pytest.mark.asyncio
+async def test_deferred_mode_preserves_pertinent_textual_fact_despite_irrelevant_claim() -> None:
+    """Un claim cuantitativo irrelevante coexiste con un hecho textual
+    (T-615F) pertinente en la misma evidencia: la persistencia no debe
+    bloquearse — el hecho textual pertinente se conserva."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),),
+            textual_facts_by_candidate=(("hecho textual pertinente",),),
+        ),
+        defer_synthesis_until_persisted=True,
+    )
+
+    assert result.status == "ready_for_synthesis"
+    assert result.trace[-1].node is SupervisorNode.PERSIST_FACTS
+    assert result.execution is not None
+    assert tuple(result.execution.textual_facts) == ("hecho textual pertinente",)
+    # El claim cuantitativo irrelevante viaja junto al hecho textual dentro
+    # de `execution` (persistencia interna, T-615F reverifica antes de
+    # exponer), pero la decisión de transición ya no lo trata como
+    # justificación por sí solo: sólo pasó porque había hecho textual.
+    assert [claim.display_value for claim in result.execution.claims.claims] == ["15"]
+
+
+# --- T-617B-C2 (corrección R3): un rechazo textual puro no puede disfrazarse
+# de "resultado textual pertinente". `textual_result_available` debe reflejar
+# únicamente hechos textuales ACEPTADOS; `textual_rejected` es la señal
+# independiente para rechazos. Antes de esta corrección,
+# `textual_result_available = bool(textual_facts or textual_rejections)`
+# permitía que un candidato con solo rechazos (sin ningún hecho aceptado)
+# habilitara la persistencia de un claim cuantitativo irrelevante.
+
+
+@pytest.mark.asyncio
+async def test_deferred_mode_with_irrelevant_claim_and_only_textual_rejection_never_persists() -> (
+    None
+):
+    """Reproducción del hueco reportado: claim irrelevante + único candidato
+    con SOLO rechazo textual (sin hecho aceptado) + modo diferido. Debe
+    terminar en NEXT_CANDIDATE/ABSTAIN — nunca en PERSIST_FACTS."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),),
+            textual_rejections_by_candidate=((SimpleNamespace(code="rechazo_textual"),),),
+        ),
+        defer_synthesis_until_persisted=True,
+    )
+
+    assert result.status == "abstained"
+    assert all(entry.node is not SupervisorNode.PERSIST_FACTS for entry in result.trace)
+
+
+@pytest.mark.asyncio
+async def test_deferred_mode_preserves_accepted_fact_despite_simultaneous_rejection() -> None:
+    """Claim irrelevante + hecho textual ACEPTADO + rechazo textual
+    simultáneo en la misma evidencia (pueden coexistir: T-615F puede aceptar
+    unos hechos y rechazar otros dentro de la misma corrida). El hecho
+    aceptado se preserva; la coexistencia con un rechazo no bloquea nada
+    nuevo más allá de lo que ya bloqueaba `textual_rejected` por sí solo."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),),
+            textual_facts_by_candidate=(("hecho aceptado",),),
+            textual_rejections_by_candidate=((SimpleNamespace(code="rechazo_simultaneo"),),),
+        ),
+        defer_synthesis_until_persisted=True,
+    )
+
+    assert result.status == "ready_for_synthesis"
+    assert result.trace[-1].node is SupervisorNode.PERSIST_FACTS
+    assert result.execution is not None
+    assert tuple(result.execution.textual_facts) == ("hecho aceptado",)
+    assert [r.code for r in result.execution.textual_rejections] == ["rechazo_simultaneo"]
+
+
+@pytest.mark.asyncio
+async def test_relevant_claim_with_textual_rejection_still_persists_the_claim() -> None:
+    """Comportamiento existente preservado: un claim cuantitativo pertinente
+    sigue persistiéndose aunque exista un rechazo textual simultáneo — el
+    rechazo textual nunca bloqueó la vía cuantitativa válida, con o sin este
+    incremento."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(ClaimsBuildResult(claims=(_relevant_claim("42"),), rejected=()),),
+            textual_rejections_by_candidate=((SimpleNamespace(code="rechazo_textual"),),),
+        ),
+        defer_synthesis_until_persisted=True,
+    )
+
+    assert result.status == "ready_for_synthesis"
+    assert result.trace[-1].node is SupervisorNode.PERSIST_FACTS
+    assert result.execution is not None
+    assert [claim.display_value for claim in result.execution.claims.claims] == ["42"]
+
+
+@pytest.mark.asyncio
+async def test_rejected_candidate_claims_never_reach_the_accepted_execution() -> None:
+    """Los claims del candidato rechazado por pertinencia no aparecen en la
+    respuesta pública: `execution` sólo refleja el candidato finalmente
+    aceptado, en modo inmediato (`completed`) y en modo diferido
+    (`ready_for_synthesis`) por igual."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    claims_by_candidate = (
+        ClaimsBuildResult(claims=(_irrelevant_claim("999"),), rejected=()),
+        ClaimsBuildResult(claims=(_relevant_claim("42"),), rejected=()),
+    )
+
+    immediate = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent, claims_by_candidate=claims_by_candidate
+        ),
+    )
+    deferred = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent, claims_by_candidate=claims_by_candidate
+        ),
+        defer_synthesis_until_persisted=True,
+    )
+
+    for result in (immediate, deferred):
+        assert result.execution is not None
+        display_values = [claim.display_value for claim in result.execution.claims.claims]
+        assert "999" not in display_values
+        assert display_values == ["42"]

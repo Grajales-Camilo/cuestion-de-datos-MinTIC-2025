@@ -783,6 +783,7 @@ def normalize_lookup_filters(
 
 
 _ENTITY_COLUMN_TOKENS = {"entidad", "empresa", "institucion", "organismo", "organizacion"}
+_IDENTIFIER_COLUMN_TOKENS = {"codigo", "id", "identificador"}
 
 _GENERIC_ENTITY_TOKENS = {
     "ministerio",
@@ -814,6 +815,13 @@ def _is_entity_designating_column(field_name: str, display_name: str) -> bool:
 
     tokens = _semantic_tokens(f"{field_name} {display_name}")
     return bool(tokens & _ENTITY_COLUMN_TOKENS)
+
+
+def _is_identifier_designating_column(field_name: str, display_name: str) -> bool:
+    """Reconoce claves explícitas capaces de anclar una entidad por código."""
+
+    tokens = _semantic_tokens(f"{field_name} {display_name}")
+    return bool(tokens & _IDENTIFIER_COLUMN_TOKENS)
 
 
 def _entity_grounded_in_value(entity: str, value: str) -> bool:
@@ -878,28 +886,44 @@ def _require_entity_constraint_preserved(
         for column in candidate.columns
         if _is_entity_designating_column(column.field_name, column.display_name)
     }
-    if not entity_column_indexes:
+    identifier_column_indexes = {
+        column.index
+        for column in candidate.columns
+        if _is_identifier_designating_column(column.field_name, column.display_name)
+    }
+    if not entity_column_indexes and not identifier_column_indexes:
         return
-    matching_filters = [
+    matching_entity_filters = [
         item
         for item in plan.filters
         if item.column.column_index in entity_column_indexes
         and item.operator in {FilterOperator.EQ, FilterOperator.IN}
     ]
-    if not matching_filters:
+    matching_identifier_filters = [
+        item
+        for item in plan.filters
+        if item.column.column_index in identifier_column_indexes
+        and item.operator in {FilterOperator.EQ, FilterOperator.IN}
+    ]
+    grounded = any(
+        _filter_unambiguously_grounds_entity(
+            entity,
+            tuple(value.value for value in item.values),
+        )
+        for item in (*matching_entity_filters, *matching_identifier_filters)
+    )
+    if grounded:
+        return
+    if not matching_entity_filters and not matching_identifier_filters:
         raise ValueError(
             "el plan omite la restricción de entidad requerida por la intención: "
-            f"{entity!r} no aparece filtrado en ninguna columna de entidad del dataset"
+            f"{entity!r} no aparece filtrado en ninguna columna de entidad o identificador "
+            "del dataset"
         )
-    grounded = any(
-        _filter_unambiguously_grounds_entity(entity, tuple(value.value for value in item.values))
-        for item in matching_filters
+    raise ValueError(
+        "el plan contradice o ambigua la entidad solicitada por la intención: "
+        f"ningún filtro de entidad o identificador corresponde inequívocamente a {entity!r}"
     )
-    if not grounded:
-        raise ValueError(
-            "el plan contradice o ambigua la entidad solicitada por la intención: "
-            f"ningún filtro de entidad corresponde inequívocamente a {entity!r}"
-        )
 
 
 def materialize_query_plan(

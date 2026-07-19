@@ -1,4 +1,5 @@
 import inspect
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,11 +12,17 @@ from app.agent.deterministic_dependencies import (
 )
 from app.agent.llm_contracts import (
     EnumeratedPlanSelection,
+    FilterChoice,
     GroundedSynthesis,
     IntentExtraction,
     QuantitativePlanSelection,
 )
-from app.agent.query_plan import ColumnDataType
+from app.agent.query_plan import (
+    ColumnDataType,
+    FilterOperator,
+    QueryOperation,
+    ScalarType,
+)
 from app.quality.grounded_facts import GroundedSynthesisPlan
 from tests.test_settings import settings
 
@@ -65,6 +72,57 @@ def test_feature_flag_changes_the_llm_schema_itself(
         usage=RuntimeLLMUsage(),
     )
     assert schemas[1] is expected
+
+
+@pytest.mark.asyncio
+async def test_real_explorer_never_exceeds_remaining_tool_call_budget(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_model(_settings, schema, *, thinking_budget=None):
+        del schema, thinking_budget
+        return object()
+
+    async def fake_explorar_valores(payload, **_kwargs):
+        calls.append(payload["termino_busqueda"])
+        return {"ok": True, "values": ()}
+
+    monkeypatch.setattr("app.agent.deterministic_dependencies._model", fake_model)
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.explorar_valores",
+        fake_explorar_valores,
+    )
+    dependencies = build_real_runtime_dependencies(
+        settings=settings(),
+        engine=object(),  # type: ignore[arg-type]
+        http_client=object(),  # type: ignore[arg-type]
+        embedding_client=object(),  # type: ignore[arg-type]
+        usage=RuntimeLLMUsage(),
+    )
+    profile = SimpleNamespace(
+        option=SimpleNamespace(
+            dataset_id="abcd-1234",
+            columns=(SimpleNamespace(field_name="entidad"),),
+        )
+    )
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("Ministerio de Relaciones Exteriores",),
+            ),
+        ),
+        needs_value_exploration=True,
+    )
+
+    explored = await dependencies.explore(profile, selection, (), 1)
+
+    assert explored.tool_calls == 1
+    assert calls == ["Ministerio de Relaciones Exteriores"]
 
 
 # --- T-617B0-R4: presupuesto de razonamiento acotado del planificador -------

@@ -102,7 +102,11 @@ class TextualRejection:
 
 
 class DeterministicExecutionError(RuntimeError):
-    pass
+    """Fallo posterior a invocar T5, conservando su salida observable."""
+
+    def __init__(self, message: str, *, tool_output: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.tool_output = tool_output
 
 
 class DeterministicPersistenceCancelled(RuntimeError):
@@ -339,7 +343,8 @@ async def execute_validated_plan(
     if output.get("ok") is not True:
         error = output.get("error", {})
         raise DeterministicExecutionError(
-            f"{error.get('code', 'QUERY_FAILED')}: {error.get('message', 'falló T5')}"
+            f"{error.get('code', 'QUERY_FAILED')}: {error.get('message', 'falló T5')}",
+            tool_output=output,
         )
     rows = tuple(output.get("rows", ()))
     canonical_soql = output.get("canonical_soql", rendered.canonical_soql)
@@ -361,7 +366,8 @@ async def execute_validated_plan(
     quality = validate_evidence(evidence)
     if quality.eligibility_status != "eligible":
         raise DeterministicExecutionError(
-            "EVIDENCE_NOT_ELIGIBLE: " + ",".join(quality.eligibility_reasons)
+            "EVIDENCE_NOT_ELIGIBLE: " + ",".join(quality.eligibility_reasons),
+            tool_output=output,
         )
     if is_cancelled is not None and is_cancelled():
         raise DeterministicPersistenceCancelled("corrida cancelada antes de construir texto")
@@ -397,7 +403,7 @@ async def execute_validated_plan(
         )
     if not claims.claims and not (textual_facts_enabled and (textual_facts or textual_rejections)):
         reasons = "; ".join(item.reason for item in claims.rejected) or "sin claims"
-        raise DeterministicExecutionError(f"CLAIMS_REJECTED: {reasons}")
+        raise DeterministicExecutionError(f"CLAIMS_REJECTED: {reasons}", tool_output=output)
     return DeterministicExecutionResult(
         rendered_query=rendered,
         tool_output=output,

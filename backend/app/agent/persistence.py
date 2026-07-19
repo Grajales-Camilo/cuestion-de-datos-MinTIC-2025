@@ -168,6 +168,36 @@ async def record_step_and_event(
         await reserve_and_add_event(session, run_id, "step", payload)
 
 
+async def update_step_tool_result(
+    engine: AsyncEngine,
+    run_id: uuid.UUID,
+    *,
+    step_number: int,
+    tool_input: Any,
+    tool_output: Any,
+    latency_ms: int,
+    error: str | None = None,
+) -> None:
+    """Completa la observación T5 del paso ya creado por el supervisor."""
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session, session.begin():
+        result = await session.execute(
+            update(AgentStep)
+            .where(AgentStep.run_id == run_id, AgentStep.step_number == step_number)
+            .values(
+                tool_input=json_safe(tool_input),
+                tool_output_summary=summarize_output(tool_output),
+                latency_ms=latency_ms,
+                error=error,
+            )
+        )
+        if result.rowcount != 1:
+            raise RuntimeError(
+                f"no se encontró el paso {step_number} de run_id={run_id} para completar T5"
+            )
+
+
 async def persist_evidence_and_quality(
     engine: AsyncEngine,
     run_id: uuid.UUID,
@@ -893,6 +923,37 @@ async def persist_final_answer(
             .where(AgentRun.id == run_id)
             .values(
                 final_answer=json_safe(final_answer),
+                latency_ms=latency_ms,
+                llm_provider=llm_provider,
+                llm_model=llm_model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                estimated_cost_usd=estimated_cost_usd,
+            )
+        )
+
+
+async def persist_run_telemetry(
+    engine: AsyncEngine,
+    run_id: uuid.UUID,
+    *,
+    steps_used: int,
+    latency_ms: int,
+    llm_provider: str,
+    llm_model: str,
+    input_tokens: int,
+    output_tokens: int,
+    estimated_cost_usd: float,
+) -> None:
+    """Conserva telemetría técnica aunque una corrida termine sin respuesta."""
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session, session.begin():
+        await session.execute(
+            update(AgentRun)
+            .where(AgentRun.id == run_id)
+            .values(
+                steps_used=steps_used,
                 latency_ms=latency_ms,
                 llm_provider=llm_provider,
                 llm_model=llm_model,

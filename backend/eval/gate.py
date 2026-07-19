@@ -917,6 +917,19 @@ def evaluate_smoke_gate(
     return GateVerdict(mode="smoke", passed=passed, metrics=tuple(metrics))
 
 
+def evaluate_directed_gate() -> GateVerdict:
+    """Veredicto trivial para el modo ``directed`` (T-617B-C2, validación
+    dirigida de casos concretos): no certifica ninguna condición normativa de
+    ``full`` ni de ``smoke``. ``metrics=()`` deja explícito que no hay
+    umbrales evaluados; ``passed=True`` es un valor neutro para no bloquear
+    el exit code de un modo que, por diseño, no tiene condición de fallo —
+    el reporte (``_gate_summary_lines`` en ``eval/run.py``) debe dejar
+    explícito para el lector que esto no es un veredicto PASS/FAIL de
+    puerta."""
+
+    return GateVerdict(mode="directed", passed=True, metrics=())
+
+
 # --- Preflight de selección (fail-fast antes de gastar cuota) -----------------
 
 
@@ -935,6 +948,11 @@ def validate_gate_selection(cases: Iterable[Any], gate_mode: str) -> None:
       §4.2/§4.4).
     - ``smoke``: exactamente los 10 ``SMOKE_CANONICAL_IDS``, una sola vez cada
       uno; sin faltantes, extras ni duplicados (pruebas.md §4.4).
+    - ``directed``: cualquier subconjunto explícito no vacío de la suite, sin
+      case_ids duplicados. No certifica ninguna puerta normativa (ni ``full``
+      ni ``smoke``): sólo valida que la selección sea ejecutable, para
+      validaciones dirigidas de casos concretos (p. ej. tras un incremento de
+      código, T-617B-C2) sin implicar un veredicto PASS/FAIL de la suite.
     - Cualquier otro ``gate_mode`` se rechaza explícitamente.
     """
 
@@ -942,6 +960,18 @@ def validate_gate_selection(cases: Iterable[Any], gate_mode: str) -> None:
     case_ids = [case.case_id for case in selected]
     id_counts = Counter(case_ids)
     duplicates = sorted(cid for cid, count in id_counts.items() if count > 1)
+
+    if gate_mode == "directed":
+        problems: list[str] = []
+        if not case_ids:
+            problems.append("selección vacía: modo directed exige al menos un case_id")
+        if duplicates:
+            problems.append(f"case_ids duplicados: {', '.join(duplicates)}")
+        if problems:
+            raise RuntimeError(
+                "selección incompatible con el modo directed: " + "; ".join(problems)
+            )
+        return
 
     if gate_mode == "full":
         total = len(case_ids)
@@ -975,4 +1005,6 @@ def validate_gate_selection(cases: Iterable[Any], gate_mode: str) -> None:
             raise RuntimeError("selección incompatible con la puerta smoke: " + "; ".join(problems))
         return
 
-    raise RuntimeError(f"gate_mode desconocido: {gate_mode!r} (esperado 'full' o 'smoke')")
+    raise RuntimeError(
+        f"gate_mode desconocido: {gate_mode!r} (esperado 'full', 'smoke' o 'directed')"
+    )

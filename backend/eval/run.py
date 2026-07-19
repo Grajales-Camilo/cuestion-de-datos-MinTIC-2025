@@ -33,6 +33,7 @@ from eval.gate import (
     aggregate_metrics,
     classify_run_complexity,
     evaluate_claims_integrity,
+    evaluate_directed_gate,
     evaluate_full_gate,
     evaluate_smoke_gate,
     socrata_success_rate,
@@ -113,6 +114,25 @@ def _config_snapshot(settings, seed: int) -> dict[str, object]:
         # (habilita/deshabilita hechos textuales) y no quedaba registrado en
         # el snapshot de configuración de la corrida de evaluación.
         "deterministic_textual_facts_enabled": settings.deterministic_textual_facts_enabled,
+    }
+
+
+def _final_snapshot_from_run(run: object | None) -> dict[str, object]:
+    """Proyecta telemetría persistida también para terminales sin respuesta."""
+
+    persisted = getattr(run, "final_answer", None) if run is not None else None
+    if isinstance(persisted, dict):
+        return dict(persisted)
+    return {
+        "status": getattr(run, "status", None) or "failed",
+        "usage": {
+            "steps_used": getattr(run, "steps_used", None),
+            "latency_ms": getattr(run, "latency_ms", None),
+            "input_tokens": getattr(run, "input_tokens", None),
+            "output_tokens": getattr(run, "output_tokens", None),
+            "estimated_cost_usd": getattr(run, "estimated_cost_usd", None),
+            "termination_reason": getattr(run, "terminal_error_code", None),
+        },
     }
 
 
@@ -378,7 +398,26 @@ def _pct(value: float | None) -> str:
 
 def _gate_summary_lines(aggregate: AggregateMetrics, verdict: GateVerdict) -> list[str]:
     """Resumen mecánico de puerta: numerador/denominador, umbral, valor y
-    PASS/FAIL con razones bloqueantes."""
+    PASS/FAIL con razones bloqueantes.
+
+    En modo ``directed`` no hay veredicto de puerta que reportar (T-617B-C2):
+    se muestran los conteos por caso a título informativo, pero se deja
+    explícito que no es un PASS/FAIL de ``full`` ni de ``smoke``."""
+
+    if verdict.mode == "directed":
+        return [
+            "",
+            "## Resultado (modo directed — sin veredicto de puerta)",
+            "",
+            "Esta corrida ejecutó un subconjunto explícito de casos (`--case-id`) sin "
+            "certificar ninguna puerta normativa. No representa un PASS/FAIL de `full` "
+            "ni de `smoke`; sólo resultados por caso para diagnóstico dirigido.",
+            "",
+            f"- Positivos aprobados: {aggregate.positive_passed}/{aggregate.positive_total} "
+            f"({_pct(aggregate.success_rate)})",
+            f"- Negativos aprobados: {aggregate.negative_passed}/{aggregate.negative_total} "
+            f"({_pct(aggregate.negative_success_rate)})",
+        ]
 
     lines = [
         "",
@@ -608,7 +647,7 @@ def _build_case_outcome(
         failure_code=stage_diagnostics.get("failure_code"),
         complexity=classify_run_complexity(stage_diagnostics),
         latency_ms=int(latency_raw) if isinstance(latency_raw, (int, float)) else None,
-        cost_usd=Decimal(str(cost_raw)) if isinstance(cost_raw, (int, float)) else None,
+        cost_usd=(Decimal(str(cost_raw)) if isinstance(cost_raw, (int, float, Decimal)) else None),
         claims_integrity=claims_integrity,
         socrata_successes=socrata[0] if socrata else 0,
         socrata_attempts=socrata[1] if socrata else 0,
@@ -672,7 +711,7 @@ async def run_suite(
                 )
                 await execute_agent_run_async(settings, agent_run_id)
                 run = await get_run(engine, agent_run_id)
-                final = run.final_answer if run and run.final_answer else {"status": "failed"}
+                final = _final_snapshot_from_run(run)
                 # T-617B0-R3: `execute_agent_run_async` no relanza cuando el
                 # agente mismo captura un fallo terminal de proveedor (p. ej.
                 # 504 en `build_plan`) y persiste `agent_runs.status="failed"`
@@ -811,9 +850,12 @@ async def run_suite(
                 )
             )
         aggregate = aggregate_metrics(outcomes)
-        verdict = (
-            evaluate_smoke_gate(outcomes) if gate_mode == "smoke" else evaluate_full_gate(aggregate)
-        )
+        if gate_mode == "smoke":
+            verdict = evaluate_smoke_gate(outcomes)
+        elif gate_mode == "directed":
+            verdict = evaluate_directed_gate()
+        else:
+            verdict = evaluate_full_gate(aggregate)
         await _finalize_eval_record(engine, record_id=record.id, aggregate=aggregate)
         report_path = Path("eval/reports") / f"{record.id}.md"
         _write_report(
@@ -852,12 +894,15 @@ def main() -> int:
     parser.add_argument(
         "--gate",
         dest="gate_mode",
-        choices=["full", "smoke"],
+        choices=["full", "smoke", "directed"],
         default="full",
         help=(
             "Puerta a aplicar: 'full' es el umbral completo de golden (RNF-001…005/009); "
             "'smoke' es la puerta dirigida de pruebas.md §4.4 (negativos 100%%, ningún "
-            "positivo sólido retrocede, todo fallo con etapa+código)."
+            "positivo sólido retrocede, todo fallo con etapa+código); 'directed' ejecuta y "
+            "persiste un subconjunto explícito de --case-id sin certificar ninguna puerta "
+            "normativa (sin veredicto PASS/FAIL) — sólo para validaciones dirigidas de casos "
+            "concretos."
         ),
     )
     args = parser.parse_args()
@@ -865,6 +910,8 @@ def main() -> int:
         parser.error("--limit debe ser mayor que cero")
     if args.limit is not None and args.case_ids:
         parser.error("--limit y --case-id son mutuamente excluyentes")
+    if args.gate_mode == "directed" and not args.case_ids:
+        parser.error("--gate directed exige al menos un --case-id explícito")
     kwargs = vars(args)
     try:
         if sys.platform == "win32":
