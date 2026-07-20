@@ -422,6 +422,56 @@ async def execute_deterministic_agent_run_async(
                 return retrieval
 
             dependencies = dataclasses.replace(dependencies, retrieve=retrieve_with_diagnostics)
+            original_profile = dependencies.profile
+
+            async def profile_with_observability(dataset_id: str):
+                tool_started = time.monotonic()
+                profile = await original_profile(dataset_id)
+                await update_step_tool_result(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    tool_input={"dataset_id": dataset_id},
+                    tool_output={},
+                    latency_ms=round((time.monotonic() - tool_started) * 1000),
+                )
+                return profile
+
+            dependencies = dataclasses.replace(dependencies, profile=profile_with_observability)
+            original_plan = dependencies.plan
+
+            async def plan_with_observability(intent, context, explored, error):
+                tool_started = time.monotonic()
+                selection = await original_plan(intent, context, explored, error)
+                await update_step_tool_result(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    tool_input={},
+                    tool_output={},
+                    latency_ms=round((time.monotonic() - tool_started) * 1000),
+                )
+                return selection
+
+            dependencies = dataclasses.replace(dependencies, plan=plan_with_observability)
+            original_synthesize = dependencies.synthesize
+
+            async def synthesize_with_observability(intent, claims):
+                tool_started = time.monotonic()
+                synthesis = await original_synthesize(intent, claims)
+                await update_step_tool_result(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    tool_input={},
+                    tool_output={},
+                    latency_ms=round((time.monotonic() - tool_started) * 1000),
+                )
+                return synthesis
+
+            dependencies = dataclasses.replace(
+                dependencies, synthesize=synthesize_with_observability
+            )
             original_explore = dependencies.explore
 
             async def explore_with_observability(profile, selection, explored, max_tool_calls):
