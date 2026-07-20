@@ -427,6 +427,10 @@ async def test_runtime_abstains_when_retrieval_has_no_candidates() -> None:
         # T-617B-C3 (4): sentimiento ciudadano en publicaciones/comentarios digitales.
         "¿Cuál es el sentimiento ciudadano expresado en los comentarios digitales sobre la "
         "reforma tributaria?",
+        # T-617B-C13 (pilot-010-negativo-causalidad-barrial): atribución
+        # causal simple (sin exclusividad explícita) a granularidad de
+        # barrio, más fina que la que publica el catálogo.
+        "¿En qué barrio la deserción escolar fue causada por el PAE durante junio de 2026?",
     ),
 )
 async def test_runtime_abstains_early_for_unverifiable_or_sensitive_requests(

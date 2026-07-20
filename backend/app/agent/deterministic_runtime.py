@@ -334,6 +334,9 @@ def _unsupported_question(question: str) -> bool:
     )
     strong_causal_attribution = _requests_strong_causal_attribution(normalized)
     social_media_sentiment_analysis = _requests_social_media_sentiment_analysis(normalized)
+    sub_municipal_causal_attribution = _requests_causal_attribution_below_catalog_granularity(
+        normalized
+    )
     return bool(
         exact_prediction
         or real_time
@@ -341,6 +344,7 @@ def _unsupported_question(question: str) -> bool:
         or medical_advice
         or strong_causal_attribution
         or social_media_sentiment_analysis
+        or sub_municipal_causal_attribution
     )
 
 
@@ -376,6 +380,29 @@ def _requests_strong_causal_attribution(normalized: str) -> bool:
         normalized,
     )
     return bool(causal_verb_with_exclusivity or exclusive_attribution_phrase)
+
+
+def _requests_causal_attribution_below_catalog_granularity(normalized: str) -> bool:
+    """Detecta atribución causal a nivel de granularidad territorial que el
+    catálogo estructurado no publica (RF-205, pilot-010-negativo-causalidad-
+    barrial): datasets oficiales colombianos en este catálogo se agregan a
+    lo sumo a nivel de municipio/departamento -- nunca a barrio, vereda o
+    manzana. Una pregunta causal ("¿en qué barrio X fue causado por Y?") a
+    esa escala no puede demostrarse con evidencia correlacional agregada,
+    con independencia de si usa lenguaje de exclusividad explícita (que ya
+    cubre `_requests_strong_causal_attribution`). Genérico por capacidad
+    territorial, no por tema ni pregunta literal: exige un verbo causal
+    (sin requerir exclusividad) combinado con un término de granularidad
+    sub-municipal en la misma pregunta.
+    """
+
+    causal_verb = re.search(
+        r"\b(causo|causada|causaron|causadas|provoco|provocada|provocaron|provocadas"
+        r"|origino|originada|originaron|originadas)\b",
+        normalized,
+    )
+    sub_municipal_granularity = re.search(r"\b(barrio|vereda|manzana|cuadra)s?\b", normalized)
+    return bool(causal_verb and sub_municipal_granularity)
 
 
 def _requests_social_media_sentiment_analysis(normalized: str) -> bool:
