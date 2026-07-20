@@ -481,6 +481,16 @@ def _merge_prepared_textual_facts(
     return tuple(merged.values())
 
 
+#: T-617B-C13 (pilot-011-cooperacion-minas y similares): un LOOKUP puede
+#: legítimamente devolver varias filas de un mismo registro/proyecto sin que
+#: eso implique una "ganadora" -- a diferencia de un agregado agrupado con
+#: empate, donde afirmar cualquiera de las filas sí lo implicaría
+#: falsamente (ver guardia en el cuerpo de la función). El tope evita que un
+#: LOOKUP con muchas filas genere un volumen de hechos textuales
+#: desproporcionado, igual que el tope ya usado en `_deterministic_synthesis`.
+_MULTI_ROW_TEXTUAL_FALLBACK_LIMIT = 8
+
+
 def _prepare_single_row_textual_fallback(
     plan: ValidatedQueryPlan,
     rendered: RenderedQuery,
@@ -489,22 +499,29 @@ def _prepare_single_row_textual_fallback(
     rows: tuple[dict, ...],
     quantitative_aliases: frozenset[str],
 ) -> tuple[tuple[PreparedTextualFact, ...], tuple[TextualRejection, ...]]:
-    """Deriva ``direct_text`` solo para una fila única y campos solicitados.
+    """Deriva ``direct_text`` para filas elegibles y campos solicitados.
 
-    RF-211/RF-212 y pruebas.md §§4.5-4.6: una consulta que ya devolvió una
-    única fila elegible no debe omitir una dimensión textual explícitamente
-    solicitada solo porque el LLM no produjo ``textual_requests``. Esto cubre
-    tanto LOOKUP como agregados agrupados top-1: el hecho afirma únicamente
-    el valor textual observado en la fila, no que sea un ganador único.
+    RF-211/RF-212 y pruebas.md §§4.5-4.6: una consulta que ya devolvió
+    fila(s) elegibles no debe omitir una dimensión textual explícitamente
+    solicitada solo porque el LLM no produjo ``textual_requests``. Para
+    agregados agrupados top-1 esto se restringe a una única fila: más de
+    una implica un empate, y afirmar el valor textual de cualquiera de
+    ellas implicaría falsamente una "ganadora" única (ver
+    ``test_aggregate_fallback_does_not_choose_unrequested_or_multiple_
+    group_labels``). Un LOOKUP no tiene esa semántica de ranking -- puede
+    listar el valor textual de cada fila devuelta, hasta
+    `_MULTI_ROW_TEXTUAL_FALLBACK_LIMIT`, sin implicar unicidad alguna.
 
-    El fallback no elige entre filas ni columnas por sus valores: exige
-    exactamente una fila, usa únicamente dimensiones TEXT seleccionadas cuyo
-    nombre real coincide con la intención y excluye los aliases que ya
-    produjeron un claim cuantitativo. Solicitudes textuales explícitas se
-    procesan por la ruta normal y nunca llegan aquí.
+    El fallback no elige entre filas ni columnas por sus valores: usa
+    únicamente dimensiones TEXT seleccionadas cuyo nombre real coincide con
+    la intención y excluye los aliases que ya produjeron un claim
+    cuantitativo. Solicitudes textuales explícitas se procesan por la ruta
+    normal y nunca llegan aquí.
     """
 
-    if plan.textual_requests or len(rows) != 1:
+    if plan.textual_requests or not rows:
+        return (), ()
+    if len(rows) != 1 and plan.operation is not QueryOperation.LOOKUP:
         return (), ()
 
     # `ejecutar_soql` recibe exclusivamente `rendered.canonical_soql`, pero
@@ -521,6 +538,7 @@ def _prepare_single_row_textual_fallback(
         rows=rows,
         validated_order_is_total=False,
     )
+    row_indexes = range(min(len(rows), _MULTI_ROW_TEXTUAL_FALLBACK_LIMIT))
     for dimension, alias in zip(
         plan.dimensions,
         rendered.dimension_aliases,
@@ -535,28 +553,29 @@ def _prepare_single_row_textual_fallback(
             )
         ):
             continue
-        spec = TextualFactSpec(
-            operation=TextualFactOperation.DIRECT_TEXT,
-            source_row_indexes=(0,),
-            columns=(alias,),
-            operation_params=EmptyTextualFactOperationParams(),
-        )
-        try:
-            evaluate_textual_operation(evidence=evidence, spec=spec)
-        except TextualOperationError as exc:
-            rejected.append(
-                TextualRejection(
-                    operation=TextualFactOperation.DIRECT_TEXT,
-                    code=exc.code,
+        for row_index in row_indexes:
+            spec = TextualFactSpec(
+                operation=TextualFactOperation.DIRECT_TEXT,
+                source_row_indexes=(row_index,),
+                columns=(alias,),
+                operation_params=EmptyTextualFactOperationParams(),
+            )
+            try:
+                evaluate_textual_operation(evidence=evidence, spec=spec)
+            except TextualOperationError as exc:
+                rejected.append(
+                    TextualRejection(
+                        operation=TextualFactOperation.DIRECT_TEXT,
+                        code=exc.code,
+                    )
+                )
+                continue
+            prepared.append(
+                PreparedTextualFact(
+                    spec=spec,
+                    validated_order_is_total=False,
                 )
             )
-            continue
-        prepared.append(
-            PreparedTextualFact(
-                spec=spec,
-                validated_order_is_total=False,
-            )
-        )
     return tuple(prepared), tuple(rejected)
 
 

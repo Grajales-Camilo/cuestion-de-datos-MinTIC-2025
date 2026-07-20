@@ -305,7 +305,15 @@ async def test_disabled_lookup_preserves_historical_count_one_rollback() -> None
 
 
 @pytest.mark.asyncio
-async def test_enabled_lookup_without_accepted_text_never_falls_back_to_count_one() -> None:
+async def test_enabled_multirow_lookup_derives_text_per_row_without_count_one_surrogate() -> None:
+    """T-617B-C13 (pilot-011-cooperacion-minas): un LOOKUP con varias filas y
+    ninguna solicitud textual explícita del LLM solía rechazarse por
+    completo (`CLAIMS_REJECTED`) porque el fallback determinista sólo
+    cubría una fila -- perdiendo evidencia legítima aunque el valor
+    textual pedido ("municipio") estuviera presente en cada fila. Ahora
+    deriva un `direct_text` por fila (nunca un surrogate `count=1`, que
+    sigue reservado exclusivamente a `textual_facts_enabled=False`)."""
+
     plan = _lookup_plan()
 
     async def executor(payload: dict) -> dict:
@@ -315,13 +323,20 @@ async def test_enabled_lookup_without_accepted_text_never_falls_back_to_count_on
             "rows": [{"dim_1": "Medellín"}, {"dim_1": "Bogotá"}],
         }
 
-    with pytest.raises(DeterministicExecutionError, match="CLAIMS_REJECTED"):
-        await execute_validated_plan(
-            _validated(plan),
-            executor=executor,
-            metadata=metadata(),
-            textual_facts_enabled=True,
-        )
+    result = await execute_validated_plan(
+        _validated(plan),
+        executor=executor,
+        metadata=metadata(),
+        textual_facts_enabled=True,
+    )
+
+    assert result.claims.claims == ()
+    assert [fact.spec.operation for fact in result.textual_facts] == [
+        TextualFactOperation.DIRECT_TEXT,
+        TextualFactOperation.DIRECT_TEXT,
+    ]
+    assert [fact.spec.source_row_indexes for fact in result.textual_facts] == [(0,), (1,)]
+    assert result.textual_rejections == ()
 
 
 def _single_project_lookup() -> tuple[QueryPlan, EnumeratedPlanningContext, ObservedDatasetSchema]:
