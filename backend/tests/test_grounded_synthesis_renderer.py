@@ -125,6 +125,36 @@ def test_literal_renderer_matches_the_three_approved_snapshots() -> None:
     )
 
 
+def test_literal_renderer_preserves_verified_textual_identifier_exactly() -> None:
+    exact_identifier = textual_fact().model_copy(
+        update={
+            "display_value": "05001",
+            "label": "Cod mpio",
+            "label_status": "verified",
+        }
+    )
+    allowed = AllowedGroundedFacts(run_id=RUN_ID, facts=(exact_identifier,))
+    textual = plan(
+        template="fact_statement",
+        refs=[{"fact_kind": "textual", "id": str(FACT_ID)}],
+    )
+
+    assert render_grounded_synthesis(textual, allowed) == "Cod mpio: 05001."
+
+
+def test_literal_renderer_keeps_legacy_text_when_label_is_ambiguous() -> None:
+    ambiguous = textual_fact().model_copy(
+        update={"display_value": "05001", "label": None, "label_status": "ambiguous"}
+    )
+    allowed = AllowedGroundedFacts(run_id=RUN_ID, facts=(ambiguous,))
+    textual = plan(
+        template="fact_statement",
+        refs=[{"fact_kind": "textual", "id": str(FACT_ID)}],
+    )
+
+    assert render_grounded_synthesis(textual, allowed) == ("La categoría seleccionada es Salud.")
+
+
 @pytest.mark.parametrize(
     ("facts", "refs"),
     (

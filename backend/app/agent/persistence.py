@@ -26,7 +26,11 @@ from app.db.models import (
     QuantitativeClaim,
 )
 from app.db.models import TextualFact as TextualFactRecord
-from app.quality.claim_labels import derive_claim_label, looks_like_internal_alias
+from app.quality.claim_labels import (
+    derive_claim_label,
+    is_identifier_field_name,
+    looks_like_internal_alias,
+)
 from app.quality.claims import (
     BuiltClaim,
     compute_legacy_source_hash,
@@ -608,6 +612,17 @@ def _reverify_textual_synthesis_fact(
             spec=spec,
             fact=fact,
         )
+        try:
+            alias_to_field = extract_column_field_names(evidence.soql_query)
+            public_columns = tuple(alias_to_field[column] for column in fact.columns)
+            if len(public_columns) == 1 and is_identifier_field_name(public_columns[0]):
+                textual_label, textual_label_status = derive_claim_label(public_columns)
+            else:
+                textual_label = None
+                textual_label_status = "ambiguous"
+        except (KeyError, SoqlGuardError):
+            textual_label = None
+            textual_label_status = "ambiguous"
         return AllowedTextualFact(
             id=fact.fact_id,
             run_id=run_id,
@@ -617,6 +632,9 @@ def _reverify_textual_synthesis_fact(
             columns=fact.columns,
             source_hash=fact.source_hash,
             fact=fact.fact,
+            display_value=fact.display_value,
+            label=textual_label,
+            label_status=textual_label_status,
             quality_classification=quality.classification,
         )
     except (TextualFactError, TypeError, ValueError, ValidationError):

@@ -41,6 +41,7 @@ _AUXILIARY_TOKENS = frozenset(
         "radicado",
     }
 )
+_IDENTIFIER_TOKENS = _AUXILIARY_TOKENS | {"postal", "divipola"}
 _TEMPORAL_TOKENS = frozenset(
     {
         "ano",
@@ -123,6 +124,17 @@ def classify_column_relevance(field_name: str) -> ColumnRelevance:
     if tokens & _TEMPORAL_TOKENS:
         return "temporal"
     return "primary"
+
+
+def is_identifier_field_name(field_name: str) -> bool:
+    """Clasifica identificadores/códigos que deben conservarse como texto.
+
+    Aunque Socrata declare algunas de estas columnas como numéricas, sus
+    valores no son magnitudes: ceros iniciales, puntos y longitud forman parte
+    de la identidad publicada y no se pueden redondear (RF-211/RNF-003).
+    """
+
+    return bool(_tokens(field_name) & _IDENTIFIER_TOKENS)
 
 
 def intent_relevance_tokens(topic: str, administrative_terms: tuple[str, ...]) -> frozenset[str]:

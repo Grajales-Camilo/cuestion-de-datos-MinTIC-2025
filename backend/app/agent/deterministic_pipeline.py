@@ -27,6 +27,7 @@ from app.quality.claim_labels import (
     COUNT_FIELD_SENTINEL,
     column_is_explicitly_requested,
     intent_relevance_tokens,
+    is_identifier_field_name,
 )
 from app.quality.claims import (
     ClaimsBuildResult,
@@ -160,9 +161,18 @@ def _claim_specs(
         else rendered.metric_aliases
     )
     column_field_names = _column_field_names(plan, rendered)
+    identifier_aliases = {
+        alias
+        for dimension, alias in zip(
+            plan.dimensions,
+            rendered.dimension_aliases,
+            strict=True,
+        )
+        if is_identifier_field_name(dimension.field_name)
+    }
     for row_index, row in enumerate(rows):
         for alias in aliases:
-            if row.get(alias) is None:
+            if row.get(alias) is None or alias in identifier_aliases:
                 continue
             specs.append(
                 ClaimSpec(
@@ -327,6 +337,89 @@ def _prepare_textual_facts(
     return tuple(prepared), tuple(rejected)
 
 
+_IDENTIFIER_REQUEST_TOKENS = frozenset(
+    {"codigo", "cod", "id", "identificador", "divipola", "postal", "nit", "sigep"}
+)
+
+
+def _prepare_requested_identifier_facts(
+    plan: ValidatedQueryPlan,
+    rendered: RenderedQuery,
+    *,
+    canonical_soql: str,
+    rows: tuple[dict, ...],
+) -> tuple[tuple[PreparedTextualFact, ...], tuple[TextualRejection, ...]]:
+    """Preserva códigos solicitados como texto exacto, nunca como magnitudes."""
+
+    requested_tokens = intent_relevance_tokens(plan.purpose, ())
+    identifier_concept_requested = bool(requested_tokens & _IDENTIFIER_REQUEST_TOKENS)
+    evidence = TextualEvidence(
+        dataset_id=rendered.dataset_id,
+        canonical_soql=canonical_soql,
+        rows=rows,
+        validated_order_is_total=False,
+    )
+    prepared: list[PreparedTextualFact] = []
+    rejected: list[TextualRejection] = []
+    for dimension, alias in zip(
+        plan.dimensions,
+        rendered.dimension_aliases,
+        strict=True,
+    ):
+        if not is_identifier_field_name(dimension.field_name) or not (
+            identifier_concept_requested
+            or column_is_explicitly_requested(
+                dimension.field_name,
+                requested_tokens=requested_tokens,
+            )
+        ):
+            continue
+        for row_index, row in enumerate(rows[:12]):
+            if row.get(alias) is None:
+                continue
+            spec = TextualFactSpec(
+                operation=TextualFactOperation.DIRECT_TEXT,
+                source_row_indexes=(row_index,),
+                columns=(alias,),
+                operation_params=EmptyTextualFactOperationParams(),
+            )
+            try:
+                evaluate_textual_operation(evidence=evidence, spec=spec)
+            except TextualOperationError as exc:
+                rejected.append(
+                    TextualRejection(
+                        operation=TextualFactOperation.DIRECT_TEXT,
+                        code=exc.code,
+                    )
+                )
+                continue
+            prepared.append(
+                PreparedTextualFact(
+                    spec=spec,
+                    validated_order_is_total=False,
+                )
+            )
+    return tuple(prepared), tuple(rejected)
+
+
+def _merge_prepared_textual_facts(
+    *groups: tuple[PreparedTextualFact, ...],
+) -> tuple[PreparedTextualFact, ...]:
+    merged: dict[
+        tuple[TextualFactOperation, tuple[int, ...], tuple[str, ...]],
+        PreparedTextualFact,
+    ] = {}
+    for group in groups:
+        for item in group:
+            key = (
+                item.spec.operation,
+                item.spec.source_row_indexes,
+                item.spec.columns,
+            )
+            merged.setdefault(key, item)
+    return tuple(merged.values())
+
+
 def _prepare_single_row_textual_fallback(
     plan: ValidatedQueryPlan,
     rendered: RenderedQuery,
@@ -466,6 +559,12 @@ async def execute_validated_plan(
     textual_facts: tuple[PreparedTextualFact, ...] = ()
     textual_rejections: tuple[TextualRejection, ...] = ()
     if textual_facts_enabled:
+        identifier_facts, identifier_rejections = _prepare_requested_identifier_facts(
+            plan,
+            rendered,
+            canonical_soql=canonical_soql,
+            rows=rows,
+        )
         if plan.textual_requests:
             textual_facts, textual_rejections = _prepare_textual_facts(
                 plan,
@@ -484,7 +583,17 @@ async def execute_validated_plan(
                 rows=rows,
                 quantitative_aliases=quantitative_aliases,
             )
-    if not claims.claims and plan.operation is QueryOperation.LOOKUP and not textual_facts_enabled:
+        textual_facts = _merge_prepared_textual_facts(textual_facts, identifier_facts)
+        textual_rejections = (*textual_rejections, *identifier_rejections)
+    has_identifier_dimension = any(
+        is_identifier_field_name(dimension.field_name) for dimension in plan.dimensions
+    )
+    if (
+        not claims.claims
+        and plan.operation is QueryOperation.LOOKUP
+        and not textual_facts_enabled
+        and not has_identifier_dimension
+    ):
         presence_claims = build_claims(
             EvidenceContext(
                 dataset_id=rendered.dataset_id,

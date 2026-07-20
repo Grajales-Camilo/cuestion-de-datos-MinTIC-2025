@@ -270,6 +270,42 @@ async def test_synthesis_loader_reverifies_and_isolates_facts_by_run(
     assert allowed.facts[0].evidence_id == evidence_id
 
 
+async def test_synthesis_loader_labels_identifier_from_persisted_soql_without_changing_value(
+    engine,
+    created_ids,
+) -> None:
+    run_id, evidence_id, dataset_id = await seed_evidence(
+        engine,
+        created_ids,
+        rows=[{"dim_1": "05001"}],
+        soql_query="SELECT cod_mpio as dim_1 LIMIT 1000 OFFSET 0",
+    )
+    spec = TextualFactSpec(
+        operation=TextualFactOperation.DIRECT_TEXT,
+        source_row_indexes=(0,),
+        columns=("dim_1",),
+        operation_params=EmptyTextualFactOperationParams(),
+    )
+    await build_verify_persist_textual_facts(
+        engine,
+        run_id,
+        (
+            TextualFactBuildCommand(
+                evidence_id=evidence_id,
+                dataset_id=dataset_id,
+                spec=spec,
+            ),
+        ),
+    )
+
+    allowed = await load_allowed_grounded_facts(engine, run_id)
+
+    assert len(allowed.facts) == 1
+    assert allowed.facts[0].display_value == "05001"
+    assert allowed.facts[0].label == "Cod mpio"
+    assert allowed.facts[0].label_status == "verified"
+
+
 async def test_synthesis_loader_excludes_an_altered_persisted_fact(
     engine,
     created_ids,

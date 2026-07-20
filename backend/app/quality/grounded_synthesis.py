@@ -65,6 +65,9 @@ class AllowedTextualFact(_AllowedFact):
     fact_kind: Literal[TextualFactKind.TEXTUAL] = TextualFactKind.TEXTUAL
     source_hash: str = Field(pattern=r"^sha256-jcs-v1:[0-9a-f]{64}$")
     fact: str = Field(min_length=1)
+    display_value: str | None = None
+    label: str | None = None
+    label_status: LabelStatus = "ambiguous"
 
 
 AllowedGroundedFact = Annotated[
@@ -248,6 +251,13 @@ def _atomic_clause(fact: AllowedQuantitativeFact | AllowedTextualFact) -> str:
         if fact.label_status == "verified" and fact.label:
             return f"{fact.label}: {fact.display_value}."
         return f"{fact.display_value} (sin etiqueta verificable)."
+    if (
+        isinstance(fact, AllowedTextualFact)
+        and fact.label_status == "verified"
+        and fact.label
+        and fact.display_value
+    ):
+        return f"{fact.label}: {fact.display_value}."
     return fact.fact
 
 

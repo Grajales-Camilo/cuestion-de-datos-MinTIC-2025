@@ -5,15 +5,27 @@ from datetime import UTC, datetime
 import pytest
 
 from app.agent.deterministic_pipeline import (
+    DeterministicExecutionError,
     ExecutionMetadata,
     execute_validated_plan,
     persist_deterministic_execution,
 )
-from app.agent.plan_validator import validate_query_plan
+from app.agent.plan_validator import (
+    ObservedColumn,
+    ObservedDatasetSchema,
+    ValidatedQueryPlan,
+    validate_query_plan,
+)
 from app.agent.query_plan import (
+    ColumnDataType,
+    ColumnOption,
     ColumnReference,
+    DatasetOption,
     DimensionSelection,
+    EligibilityStatus,
+    EnumeratedPlanningContext,
     MetricSelection,
+    PiiRiskLevel,
     QueryOperation,
     QueryPlan,
 )
@@ -34,6 +46,61 @@ def metadata(*, medium: bool = False) -> ExecutionMetadata:
 
 def validated(plan: QueryPlan, *, medium: bool = False):
     return validate_query_plan(plan, context=context(), schema=schema(medium=medium))
+
+
+def validated_identifier_lookup(
+    *,
+    field_names: tuple[str, ...],
+    purpose: str,
+) -> ValidatedQueryPlan:
+    columns = tuple(
+        ColumnOption(
+            index=index,
+            field_name=field_name,
+            display_name=field_name,
+            data_type=ColumnDataType.NUMBER,
+            pii_risk_level=PiiRiskLevel.LOW,
+        )
+        for index, field_name in enumerate(field_names)
+    )
+    planning_context = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="abcd-1234",
+                title="Dataset de códigos",
+                publisher="Entidad oficial",
+                columns=columns,
+            ),
+        )
+    )
+    observed_schema = ObservedDatasetSchema(
+        dataset_id="abcd-1234",
+        eligibility_status=EligibilityStatus.ELIGIBLE,
+        pii_risk_level=PiiRiskLevel.LOW,
+        columns=tuple(
+            ObservedColumn(
+                field_name=column.field_name,
+                data_type=column.data_type,
+                pii_risk_level=column.pii_risk_level,
+            )
+            for column in columns
+        ),
+    )
+    plan = QueryPlan(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimensions=tuple(
+            DimensionSelection(
+                column=ColumnReference(column_index=index),
+                provenance=provenance(),
+            )
+            for index in range(len(columns))
+        ),
+        limit=12,
+        purpose=purpose,
+    )
+    return validate_query_plan(plan, context=planning_context, schema=observed_schema)
 
 
 @pytest.mark.asyncio
@@ -156,6 +223,84 @@ async def test_text_lookup_builds_grounded_presence_claim() -> None:
     assert "valor=IP Ibagué - Cajamarca" in claim.description
     assert claim.source_row_indexes == (0,)
     assert claim.source_hash.startswith("sha256:")
+
+
+@pytest.mark.asyncio
+async def test_requested_numeric_identifier_becomes_exact_textual_fact() -> None:
+    plan = validated_identifier_lookup(
+        field_names=("cod_mpio",),
+        purpose="Consultar el código del municipio",
+    )
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [{"dim_1": "05001"}],
+            "source_url": "https://example.test/resource/abcd-1234.json",
+        }
+
+    result = await execute_validated_plan(
+        plan,
+        executor=executor,
+        metadata=metadata(),
+        textual_facts_enabled=True,
+    )
+
+    assert result.claims.claims == ()
+    assert len(result.textual_facts) == 1
+    assert result.textual_facts[0].spec.columns == ("dim_1",)
+    assert result.textual_facts[0].spec.source_row_indexes == (0,)
+
+
+@pytest.mark.asyncio
+async def test_multirow_postal_identifiers_preserve_each_source_string() -> None:
+    plan = validated_identifier_lookup(
+        field_names=("codigo_postal",),
+        purpose="Consultar los códigos postales",
+    )
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [{"dim_1": "153.42"}, {"dim_1": "153.427"}],
+            "source_url": "https://example.test/resource/abcd-1234.json",
+        }
+
+    result = await execute_validated_plan(
+        plan,
+        executor=executor,
+        metadata=metadata(),
+        textual_facts_enabled=True,
+    )
+
+    assert result.claims.claims == ()
+    assert [item.spec.source_row_indexes for item in result.textual_facts] == [(0,), (1,)]
+
+
+@pytest.mark.asyncio
+async def test_identifier_is_never_recast_as_presence_count_when_textual_facts_disabled() -> None:
+    plan = validated_identifier_lookup(
+        field_names=("cod_mpio",),
+        purpose="Consultar el código del municipio",
+    )
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [{"dim_1": "05001"}],
+            "source_url": "https://example.test/resource/abcd-1234.json",
+        }
+
+    with pytest.raises(DeterministicExecutionError, match="CLAIMS_REJECTED"):
+        await execute_validated_plan(
+            plan,
+            executor=executor,
+            metadata=metadata(),
+            textual_facts_enabled=False,
+        )
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,7 @@ from app.quality.claim_labels import (
     derive_claim_label,
     humanize_field_name,
     intent_relevance_tokens,
+    is_identifier_field_name,
     label_grounded_in_text,
     looks_like_internal_alias,
 )
@@ -78,6 +79,20 @@ def test_classify_column_relevance_generic_categories() -> None:
     assert classify_column_relevance("fecha_reporte") == "temporal"
     assert classify_column_relevance("anio_vigencia") == "temporal"
     assert classify_column_relevance("__count__") == "primary"
+
+
+def test_identifier_field_detection_is_structural_and_generic() -> None:
+    for field_name in (
+        "cod_mpio",
+        "codigo_postal",
+        "zona_postal",
+        "codigo_divipola",
+        "nit_proveedor",
+    ):
+        assert is_identifier_field_name(field_name)
+
+    for field_name in ("cantidad_personas", "capacidad_mw", "a_o"):
+        assert not is_identifier_field_name(field_name)
 
 
 def test_relevant_claim_included_by_default() -> None:
