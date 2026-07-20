@@ -74,6 +74,7 @@ from app.db.models import AgentRun
 from app.llm.factory import (
     LLMConfigurationError,
     LLMProviderError,
+    LLMStructuredOutputError,
     get_structured_chat_model,
 )
 from app.quality.claim_labels import build_presentation_warnings, intent_relevance_tokens
@@ -778,6 +779,27 @@ async def execute_deterministic_agent_run_async(
                 message_user=(
                     "No fue posible producir una respuesta sin cifras "
                     "no respaldadas por la evidencia."
+                ),
+                message_dev=str(exc),
+                retryable=False,
+            )
+        ).model_dump()
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status="failed",
+            error_code="STRUCTURED_OUTPUT_INVALID",
+            payload=payload,
+        )
+        return {"terminal_error": payload, "runtime": "deterministic"}
+    except LLMStructuredOutputError as exc:
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code="STRUCTURED_OUTPUT_INVALID",
+                status="failed",
+                message_user=(
+                    "No fue posible interpretar de forma segura la respuesta "
+                    "estructurada del modelo."
                 ),
                 message_dev=str(exc),
                 retryable=False,

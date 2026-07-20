@@ -116,6 +116,71 @@ class EnumeratedPlanSelection(QuantitativePlanSelection):
 
     textual_requests: tuple[TextualSelection, ...] = Field(default_factory=tuple, max_length=8)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _recover_semantically_unambiguous_optional_shapes(cls, value: object) -> object:
+        """Recupera solo dos representaciones inequívocas observadas en C9.
+
+        La extensión textual es una propuesta opcional y no confiable. Una
+        explicación libre dentro de su lista no puede convertirse en un hecho,
+        pero tampoco debe invalidar un plan cuantitativo estructuralmente
+        válido: se descarta exclusivamente ese elemento. Los objetos siguen
+        validándose de forma estricta.
+
+        Algunos proveedores expresan columnas de un LOOKUP como métricas con
+        ``operation=lookup``. Si el elemento contiene únicamente operación e
+        índice entero, se traslada el mismo índice a
+        ``dimension_column_indexes``. No se infieren columnas, filtros,
+        valores ni operaciones. Cualquier otra forma conserva el fallo normal
+        de Pydantic.
+        """
+
+        if not isinstance(value, dict):
+            return value
+        recovered = dict(value)
+
+        textual_requests = recovered.get("textual_requests")
+        if isinstance(textual_requests, (list, tuple)):
+            recovered["textual_requests"] = [
+                item for item in textual_requests if isinstance(item, (dict, BaseModel))
+            ]
+
+        operation = recovered.get("operation")
+        metrics = recovered.get("metrics")
+        dimensions = recovered.get("dimension_column_indexes", ())
+        if (
+            operation in {QueryOperation.LOOKUP, QueryOperation.LOOKUP.value}
+            and isinstance(metrics, (list, tuple))
+            and isinstance(dimensions, (list, tuple))
+        ):
+            recovered_indexes: list[int] = []
+            remaining_metrics: list[object] = []
+            for item in metrics:
+                if not isinstance(item, dict):
+                    remaining_metrics.append(item)
+                    continue
+                item_operation = item.get("operation")
+                column_index = item.get("column_index")
+                recoverable_index = (
+                    item_operation in {QueryOperation.LOOKUP, QueryOperation.LOOKUP.value}
+                    and set(item) <= {"operation", "column_index"}
+                    and isinstance(column_index, (int, float))
+                    and not isinstance(column_index, bool)
+                    and float(column_index).is_integer()
+                    and column_index >= 0
+                )
+                if recoverable_index:
+                    recovered_indexes.append(int(column_index))
+                else:
+                    remaining_metrics.append(item)
+            if recovered_indexes:
+                recovered["dimension_column_indexes"] = list(
+                    dict.fromkeys([*dimensions, *recovered_indexes])
+                )
+                recovered["metrics"] = remaining_metrics
+
+        return recovered
+
 
 class GroundedSynthesis(_LLMOutput):
     answer: str = Field(min_length=1, max_length=8_000)

@@ -806,6 +806,85 @@ def test_structured_outputs_forbid_extra_free_text_fields() -> None:
         )
 
 
+def test_textual_extension_discards_only_free_text_items_without_interpreting_them() -> None:
+    selection = EnumeratedPlanSelection.model_validate(
+        {
+            "dataset_index": 0,
+            "operation": "sum",
+            "metrics": [{"operation": "sum", "column_index": 1}],
+            "textual_requests": [
+                "No se puede determinar el texto solicitado.",
+                {
+                    "operation": "direct_text",
+                    "source_row_indexes": [0],
+                    "column": {"column_index": 2},
+                },
+            ],
+        }
+    )
+
+    assert len(selection.textual_requests) == 1
+    assert selection.textual_requests[0].operation.value == "direct_text"
+    assert selection.textual_requests[0].column.column_index == 2
+
+
+def test_lookup_metrics_with_only_integral_indexes_become_dimensions() -> None:
+    selection = EnumeratedPlanSelection.model_validate(
+        {
+            "dataset_index": 0,
+            "operation": "lookup",
+            "dimension_column_indexes": [1],
+            "metrics": [
+                {"operation": "lookup", "column_index": 19.0},
+                {"operation": "lookup", "column_index": 20},
+                {"operation": "lookup", "column_index": 21.0},
+            ],
+        }
+    )
+
+    assert selection.dimension_column_indexes == (1, 19, 20, 21)
+    assert selection.metrics == ()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "dataset_index": 0,
+            "operation": "sum",
+            "metrics": [{"operation": "sum", "column_index": 1}],
+            "textual_requests": "explicación libre fuera de una lista",
+        },
+        {
+            "dataset_index": 0,
+            "operation": "sum",
+            "metrics": [{"operation": "sum", "column_index": 1}],
+            "textual_requests": [
+                {
+                    "operation": "direct_text",
+                    "source_row_indexes": [0],
+                    "column": {"column_index": 2},
+                    "texto_inventado": "no permitido",
+                }
+            ],
+        },
+        {
+            "dataset_index": 0,
+            "operation": "lookup",
+            "metrics": [{"operation": "lookup", "column_index": 2, "explanation": "no"}],
+        },
+        {
+            "dataset_index": 0,
+            "operation": "sum",
+            "metrics": [{"operation": "lookup", "column_index": 2}],
+        },
+    ],
+)
+def test_optional_shape_recovery_keeps_all_other_invalid_outputs_strict(payload: dict) -> None:
+    with pytest.raises(ValidationError):
+        EnumeratedPlanSelection.model_validate(payload)
+
+
 def test_count_cannot_choose_a_column_and_lookup_is_not_a_metric() -> None:
     with pytest.raises(ValidationError, match=r"count\(\*\)"):
         MetricChoice(operation=QueryOperation.COUNT, column_index=1)

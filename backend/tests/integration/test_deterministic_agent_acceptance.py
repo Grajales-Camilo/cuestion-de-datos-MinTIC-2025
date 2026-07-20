@@ -106,7 +106,7 @@ from app.db.models import (
 from app.db.models import (
     TextualFact as TextualFactRecord,
 )
-from app.llm.factory import LLMProviderError
+from app.llm.factory import LLMProviderError, LLMStructuredOutputError
 from app.quality.grounded_facts import GroundedSynthesisPlan
 from app.quality.textual_fact_builder import TextualFactError
 
@@ -1592,6 +1592,49 @@ async def test_h7b_provider_failure_outside_synthesis_terminates_controlled(
     terminal_events = [event for event in events if event.event_type in ("answer", "error")]
     assert len(terminal_events) == 1
     assert terminal_events[0].event_type == "error"
+
+
+async def test_h7b_structured_output_failure_is_agent_error_not_infrastructure(
+    engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
+) -> None:
+    """Una respuesta recibida pero inválida no se atribuye a red/proveedor."""
+
+    run_id = await _seed_run(
+        engine,
+        created,
+        question=f"{QUESTION_PREFIX}historia 7b: salida estructurada inválida",
+    )
+
+    async def extract_intent(_question: str) -> IntentExtraction:
+        raise LLMStructuredOutputError("textual_requests.0 no es un objeto")
+
+    async def unreachable(*_args, **_kwargs):
+        raise AssertionError("la corrida debe terminar al extraer la intención")
+
+    _patch_runtime(
+        monkeypatch,
+        DeterministicRuntimeDependencies(
+            extract_intent=extract_intent,
+            retrieve=unreachable,
+            profile=unreachable,
+            plan=unreachable,
+            explore=unreachable,
+            execute=unreachable,
+            synthesize=unreachable,
+        ),
+    )
+
+    result = await execute_deterministic_agent_run_async(settings(), run_id)
+
+    assert result["terminal_error"]["error"]["code"] == "STRUCTURED_OUTPUT_INVALID"
+    assert result["terminal_error"]["error"]["retryable"] is False
+    run = await _load_run(engine, run_id)
+    assert run.status == "failed"
+    assert run.terminal_error_code == "STRUCTURED_OUTPUT_INVALID"
+    events = await _load_events(engine, run_id)
+    terminal_events = [event for event in events if event.event_type in ("answer", "error")]
+    assert len(terminal_events) == 1
+    assert terminal_events[0].payload["error"]["code"] == "STRUCTURED_OUTPUT_INVALID"
 
 
 async def test_h7c_irreparable_synthesis_is_agent_failure_with_persisted_telemetry(

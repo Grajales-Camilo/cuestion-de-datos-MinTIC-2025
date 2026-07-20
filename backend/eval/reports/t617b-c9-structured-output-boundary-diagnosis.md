@@ -81,3 +81,51 @@ Por tanto:
 No cambiar golden, `expected_facts`, presupuestos, umbrales, cardinalidades,
 contratos públicos ni el criterio de suficiencia RF-211. No ejecutar `full`
 antes de un smoke formal verde.
+
+## C9A — implementación
+
+Se implementó el incremento acotado:
+
+1. `EnumeratedPlanSelection` incorpora un preprocesamiento previo a Pydantic
+   que solo recupera las dos formas demostradas por el smoke:
+   - dentro de una lista `textual_requests`, descarta elementos que no son
+     objetos/modelos; nunca interpreta su texto ni lo convierte en un hecho;
+   - cuando la operación superior es `LOOKUP`, mueve a
+     `dimension_column_indexes` únicamente métricas `lookup` que contienen
+     solo `operation` y un `column_index` integral no negativo.
+2. Objetos textuales con campos extra, `textual_requests` fuera de una lista,
+   métricas lookup con datos adicionales y métricas lookup bajo otra operación
+   siguen fallando estrictamente.
+3. El runner determinista captura `LLMStructuredOutputError` antes que su clase
+   padre y persiste `STRUCTURED_OUTPUT_INVALID`, no
+   `LLM_PROVIDER_ERROR`. Los fallos reales de red/cuota/5xx conservan la ruta
+   de proveedor.
+
+No se alteraron prompts, golden, filtros, valores, presupuestos, contratos
+públicos, umbrales ni cardinalidades.
+
+### Prueba fallo→pasa
+
+Worktree temporal sobre `7ac6b18`, con las pruebas nuevas copiadas:
+
+- normalización: `2 failed, 4 passed` (los dos defectos reales fallaron);
+- atribución terminal: `1 failed` porque el baseline persistía
+  `LLM_PROVIDER_ERROR`;
+- con la implementación: todos esos casos pasan;
+- el worktree temporal fue eliminado.
+
+### Verificación
+
+- `tests/test_llm_contracts.py`: `47 passed`.
+- `pytest -m "not integration" -q`:
+  `1091 passed, 123 deselected`.
+- aceptación determinista con PostgreSQL:
+  `20 passed, 1194 deselected`.
+- integraciones compartidas:
+  `95 passed, 1 skipped, 1118 deselected`.
+- aceptación legacy: `7 passed, 1207 deselected`.
+- Ruff check/formato y `git diff --check`: limpios.
+- hashes de `golden-v1` y `golden-v2`: intactos.
+
+Estado: `READY_FOR_FIVE_CASE_DIRECTED_VALIDATION` /
+`SMOKE_AND_FULL_BLOCKED`.
