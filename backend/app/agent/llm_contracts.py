@@ -946,6 +946,20 @@ def normalize_direct_quantity_lookup(
     return selection.model_copy(update={"dimension_column_indexes": dimensions, "metrics": ()})
 
 
+#: T-617B-C13 (RF-205, pilot-022-red-vial): una pregunta que pide
+#: "características/atributos/información/detalles" de un registro no nombra
+#: ningún indicador específico -- las únicas coincidencias léxicas que
+#: produce el recorte de abajo terminan siendo palabras que describen el
+#: TIPO de entidad consultada (p. ej. "tramo"/"vial" solapando con nombres de
+#: columna del propio dataset, no con un indicador pedido), lo que excluye
+#: columnas del `expected_fact` ("calzada"/"categoria") sin ninguna señal
+#: real de que el usuario no las quería. Mismo patrón ya usado para
+#: presupuestal/presupuesto: una solicitud genérica se sirve sin recorte.
+#: `_semantic_tokens` recorta la "s" final de palabras >4 caracteres, así
+#: que estas formas ya están en singular ("características" -> "caracteristica").
+_GENERIC_LOOKUP_REQUEST_TOKENS = frozenset({"caracteristica", "atributo", "informacion", "detalle"})
+
+
 def normalize_lookup_output_columns(
     selection: EnumeratedPlanSelection,
     *,
@@ -957,6 +971,10 @@ def normalize_lookup_output_columns(
     if selection.operation is not QueryOperation.LOOKUP or not context.candidates:
         return selection
     words = _semantic_tokens(question)
+    columns = context.candidates[selection.dataset_index].columns
+    if words.intersection(_GENERIC_LOOKUP_REQUEST_TOKENS):
+        all_indexes = tuple(dict.fromkeys(column.index for column in columns))[:8]
+        return selection.model_copy(update={"dimension_column_indexes": all_indexes, "metrics": ()})
     if words.intersection({"presupuestal", "presupuesto"}):
         return selection
     if "sexo" in words:

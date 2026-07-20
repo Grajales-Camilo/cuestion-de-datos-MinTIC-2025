@@ -1503,6 +1503,58 @@ def test_plant_count_lookup_prioritizes_total_and_year_over_subtypes() -> None:
     assert 1 not in normalized.dimension_column_indexes
 
 
+def test_generic_characteristics_lookup_keeps_all_columns_without_narrowing() -> None:
+    """Reproduce golden-v1 pilot-022-red-vial: "¿Qué características básicas
+    se registran para el tramo vial 55ST02?" solo comparte tokens léxicos
+    con columnas que describen el TIPO de entidad ("tramo"/"vial"), no un
+    indicador pedido -- antes de este fix, eso recortaba `calzada`/
+    `categoria`, exactamente las columnas que exige `expected_fact`."""
+
+    road_context = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="ie7y-asdn",
+                title="Red vial",
+                publisher="INVIAS",
+                columns=tuple(
+                    ColumnOption(
+                        index=index,
+                        field_name=name,
+                        display_name=name,
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    )
+                    for index, name in enumerate(
+                        (
+                            "codigo_tramo",
+                            "grupo_administrador_vial",
+                            "nombre_tramo",
+                            "nombre_ruta",
+                            "calzada",
+                            "categoria",
+                        )
+                    )
+                ),
+            ),
+        )
+    )
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0, 1, 2, 3),
+    )
+
+    normalized = normalize_lookup_output_columns(
+        proposed,
+        question="¿Qué características básicas se registran para el tramo vial 55ST02?",
+        context=road_context,
+    )
+
+    assert 4 in normalized.dimension_column_indexes  # calzada
+    assert 5 in normalized.dimension_column_indexes  # categoria
+
+
 def test_ranked_aggregate_materializes_group_order_and_top_one() -> None:
     proposed = EnumeratedPlanSelection(
         dataset_index=0,
