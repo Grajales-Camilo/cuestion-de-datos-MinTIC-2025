@@ -129,3 +129,40 @@ Worktree temporal sobre `7ac6b18`, con las pruebas nuevas copiadas:
 
 Estado: `READY_FOR_FIVE_CASE_DIRECTED_VALIDATION` /
 `SMOKE_AND_FULL_BLOCKED`.
+
+## C9B — validación dirigida real
+
+La evaluación `54f9e4df-eb31-4f89-9999-7a2eae311aa9` sobre `ff5b5f9`
+ejecutó una vez los cinco casos afectados:
+
+- `pilot-002`: aprobado;
+- `pilot-005`: aprobado;
+- `pilot-012`: `LLM_BUDGET_EXCEEDED`, sin consulta;
+- `pilot-021`: `CANDIDATE_BUDGET_EXCEEDED`, sin consulta;
+- `pilot-038`: `CANDIDATE_BUDGET_EXCEEDED`, sin consulta.
+
+No ocurrió ningún `LLM_PROVIDER_ERROR`, `STRUCTURED_OUTPUT_INVALID` ni terminal
+de infraestructura. Esto confirma que C9A recuperó las formas observadas y
+corrigió la atribución. No basta para repetir el smoke: tres casos siguen sin
+llegar a T5.
+
+La traza identifica dos hallazgos genéricos nuevos:
+
+1. La exploración construye como máximo tres términos en este orden:
+   frase original, frase sin tildes, tokens sin tildes. Por el corte a tres,
+   `"Auditoría Regular"` nunca prueba `"Regular"` y `"Alcalá (Valle)"` nunca
+   prueba el token original `"Alcalá"`. Los dos datasets esperados estaban en
+   primer lugar, pero fueron descartados por esa política de variantes.
+2. En el dataset esperado de `pilot-038` (`s54a-sgyg`), T4 devolvió un error
+   definitivo de transporte Socrata después del reintento interno. El runtime
+   determinista lo redujo a `ValueError`, rechazó el candidato y terminó
+   contabilizándolo como agotamiento semántico. `plan.md` §11 y
+   `contracts/api-rest.md` exigen que `SOCRATA_TIMEOUT`/`SOCRATA_ERROR` sean
+   terminales de infraestructura, no rechazo silencioso del candidato.
+
+Además, el agregado dirigido registra `orphan_figures_count=1` pese a que
+`pilot-002`/`pilot-005` aprobaron; debe localizarse y auditarse antes de una
+puerta formal.
+
+Estado: `READY_FOR_EXPLORATION_BOUNDARY_FIX` /
+`SMOKE_AND_FULL_BLOCKED`.
