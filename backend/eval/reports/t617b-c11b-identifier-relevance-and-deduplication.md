@@ -80,3 +80,27 @@ El resultado mecánico de `pilot-016` seguirá interpretándose aparte del
 `expected_fact` desalineado. No repetir smoke/full ni ejecutar golden-v2 hasta
 cerrar también los defectos materiales independientes de `pilot-034` y
 `pilot-036`.
+
+## 5. Validación real final
+
+La corrida dirigida `17e8f034-f05e-4b10-a00f-05fd9e5595fb`, sobre
+`715bafd22e24137c16e1a4d58609030a7b893699`, confirmó el comportamiento:
+
+- `pilot-016`: `Codigo postal: 153.42. Además, Zona postal: 1.534. Además,
+  Codigo postal: 153.427.`; no aparecieron códigos departamentales o
+  municipales y la zona duplicada se emitió una sola vez;
+- `pilot-020`: `Cod dpto: 05. Además, Cod mpio: 05001.`.
+
+SQL de solo lectura confirmó que `raw_values`, `display_value`, la evidencia y
+la narrativa preservan exactamente `153.42`, `153.427`, `1.534`, `05` y
+`05001`. Los dos casos terminaron `completed`, con integridad textual 100 %,
+cero fabricaciones, cero cifras huérfanas, cero infraestructura y cero corridas
+`running`.
+
+La aceptación mecánica permaneció en 1/2 exclusivamente porque el
+`expected_fact` congelado de `pilot-016` no corresponde al identificador postal
+preguntado. No se alteró ni se propone alterar ese golden dentro de T-617B.
+
+**Veredicto de C11A/C11B:** `PASSED_REAL_VALIDATION`. El siguiente diagnóstico
+material es `pilot-034`; `pilot-036` se mantiene separado por ambigüedad
+multirregistro.
