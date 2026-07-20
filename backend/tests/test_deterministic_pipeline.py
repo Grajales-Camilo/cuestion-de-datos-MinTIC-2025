@@ -256,7 +256,7 @@ async def test_requested_numeric_identifier_becomes_exact_textual_fact() -> None
 @pytest.mark.asyncio
 async def test_multirow_postal_identifiers_preserve_each_source_string() -> None:
     plan = validated_identifier_lookup(
-        field_names=("codigo_postal",),
+        field_names=("codigo_postal", "zona_postal", "codigo_departamento"),
         purpose="Consultar los códigos postales",
     )
 
@@ -264,7 +264,10 @@ async def test_multirow_postal_identifiers_preserve_each_source_string() -> None
         return {
             "ok": True,
             "canonical_soql": payload["soql"],
-            "rows": [{"dim_1": "153.42"}, {"dim_1": "153.427"}],
+            "rows": [
+                {"dim_1": "153.42", "dim_2": "1.534", "dim_3": "15"},
+                {"dim_1": "153.427", "dim_2": "1.534", "dim_3": "15"},
+            ],
             "source_url": "https://example.test/resource/abcd-1234.json",
         }
 
@@ -276,7 +279,11 @@ async def test_multirow_postal_identifiers_preserve_each_source_string() -> None
     )
 
     assert result.claims.claims == ()
-    assert [item.spec.source_row_indexes for item in result.textual_facts] == [(0,), (1,)]
+    assert [(item.spec.columns, item.spec.source_row_indexes) for item in result.textual_facts] == [
+        (("dim_1",), (0,)),
+        (("dim_1",), (1,)),
+        (("dim_2",), (0,)),
+    ]
 
 
 @pytest.mark.asyncio

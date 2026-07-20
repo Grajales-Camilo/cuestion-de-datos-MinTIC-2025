@@ -340,6 +340,63 @@ def _prepare_textual_facts(
 _IDENTIFIER_REQUEST_TOKENS = frozenset(
     {"codigo", "cod", "id", "identificador", "divipola", "postal", "nit", "sigep"}
 )
+_IDENTIFIER_QUALIFIER_GROUPS = (
+    frozenset({"postal"}),
+    frozenset({"nit"}),
+    frozenset({"sigep"}),
+    frozenset({"radicado"}),
+    frozenset({"consecutivo"}),
+    frozenset({"municipio", "mpio"}),
+    frozenset({"departamento", "dpto"}),
+)
+_GEOGRAPHIC_IDENTIFIER_TOKENS = frozenset({"municipio", "mpio", "departamento", "dpto"})
+_CODE_TOKENS = frozenset({"codigo", "cod", "id", "identificador"})
+
+
+def _token_family_requested(
+    family: frozenset[str],
+    *,
+    requested_tokens: frozenset[str],
+) -> bool:
+    return any(
+        requested == token or requested in token or token in requested
+        for requested in requested_tokens
+        for token in family
+    )
+
+
+def _identifier_dimension_is_requested(
+    field_name: str,
+    *,
+    requested_tokens: frozenset[str],
+) -> bool:
+    """Acota el identificador a su subtipo solicitado, si lo hay."""
+
+    field_tokens = intent_relevance_tokens(field_name, ())
+    requested_groups = tuple(
+        group
+        for group in _IDENTIFIER_QUALIFIER_GROUPS
+        if _token_family_requested(group, requested_tokens=requested_tokens)
+    )
+    divipola_requested = _token_family_requested(
+        frozenset({"divipola"}),
+        requested_tokens=requested_tokens,
+    )
+    if requested_groups or divipola_requested:
+        if any(field_tokens & group for group in requested_groups):
+            return True
+        return bool(
+            divipola_requested
+            and field_tokens & _CODE_TOKENS
+            and field_tokens & _GEOGRAPHIC_IDENTIFIER_TOKENS
+        )
+    return column_is_explicitly_requested(
+        field_name,
+        requested_tokens=requested_tokens,
+    ) or _token_family_requested(
+        _IDENTIFIER_REQUEST_TOKENS,
+        requested_tokens=requested_tokens,
+    )
 
 
 def _prepare_requested_identifier_facts(
@@ -352,7 +409,6 @@ def _prepare_requested_identifier_facts(
     """Preserva códigos solicitados como texto exacto, nunca como magnitudes."""
 
     requested_tokens = intent_relevance_tokens(plan.purpose, ())
-    identifier_concept_requested = bool(requested_tokens & _IDENTIFIER_REQUEST_TOKENS)
     evidence = TextualEvidence(
         dataset_id=rendered.dataset_id,
         canonical_soql=canonical_soql,
@@ -361,21 +417,25 @@ def _prepare_requested_identifier_facts(
     )
     prepared: list[PreparedTextualFact] = []
     rejected: list[TextualRejection] = []
+    observed_values: set[tuple[str, str]] = set()
     for dimension, alias in zip(
         plan.dimensions,
         rendered.dimension_aliases,
         strict=True,
     ):
-        if not is_identifier_field_name(dimension.field_name) or not (
-            identifier_concept_requested
-            or column_is_explicitly_requested(
-                dimension.field_name,
-                requested_tokens=requested_tokens,
-            )
+        if not is_identifier_field_name(
+            dimension.field_name
+        ) or not _identifier_dimension_is_requested(
+            dimension.field_name,
+            requested_tokens=requested_tokens,
         ):
             continue
         for row_index, row in enumerate(rows[:12]):
-            if row.get(alias) is None:
+            raw_value = row.get(alias)
+            if raw_value is None:
+                continue
+            value_key = (alias, str(raw_value))
+            if value_key in observed_values:
                 continue
             spec = TextualFactSpec(
                 operation=TextualFactOperation.DIRECT_TEXT,
@@ -399,6 +459,7 @@ def _prepare_requested_identifier_facts(
                     validated_order_is_total=False,
                 )
             )
+            observed_values.add(value_key)
     return tuple(prepared), tuple(rejected)
 
 
