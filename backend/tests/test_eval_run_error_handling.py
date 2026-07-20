@@ -35,6 +35,11 @@ def _settings(**overrides: object) -> Settings:
         "SOCRATA_APP_TOKEN": "token-local",
         "RETENTION_HASH_SALT": "replace-with-local-development-salt-32-bytes",
         "EVAL_MODE": True,
+        # Las pruebas que atraviesan `run_suite` simulan una certificación
+        # formal de las suites golden actuales, que desde T-615 incluye hechos
+        # textuales. Los casos del preflight que prueban el rechazo lo apagan
+        # explícitamente.
+        "DETERMINISTIC_TEXTUAL_FACTS_ENABLED": True,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -65,11 +70,18 @@ def test_config_snapshot_registers_deterministic_textual_facts_enabled(monkeypat
     assert snapshot["eval_seed"] == 601000
 
 
+@pytest.mark.parametrize("schema_version", ["golden-v1", "golden-v2"])
 @pytest.mark.parametrize("gate_mode", ["smoke", "full"])
-def test_golden_v2_certification_requires_textual_capability(gate_mode: str) -> None:
-    with pytest.raises(RuntimeError, match="golden-v2 exige"):
+def test_formal_certification_requires_textual_capability(
+    schema_version: str,
+    gate_mode: str,
+) -> None:
+    with pytest.raises(
+        RuntimeError,
+        match=rf"{schema_version} con --gate {gate_mode} exige",
+    ):
         run_module._validate_eval_capabilities(
-            schema_version="golden-v2",
+            schema_version=schema_version,
             gate_mode=gate_mode,
             settings=_settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=False),
         )
@@ -81,8 +93,9 @@ def test_golden_v2_certification_requires_textual_capability(gate_mode: str) -> 
         ("golden-v2", "smoke", True),
         ("golden-v2", "full", True),
         ("golden-v2", "directed", False),
-        ("golden-v1", "smoke", False),
-        ("golden-v1", "full", False),
+        ("golden-v1", "smoke", True),
+        ("golden-v1", "full", True),
+        ("golden-v1", "directed", False),
     ],
 )
 def test_eval_capability_preflight_preserves_compatible_modes(
@@ -728,16 +741,18 @@ async def test_run_suite_preflight_rejects_unknown_gate_mode_before_engine(monke
     assert engine_calls == []
 
 
-async def test_golden_v2_capability_preflight_fails_before_engine_and_llm(
+@pytest.mark.parametrize("schema_version", ["golden-v1", "golden-v2"])
+async def test_formal_capability_preflight_fails_before_engine_and_llm(
     monkeypatch,
+    schema_version: str,
 ) -> None:
     suite = GoldenSuite(
-        name="golden-v2",
+        name=schema_version,
         version="2.0.0",
         snapshot_at="2026-07-18",
         cases=_fake_suite().cases,
         source_path=None,
-        schema_version="golden-v2",
+        schema_version=schema_version,
     )
     engine_calls: list[object] = []
     llm_calls = AsyncMock()
@@ -756,9 +771,12 @@ async def test_golden_v2_capability_preflight_fails_before_engine_and_llm(
     )
     monkeypatch.setattr(run_module, "execute_agent_run_async", llm_calls)
 
-    with pytest.raises(RuntimeError, match="golden-v2 exige"):
+    with pytest.raises(
+        RuntimeError,
+        match=rf"{schema_version} con --gate smoke exige",
+    ):
         await run_module.run_suite(
-            suite_name="golden-v2",
+            suite_name=schema_version,
             provider="google",
             model="gemini-2.5-flash",
             seed=601000,

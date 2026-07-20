@@ -162,3 +162,29 @@ histórico: ya quedó demostrado como infraestructura. El próximo smoke canóni
 volverá a ejecutarlo. Solo si los dos casos dirigidos cumplen el criterio
 anterior procede un smoke de 10; la puerta `full` continúa bloqueada hasta que
 ese smoke pase.
+
+## 7. Validación real posterior
+
+La corrida formal `directed`
+`aeac0584-c748-4ce3-9dd0-adaf8d800473`, ejecutada sobre el commit
+`e54ef2026df9ad60e3c1b682e46158407377a3c7`, confirmó C10A con servicios
+reales:
+
+- `pilot-012`: dataset `wasc-xi4h`, fila exacta de modalidad `Regular`,
+  vigencia `2019`, sujeto `Contraloría General de Antioquia` y
+  `hallazgos_administrativos=12`;
+- `pilot-021`: dataset `52mk-e3ug`, fila exacta de municipio `ALCALÁ`, año
+  `2018`, mes `Enero` y `cantidad=65`;
+- ambos terminaron `completed`, sin terminal de error;
+- `2/2` casos aprobaron, `claims_coverage=100%`,
+  `claims_reproducible=100%`, `fabrication_count=0` y
+  `orphan_figures_count=0`;
+- las cuatro cifras materiales quedaron ligadas a claims directos y source
+  hashes persistidos;
+- la advertencia de antigüedad del dataset de `pilot-021` fue visible y no
+  bloqueante, conforme a RF-211;
+- T5 quedó observable: `socrata_success_rate=100%` (`2/2` consultas).
+
+El modo `directed` no certificó una puerta normativa. El paso siguiente fue el
+smoke canónico, cuyo hallazgo de configuración se documenta por separado en
+`t617b-c10b-formal-textual-capability-preflight.md`.

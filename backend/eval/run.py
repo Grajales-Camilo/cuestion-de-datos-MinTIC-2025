@@ -118,16 +118,23 @@ def _config_snapshot(settings, seed: int) -> dict[str, object]:
 
 
 def _validate_eval_capabilities(*, schema_version: str, gate_mode: str, settings) -> None:
-    """Impide certificar golden-v2 sin la capa textual que su contrato exige."""
+    """Impide certificar una puerta formal sin la capa textual requerida.
 
-    if (
-        schema_version == "golden-v2"
-        and gate_mode in {"smoke", "full"}
-        and not settings.deterministic_textual_facts_enabled
-    ):
+    El smoke canónico incluye ``pilot-013-app-dnp`` también al ejecutar la
+    regresión histórica ``golden-v1``. Ese caso pregunta por valores textuales
+    y, después de T-615, no puede aprobar mediante el antiguo surrogate
+    cuantitativo ``count=1``. Permitir ``smoke``/``full`` con el flag apagado
+    hace que el primer dataset correcto se descarte y convierte una
+    configuración incompleta del arnés en una falsa regresión del agente.
+    ``directed`` sigue admitiendo ambos modos porque es diagnóstico y no
+    certifica ninguna puerta normativa.
+    """
+
+    if gate_mode in {"smoke", "full"} and not settings.deterministic_textual_facts_enabled:
         raise RuntimeError(
-            "golden-v2 exige DETERMINISTIC_TEXTUAL_FACTS_ENABLED=true para "
-            "certificar hechos textuales; use --textual-facts-enabled"
+            f"{schema_version} con --gate {gate_mode} exige "
+            "DETERMINISTIC_TEXTUAL_FACTS_ENABLED=true para certificar hechos "
+            "textuales; use --textual-facts-enabled"
         )
 
 
@@ -936,7 +943,8 @@ def main() -> int:
         default=None,
         help=(
             "Activa explícitamente la planificación, persistencia y síntesis de hechos "
-            "textuales. Es obligatorio para certificar golden-v2 con --gate smoke/full."
+            "textuales. Es obligatorio para certificar las suites golden actuales con "
+            "--gate smoke/full."
         ),
     )
     args = parser.parse_args()
