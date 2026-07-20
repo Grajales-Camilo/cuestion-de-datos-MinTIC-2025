@@ -357,6 +357,26 @@ def _build_derived(evidence: EvidenceContext, spec: ClaimSpec) -> tuple[Decimal,
     return raw, used
 
 
+def _infer_direct_rounding(raw_value: Decimal) -> int:
+    """Hallazgo real (pilot-034-eolica-jepirachi, dataset `vy9n-w6hc`): un
+    claim `direct` sin `rounding` explícito (el pipeline determinista, T7,
+    nunca lo fija -- `deterministic_pipeline._claim_specs`) caía en el
+    default `0` de abajo y presentaba `Capacidad: 18` para una fuente
+    `18.42`, una contradicción material (RNF-003) aunque el dato subyacente
+    fuera correcto. Un claim `direct` es una lectura literal de una celda
+    (`_build_direct`), no un cálculo (`derived`): su precisión debe ser la
+    escala decimal ya presente en `raw_value` (vía `_to_decimal`), nunca una
+    inferida desde `case_id`, nombre de columna o dataset. `Decimal` conserva
+    los ceros decimales de la fuente tal cual se escribieron (p. ej.
+    `"18.4200"` -> exponente -4 -> redondeo 4), así que esta política es
+    determinista y reproducible sin heurísticas adicionales."""
+
+    exponent = raw_value.as_tuple().exponent
+    if not isinstance(exponent, int):
+        return 0
+    return max(0, -exponent)
+
+
 def _build_one_claim(evidence: EvidenceContext, spec: ClaimSpec) -> BuiltClaim:
     if spec.claim_type not in ("direct", "derived"):
         raise ClaimRejected(f"claim_type '{spec.claim_type}' no reconocido")
@@ -367,10 +387,12 @@ def _build_one_claim(evidence: EvidenceContext, spec: ClaimSpec) -> BuiltClaim:
 
     if spec.claim_type == "direct":
         raw_value, used_columns = _build_direct(evidence, spec)
+        default_rounding = _infer_direct_rounding(raw_value)
     else:
         raw_value, used_columns = _build_derived(evidence, spec)
+        default_rounding = 0
 
-    rounding = spec.rounding if spec.rounding is not None else 0
+    rounding = spec.rounding if spec.rounding is not None else default_rounding
     display_value = format_es_co(raw_value, rounding, spec.unit)
     sorted_indexes = tuple(sorted(spec.source_row_indexes))
 
