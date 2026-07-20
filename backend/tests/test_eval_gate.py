@@ -298,6 +298,46 @@ def test_orphan_figure_in_narrative_breaks_coverage() -> None:
     assert "orphan_figures" in result.failure_codes
 
 
+def test_verified_textual_fact_display_value_is_not_a_quantitative_orphan() -> None:
+    """RNF-003 se evalúa sobre ambas clases de hechos verificables.
+
+    Una cifra que pertenece al ``display_value`` de un hecho textual
+    persistido no necesita duplicarse como claim cuantitativo.
+    """
+
+    final = _valid_final(summary="El total es 100. Fuente: marzo de 2026.")
+    evidence_id = final["evidence"][0]["evidence_id"]
+    final["textual_facts"] = [
+        {
+            "evidence_id": evidence_id,
+            "display_value": "Fuente: marzo de 2026",
+        }
+    ]
+
+    result = evaluate_claims_integrity(final)
+
+    assert result.orphan_figure_count == 0
+    assert result.claims_coverage == 1.0
+    assert result.integrity_ok is True
+
+
+def test_number_absent_from_claims_and_textual_facts_remains_orphan() -> None:
+    final = _valid_final(summary="El total es 100. La próxima revisión será en 2027.")
+    evidence_id = final["evidence"][0]["evidence_id"]
+    final["textual_facts"] = [
+        {
+            "evidence_id": evidence_id,
+            "display_value": "Fuente: marzo de 2026",
+        }
+    ]
+
+    result = evaluate_claims_integrity(final)
+
+    assert result.orphan_figure_count == 1
+    assert result.integrity_ok is False
+    assert "orphan_figures" in result.failure_codes
+
+
 def test_claims_integrity_does_not_use_expected_facts() -> None:
     """La integridad se certifica desde la evidencia reejecutada, no desde
     expected_facts del golden (que aquí no se pasan)."""

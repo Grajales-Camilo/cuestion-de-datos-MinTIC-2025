@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ from app.agent.deterministic_pipeline import (
 )
 from app.agent.deterministic_runtime import (
     DeterministicRuntimeDependencies,
+    DeterministicToolInfrastructureError,
     ExploredColumnValues,
     ProfiledCandidate,
 )
@@ -57,6 +59,22 @@ from app.tools.explorar_valores import explorar_valores
 
 def _secret(value: Any) -> str | None:
     return value.get_secret_value() if value else None
+
+
+def _exploration_terms(proposed: str, max_tool_calls: int) -> tuple[str, ...]:
+    """Prioriza frase y tokens originales antes de variantes sin tildes."""
+
+    original_tokens = tuple(
+        token for token in re.findall(r"[^\W_]+", proposed, flags=re.UNICODE) if len(token) >= 4
+    )
+    plain = "".join(
+        character
+        for character in unicodedata.normalize("NFKD", proposed)
+        if not unicodedata.combining(character)
+    )
+    plain_tokens = tuple(token for token in re.findall(r"[A-Za-z0-9]+", plain) if len(token) >= 4)
+    candidates = (proposed, *original_tokens, plain, *plain_tokens)
+    return tuple(dict.fromkeys(term for term in candidates if term))[:max_tool_calls]
 
 
 @dataclass
@@ -384,14 +402,7 @@ def build_real_runtime_dependencies(
             raise ValueError("el plan solicitó exploración sin filtro textual pendiente")
         column = profile.option.columns[target.column_index]
         proposed = target.values[0]
-        plain = "".join(
-            character
-            for character in unicodedata.normalize("NFKD", proposed)
-            if not unicodedata.combining(character)
-        )
-        terms = tuple(
-            dict.fromkeys((proposed, plain, *(part for part in plain.split() if len(part) >= 4)))
-        )[: min(3, max_tool_calls)]
+        terms = _exploration_terms(proposed, min(3, max_tool_calls))
         output: dict[str, Any] = {"ok": True, "values": ()}
         search_term = proposed
         calls = 0
@@ -409,7 +420,11 @@ def build_real_runtime_dependencies(
             )
             if output.get("ok") is not True:
                 error = output.get("error", {})
-                raise ValueError(error.get("message", "falló explorar_valores"))
+                code = str(error.get("code") or "EXPLORATION_ERROR")
+                message = str(error.get("message") or "falló explorar_valores")
+                if code in {"SOCRATA_TIMEOUT", "SOCRATA_ERROR"}:
+                    raise DeterministicToolInfrastructureError(code, message)
+                raise ValueError(message)
             if output.get("values"):
                 break
         return ExploredColumnValues(

@@ -63,6 +63,7 @@ from app.agent.deterministic_pipeline import (
 )
 from app.agent.deterministic_runtime import (
     DeterministicRuntimeDependencies,
+    DeterministicToolInfrastructureError,
     ExploredColumnValues,
     ProfiledCandidate,
 )
@@ -1637,7 +1638,101 @@ async def test_h7b_structured_output_failure_is_agent_error_not_infrastructure(
     assert terminal_events[0].payload["error"]["code"] == "STRUCTURED_OUTPUT_INVALID"
 
 
-async def test_h7c_irreparable_synthesis_is_agent_failure_with_persisted_telemetry(
+async def test_h7c_socrata_timeout_during_exploration_is_typed_infrastructure(
+    engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
+) -> None:
+    """Un fallo T4 definitivo conserva el terminal normativo de Socrata.
+
+    No puede degradarse a ``ValueError``, rechazo de candidato ni
+    ``CANDIDATE_BUDGET_EXCEEDED``.
+    """
+
+    dataset_id = _fresh_dataset_id()
+    await _seed_dataset(
+        engine,
+        created,
+        dataset_id=dataset_id,
+        columns=(("municipio", "Text"), ("monto", "Number")),
+    )
+    run_id = await _seed_run(
+        engine,
+        created,
+        question=f"{QUESTION_PREFIX}historia 7c: timeout Socrata en exploración",
+    )
+
+    async def extract_intent(_question: str) -> IntentExtraction:
+        return IntentExtraction(topic="monto por municipio", operation=QueryOperation.LOOKUP)
+
+    async def retrieve(_intent: IntentExtraction) -> MultiQueryRetrievalResult:
+        return MultiQueryRetrievalResult(queries=("prueba",), candidates=(_candidate(dataset_id),))
+
+    async def profile(_dataset: str) -> ProfiledCandidate:
+        return _profile(dataset_id, _MUNICIPIO_MONTO_COLUMNS)
+
+    async def plan(*_args, **_kwargs) -> EnumeratedPlanSelection:
+        return EnumeratedPlanSelection(
+            dataset_index=0,
+            operation=QueryOperation.LOOKUP,
+            dimension_column_indexes=(0, 1),
+            filters=(
+                FilterChoice(
+                    column_index=0,
+                    operator=FilterOperator.EQ,
+                    value_type=ScalarType.TEXT,
+                    values=("Alcalá (Valle)",),
+                ),
+            ),
+            order_by=(),
+            limit=100,
+            needs_value_exploration=True,
+        )
+
+    async def explore(*_args, **_kwargs) -> ExploredColumnValues:
+        raise DeterministicToolInfrastructureError(
+            "SOCRATA_TIMEOUT",
+            "Socrata no respondió tras 1 reintento",
+        )
+
+    async def unreachable(*_args, **_kwargs):
+        raise AssertionError("un timeout de exploración debe terminar antes de T5")
+
+    _patch_runtime(
+        monkeypatch,
+        DeterministicRuntimeDependencies(
+            extract_intent=extract_intent,
+            retrieve=retrieve,
+            profile=profile,
+            plan=plan,
+            explore=explore,
+            execute=unreachable,
+            synthesize=unreachable,
+        ),
+    )
+
+    result = await execute_deterministic_agent_run_async(settings(), run_id)
+
+    assert result["terminal_error"]["error"]["code"] == "SOCRATA_TIMEOUT"
+    assert result["terminal_error"]["error"]["retryable"] is True
+    run = await _load_run(engine, run_id)
+    assert run.status == "failed"
+    assert run.terminal_error_code == "SOCRATA_TIMEOUT"
+    assert run.final_answer is None
+    assert await _count_evidence(engine, run_id) == 0
+    assert await _count_claims(engine, run_id) == 0
+
+    steps = await _load_steps(engine, run_id)
+    explore_steps = [step for step in steps if step.node == "explore_value"]
+    assert len(explore_steps) == 1
+    assert explore_steps[0].tool_output_summary["error"]["code"] == "SOCRATA_TIMEOUT"
+
+    events = await _load_events(engine, run_id)
+    terminal_events = [event for event in events if event.event_type in ("answer", "error")]
+    assert len(terminal_events) == 1
+    assert terminal_events[0].event_type == "error"
+    assert terminal_events[0].payload["error"]["code"] == "SOCRATA_TIMEOUT"
+
+
+async def test_h7d_irreparable_synthesis_is_agent_failure_with_persisted_telemetry(
     engine, monkeypatch: pytest.MonkeyPatch, created: _CreatedIds
 ) -> None:
     """RNF-003 bloquea la salida, pero no borra la telemetría de la corrida."""

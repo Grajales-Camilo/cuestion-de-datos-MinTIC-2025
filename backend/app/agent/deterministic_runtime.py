@@ -74,6 +74,16 @@ class SynthesisIntegrityError(ValueError):
     """La síntesis sigue violando RNF-003 después del fallback seguro."""
 
 
+class DeterministicToolInfrastructureError(RuntimeError):
+    """Fallo definitivo y tipado de una herramienta externa del runtime."""
+
+    def __init__(self, code: str, message: str) -> None:
+        if code not in {"SOCRATA_TIMEOUT", "SOCRATA_ERROR"}:
+            raise ValueError(f"código de infraestructura no soportado: {code}")
+        self.code = code
+        super().__init__(message)
+
+
 @dataclass(frozen=True)
 class ProfiledCandidate:
     option: DatasetOption
@@ -689,6 +699,8 @@ async def run_deterministic_agent(
                     explored,
                     remaining_explorations,
                 )
+            except DeterministicToolInfrastructureError:
+                raise
             except (LookupError, ValueError):
                 assert current is not None
                 _replace_status(candidates, current, CandidateStatus.REJECTED)

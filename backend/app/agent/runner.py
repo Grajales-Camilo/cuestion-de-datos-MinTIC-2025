@@ -46,6 +46,7 @@ from app.agent.deterministic_pipeline import (
 )
 from app.agent.deterministic_runtime import (
     DeterministicRunCancelled,
+    DeterministicToolInfrastructureError,
     SynthesisIntegrityError,
     run_deterministic_agent,
 )
@@ -450,7 +451,12 @@ async def execute_deterministic_agent_run_async(
                         explored,
                         max_tool_calls,
                     )
-                except (LookupError, ValueError) as exc:
+                except (LookupError, ValueError, DeterministicToolInfrastructureError) as exc:
+                    error_code = (
+                        exc.code
+                        if isinstance(exc, DeterministicToolInfrastructureError)
+                        else "EXPLORATION_ERROR"
+                    )
                     await update_step_tool_result(
                         engine,
                         run_id,
@@ -459,7 +465,7 @@ async def execute_deterministic_agent_run_async(
                         tool_output={
                             "tool": "explorar_valores",
                             "ok": False,
-                            "error": {"code": "EXPLORATION_ERROR"},
+                            "error": {"code": error_code},
                         },
                         latency_ms=round((time.monotonic() - tool_started) * 1000),
                         error=str(exc),
@@ -789,6 +795,28 @@ async def execute_deterministic_agent_run_async(
             run_id,
             status="failed",
             error_code="STRUCTURED_OUTPUT_INVALID",
+            payload=payload,
+        )
+        return {"terminal_error": payload, "runtime": "deterministic"}
+    except DeterministicToolInfrastructureError as exc:
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code=exc.code,
+                status="failed",
+                message_user=(
+                    "La fuente de datos no respondió a tiempo."
+                    if exc.code == "SOCRATA_TIMEOUT"
+                    else "La fuente de datos no está disponible en este momento."
+                ),
+                message_dev=str(exc),
+                retryable=True,
+            )
+        ).model_dump()
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status="failed",
+            error_code=exc.code,
             payload=payload,
         )
         return {"terminal_error": payload, "runtime": "deterministic"}

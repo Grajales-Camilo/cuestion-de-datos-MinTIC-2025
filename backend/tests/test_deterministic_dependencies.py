@@ -7,9 +7,11 @@ from app.agent.deterministic_dependencies import (
     PLANNER_THINKING_BUDGET_TOKENS,
     RuntimeLLMUsage,
     _column_type,
+    _exploration_terms,
     _model,
     build_real_runtime_dependencies,
 )
+from app.agent.deterministic_runtime import DeterministicToolInfrastructureError
 from app.agent.llm_contracts import (
     EnumeratedPlanSelection,
     FilterChoice,
@@ -123,6 +125,73 @@ async def test_real_explorer_never_exceeds_remaining_tool_call_budget(monkeypatc
 
     assert explored.tool_calls == 1
     assert calls == ["Ministerio de Relaciones Exteriores"]
+
+
+@pytest.mark.parametrize(
+    ("proposed", "expected"),
+    [
+        ("Auditoría Regular", ("Auditoría Regular", "Auditoría", "Regular")),
+        ("Alcalá (Valle)", ("Alcalá (Valle)", "Alcalá", "Valle")),
+        ("0054050010", ("0054050010",)),
+    ],
+)
+def test_exploration_terms_prioritize_original_material_tokens(
+    proposed: str, expected: tuple[str, ...]
+) -> None:
+    assert _exploration_terms(proposed, 3) == expected
+
+
+@pytest.mark.asyncio
+async def test_real_explorer_preserves_typed_socrata_transport_failure(monkeypatch) -> None:
+    def fake_model(_settings, schema, *, thinking_budget=None):
+        del schema, thinking_budget
+        return object()
+
+    async def fake_explorar_valores(_payload, **_kwargs):
+        return {
+            "ok": False,
+            "error": {
+                "code": "SOCRATA_TIMEOUT",
+                "message": "Socrata no respondió tras 1 reintento",
+            },
+        }
+
+    monkeypatch.setattr("app.agent.deterministic_dependencies._model", fake_model)
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.explorar_valores",
+        fake_explorar_valores,
+    )
+    dependencies = build_real_runtime_dependencies(
+        settings=settings(),
+        engine=object(),  # type: ignore[arg-type]
+        http_client=object(),  # type: ignore[arg-type]
+        embedding_client=object(),  # type: ignore[arg-type]
+        usage=RuntimeLLMUsage(),
+    )
+    profile = SimpleNamespace(
+        option=SimpleNamespace(
+            dataset_id="abcd-1234",
+            columns=(SimpleNamespace(field_name="municipio"),),
+        )
+    )
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("Alcalá (Valle)",),
+            ),
+        ),
+        needs_value_exploration=True,
+    )
+
+    with pytest.raises(DeterministicToolInfrastructureError) as captured:
+        await dependencies.explore(profile, selection, (), 3)
+    assert captured.value.code == "SOCRATA_TIMEOUT"
 
 
 # --- T-617B0-R4: presupuesto de razonamiento acotado del planificador -------
