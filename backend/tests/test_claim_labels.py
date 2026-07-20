@@ -10,6 +10,8 @@ from app.quality.claim_labels import (
     build_presentation_warnings,
     claim_is_relevant_to_narrative,
     classify_column_relevance,
+    column_is_explicitly_requested,
+    dataset_topic_overlaps_intent,
     derive_claim_label,
     humanize_field_name,
     intent_relevance_tokens,
@@ -122,6 +124,52 @@ def test_ambiguous_claim_without_source_columns_is_not_excluded() -> None:
 
     tokens = intent_relevance_tokens("cualquier pregunta", ())
     assert claim_is_relevant_to_narrative((), requested_tokens=tokens)
+
+
+# --- dataset_topic_overlaps_intent (T-617B-C13) -------------------------------
+
+
+def test_dataset_topic_overlaps_intent_true_when_name_shares_a_token() -> None:
+    tokens = intent_relevance_tokens("capacidad instalada del proyecto eólico", ())
+    assert dataset_topic_overlaps_intent(
+        "Meta FNCER: nueva capacidad instalada renovable", requested_tokens=tokens
+    )
+
+
+def test_dataset_topic_overlaps_intent_false_for_unrelated_dataset_name() -> None:
+    """Reproduce el patrón real (golden-v1, pilot-026-paridad-genero): el
+    repliegue a un dataset de deserción escolar no comparte tema con una
+    pregunta de paridad de género."""
+
+    tokens = intent_relevance_tokens("paridad de género en cargos directivos", ())
+    assert not dataset_topic_overlaps_intent(
+        "Deserción escolar por departamento", requested_tokens=tokens
+    )
+
+
+def test_dataset_topic_overlaps_intent_true_when_no_requested_tokens() -> None:
+    """Sin tokens de intención no hay nada que comparar: no bloquea por
+    prudencia (mismo criterio que las demás funciones de este módulo)."""
+
+    assert dataset_topic_overlaps_intent("Cualquier dataset", requested_tokens=frozenset())
+
+
+def test_dataset_topic_overlaps_intent_matches_by_shared_root() -> None:
+    tokens = intent_relevance_tokens("homicidios registrados", ())
+    assert dataset_topic_overlaps_intent(
+        "Homicidio intencional por municipio", requested_tokens=tokens
+    )
+
+
+def test_column_is_explicitly_requested_still_behaves_after_shared_helper_refactor() -> None:
+    """`column_is_explicitly_requested` reutiliza ahora el mismo comparador
+    léxico que `dataset_topic_overlaps_intent`; esta prueba fija su
+    comportamiento previo para detectar cualquier regresión del refactor."""
+
+    tokens = intent_relevance_tokens("cuál es el código interno del proveedor", ())
+    assert column_is_explicitly_requested("codigo_interno", requested_tokens=tokens)
+    other_tokens = intent_relevance_tokens("cantidad de proveedores activos", ())
+    assert not column_is_explicitly_requested("codigo_interno", requested_tokens=other_tokens)
 
 
 # --- label_grounded_in_text (detección de intercambio) -----------------------

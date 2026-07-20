@@ -65,7 +65,11 @@ from app.agent.query_plan import (
     ScalarType,
 )
 from app.llm.factory import LLMProviderError
-from app.quality.claim_labels import claim_is_relevant_to_narrative, intent_relevance_tokens
+from app.quality.claim_labels import (
+    claim_is_relevant_to_narrative,
+    dataset_topic_overlaps_intent,
+    intent_relevance_tokens,
+)
 from app.quality.claims import BuiltClaim, ClaimsBuildResult
 from app.quality.grounded_facts import GroundedSynthesisPlan
 from app.quality.grounded_synthesis import AllowedGroundedFacts
@@ -475,6 +479,28 @@ async def run_deterministic_agent(
                 )
                 for claim in execution.claims.claims
             )
+            # T-617B-C13 (RF-205/RF-211): un nombre de columna ("cantidad",
+            # "capacidad") casi nunca repite el tema de la pregunta incluso
+            # en el candidato correcto -- exigir solapamiento léxico ahí
+            # rompería casos legítimos ya aprobados (rank 1). Pero cuando el
+            # candidato ACEPTADO no es el mejor rankeado (`current > 0`, ya
+            # se agotaron/rechazaron candidatos anteriores), es exactamente
+            # el patrón real observado en `pilot-026`/`pilot-027`: repliegue
+            # a un dataset de tema no relacionado (`ji8i-4anb`, "deserción
+            # escolar") cuyas columnas son léxicamente "primarias" y por eso
+            # pasaban el chequeo anterior sin verificar el dataset en sí.
+            evidence_draft = getattr(execution, "evidence_draft", None)
+            dataset_name = getattr(evidence_draft, "dataset_name", None)
+            if (
+                claims_materially_relevant
+                and current is not None
+                and current > 0
+                and dataset_name is not None
+                and not dataset_topic_overlaps_intent(
+                    dataset_name, requested_tokens=requested_tokens
+                )
+            ):
+                claims_materially_relevant = False
         snapshot = SupervisorSnapshot(
             candidates=tuple(candidates),
             current_candidate_index=current,

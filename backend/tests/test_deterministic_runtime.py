@@ -1052,6 +1052,7 @@ def _relevance_dependencies(
     claims_by_candidate: tuple[ClaimsBuildResult, ...],
     textual_facts_by_candidate: tuple[tuple[str, ...], ...] | None = None,
     textual_rejections_by_candidate: tuple[tuple[object, ...], ...] | None = None,
+    dataset_names_by_candidate: tuple[str | None, ...] | None = None,
 ) -> DeterministicRuntimeDependencies:
     """Doble local sin red ni LLM real: cada candidato recuperado, en orden,
     devuelve el `ClaimsBuildResult` correspondiente en `claims_by_candidate`,
@@ -1065,6 +1066,7 @@ def _relevance_dependencies(
     textual_rejections_source = textual_rejections_by_candidate or tuple(
         () for _ in claims_by_candidate
     )
+    dataset_names_source = dataset_names_by_candidate or tuple(None for _ in claims_by_candidate)
 
     async def extract(question: str) -> IntentExtraction:
         assert question
@@ -1098,6 +1100,7 @@ def _relevance_dependencies(
         claims = claims_by_candidate[calls]
         textual_facts = textual_facts_source[calls]
         textual_rejections = textual_rejections_source[calls]
+        dataset_name = dataset_names_source[calls]
         calls += 1
         return cast(
             DeterministicExecutionResult,
@@ -1106,6 +1109,7 @@ def _relevance_dependencies(
                 claims=claims,
                 textual_facts=textual_facts,
                 textual_rejections=textual_rejections,
+                evidence_draft=SimpleNamespace(dataset_name=dataset_name),
             ),
         )
 
@@ -1288,6 +1292,81 @@ async def test_runtime_abstains_cleanly_when_all_candidates_are_irrelevant() -> 
     )
     assert next_candidate_count == 1
     assert result.execution is not None
+
+
+@pytest.mark.asyncio
+async def test_runtime_rejects_fallback_candidate_with_unrelated_dataset_name() -> None:
+    """T-617B-C13 (RF-205/RF-211): reproduce golden-v1 pilot-026/027 -- un
+    candidato de repliegue (`current > 0`, ya se rechazó el primero) cuyo
+    claim es léxicamente "primary" (pasa `claim_is_relevant_to_narrative`,
+    igual que antes de esta corrección) pero cuyo dataset publicado no tiene
+    relación temática con la intención debe rechazarse también, no completar
+    con una narrativa de tema ajeno."""
+
+    intent = IntentExtraction(
+        topic="paridad de género en cargos directivos", operation=QueryOperation.SUM
+    )
+    result = await run_deterministic_agent(
+        "¿Cuál es la paridad de género en cargos directivos?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(
+                ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),
+                ClaimsBuildResult(claims=(_relevant_claim(),), rejected=()),
+            ),
+            dataset_names_by_candidate=(None, "Deserción escolar por departamento"),
+        ),
+    )
+
+    assert result.status == "abstained"
+    assert result.stop_reason is StopReason.CLAIMS_NOT_AVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_runtime_accepts_fallback_candidate_whose_dataset_name_matches_topic() -> None:
+    """Control: el mismo candidato de repliegue completa normalmente cuando
+    su dataset publicado sí comparte tema con la intención."""
+
+    intent = IntentExtraction(
+        topic="paridad de género en cargos directivos", operation=QueryOperation.SUM
+    )
+    result = await run_deterministic_agent(
+        "¿Cuál es la paridad de género en cargos directivos?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(
+                ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),
+                ClaimsBuildResult(claims=(_relevant_claim(),), rejected=()),
+            ),
+            dataset_names_by_candidate=(
+                None,
+                "Paridad de género en cargos directivos del sector público",
+            ),
+        ),
+    )
+
+    assert result.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_runtime_does_not_apply_dataset_name_check_to_top_ranked_candidate() -> None:
+    """El chequeo de nombre de dataset es exclusivo de candidatos de
+    repliegue (`current > 0`); el candidato mejor rankeado (`current == 0`)
+    conserva exactamente el comportamiento previo, sin este chequeo
+    adicional -- evita romper casos ya aprobados cuyo dataset correcto no
+    repite literalmente el tema de la pregunta en su nombre publicado."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(ClaimsBuildResult(claims=(_relevant_claim(),), rejected=()),),
+            dataset_names_by_candidate=("Dataset totalmente ajeno al tema",),
+        ),
+    )
+
+    assert result.status == "completed"
 
 
 # --- T-617B-C2 (corrección): la ruta de síntesis diferida (T-615F,

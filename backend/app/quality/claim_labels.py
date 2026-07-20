@@ -146,6 +146,12 @@ def intent_relevance_tokens(topic: str, administrative_terms: tuple[str, ...]) -
     return frozenset(_tokens(" ".join((topic, *administrative_terms))))
 
 
+def _tokens_overlap(requested: str, other: str) -> bool:
+    return requested == other or (
+        min(len(requested), len(other)) >= 4 and (requested in other or other in requested)
+    )
+
+
 def column_is_explicitly_requested(
     field_name: str,
     *,
@@ -163,10 +169,40 @@ def column_is_explicitly_requested(
 
     column_tokens = _tokens(field_name)
     return any(
-        requested == column
-        or (min(len(requested), len(column)) >= 4 and (requested in column or column in requested))
+        _tokens_overlap(requested, column)
         for requested in requested_tokens
         for column in column_tokens
+    )
+
+
+def dataset_topic_overlaps_intent(
+    dataset_name: str,
+    *,
+    requested_tokens: frozenset[str],
+) -> bool:
+    """Comprueba solapamiento léxico entre el nombre publicado del dataset y
+    la intención (T-617B-C13, RF-205/RF-211).
+
+    Hallazgo real (golden-v1, `pilot-026-paridad-genero`/`pilot-027-paridad-
+    etnica`): cuando los candidatos mejor rankeados no producen evidencia
+    elegible, el runtime se repliega a un candidato posterior (p. ej.
+    `ji8i-4anb`, "deserción escolar") cuyas columnas son léxicamente
+    "primarias" (`classify_column_relevance` nunca las marca auxiliar/
+    temporal), así que `claim_is_relevant_to_narrative` las deja pasar pese a
+    no tener ninguna relación temática con la pregunta ("paridad de
+    género"/"paridad étnica"). El nombre de columna no es una señal
+    confiable de tema (`cantidad`, `capacidad` no repiten la pregunta), pero
+    el NOMBRE PUBLICADO del dataset sí está escrito en lenguaje natural y
+    normalmente sí lo hace -- es la misma señal ya usada por la recuperación
+    semántica, aplicada aquí como sanidad determinista adicional, nunca por
+    `case_id`/`dataset_id` ni un candidato concreto.
+    """
+
+    if not requested_tokens:
+        return True
+    name_tokens = _tokens(dataset_name)
+    return any(
+        _tokens_overlap(requested, token) for requested in requested_tokens for token in name_tokens
     )
 
 
