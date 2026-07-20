@@ -327,7 +327,7 @@ def _prepare_textual_facts(
     return tuple(prepared), tuple(rejected)
 
 
-def _prepare_single_row_lookup_textual_fallback(
+def _prepare_single_row_textual_fallback(
     plan: ValidatedQueryPlan,
     rendered: RenderedQuery,
     *,
@@ -337,16 +337,20 @@ def _prepare_single_row_lookup_textual_fallback(
 ) -> tuple[tuple[PreparedTextualFact, ...], tuple[TextualRejection, ...]]:
     """Deriva ``direct_text`` solo para una fila única y campos solicitados.
 
-    RF-211/pruebas.md §4.5: una consulta LOOKUP que ya devolvió una única fila
-    elegible no debe terminar en ``no_evidence`` solo porque el LLM omitió
-    ``textual_requests``. El fallback no elige entre filas ni columnas por sus
-    valores: exige exactamente una fila, usa únicamente dimensiones TEXT
-    seleccionadas cuyo nombre real coincide con la intención, y excluye los
-    aliases que ya produjeron un claim cuantitativo. Solicitudes textuales
-    explícitas se procesan por la ruta normal y nunca llegan aquí.
+    RF-211/RF-212 y pruebas.md §§4.5-4.6: una consulta que ya devolvió una
+    única fila elegible no debe omitir una dimensión textual explícitamente
+    solicitada solo porque el LLM no produjo ``textual_requests``. Esto cubre
+    tanto LOOKUP como agregados agrupados top-1: el hecho afirma únicamente
+    el valor textual observado en la fila, no que sea un ganador único.
+
+    El fallback no elige entre filas ni columnas por sus valores: exige
+    exactamente una fila, usa únicamente dimensiones TEXT seleccionadas cuyo
+    nombre real coincide con la intención y excluye los aliases que ya
+    produjeron un claim cuantitativo. Solicitudes textuales explícitas se
+    procesan por la ruta normal y nunca llegan aquí.
     """
 
-    if plan.operation is not QueryOperation.LOOKUP or plan.textual_requests or len(rows) != 1:
+    if plan.textual_requests or len(rows) != 1:
         return (), ()
 
     # `ejecutar_soql` recibe exclusivamente `rendered.canonical_soql`, pero
@@ -473,7 +477,7 @@ async def execute_validated_plan(
             quantitative_aliases = frozenset(
                 alias for claim in claims.claims for alias in claim.columns_used
             )
-            textual_facts, textual_rejections = _prepare_single_row_lookup_textual_fallback(
+            textual_facts, textual_rejections = _prepare_single_row_textual_fallback(
                 plan,
                 rendered,
                 canonical_soql=canonical_soql,

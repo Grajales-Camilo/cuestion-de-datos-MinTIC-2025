@@ -485,6 +485,71 @@ async def test_single_row_lookup_does_not_promote_unrequested_text() -> None:
 
 
 @pytest.mark.asyncio
+async def test_single_row_aggregate_derives_requested_group_label_without_llm_request() -> None:
+    plan = sum_plan(limit=1, purpose="¿Qué municipio concentra el mayor valor?")
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [{"dim_1": "Pasto", "metric_sum_1": "20"}],
+        }
+
+    result = await execute_validated_plan(
+        _validated(plan),
+        executor=executor,
+        metadata=metadata(),
+        textual_facts_enabled=True,
+    )
+
+    assert result.claims.claims
+    assert [fact.spec.operation for fact in result.textual_facts] == [
+        TextualFactOperation.DIRECT_TEXT
+    ]
+    assert result.textual_facts[0].spec.columns == ("dim_1",)
+    assert result.textual_rejections == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("purpose", "rows"),
+    [
+        ("Calcular el valor total", [{"dim_1": "Pasto", "metric_sum_1": "20"}]),
+        (
+            "¿Qué municipio concentra el mayor valor?",
+            [
+                {"dim_1": "Pasto", "metric_sum_1": "20"},
+                {"dim_1": "Ipiales", "metric_sum_1": "10"},
+            ],
+        ),
+    ],
+)
+async def test_aggregate_fallback_does_not_choose_unrequested_or_multiple_group_labels(
+    purpose: str,
+    rows: list[dict],
+) -> None:
+    plan = sum_plan(limit=max(1, len(rows)), purpose=purpose)
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": rows,
+        }
+
+    result = await execute_validated_plan(
+        _validated(plan),
+        executor=executor,
+        metadata=metadata(),
+        textual_facts_enabled=True,
+    )
+
+    assert result.claims.claims
+    assert result.textual_facts == ()
+    assert result.textual_rejections == ()
+
+
+@pytest.mark.asyncio
 async def test_first_by_order_certificate_is_derived_from_plan_and_rows() -> None:
     request = CategorySelection(
         source_row_indexes=(0,),
