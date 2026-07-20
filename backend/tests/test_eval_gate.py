@@ -34,19 +34,23 @@ from eval.run import _case_result_model, _gate_summary_lines, apply_aggregate_me
 # --- Utilidades de construcción ----------------------------------------------
 
 
-def _valid_final(*, summary: str | None = None) -> dict:
+def _valid_final(*, summary: str | None = None, column: str = "total") -> dict:
     """final_answer con un claim cuantitativo reproducible de punta a punta."""
 
-    rows = ({"total": "100"},)
+    rows = ({column: "100"},)
     evidence_id = str(uuid.uuid4())
     spec = ClaimSpec(
         claim_type="direct",
         description="Total de registros",
         source_row_indexes=(0,),
-        columns=("total",),
+        columns=(column,),
     )
     built = build_claims(
-        EvidenceContext(dataset_id="abcd-1234", canonical_soql="SELECT total", rows=rows),
+        EvidenceContext(
+            dataset_id="abcd-1234",
+            canonical_soql=f"SELECT {column}",
+            rows=rows,
+        ),
         (spec,),
     ).claims[0]
     claim = {
@@ -67,7 +71,7 @@ def _valid_final(*, summary: str | None = None) -> dict:
     evidence = {
         "evidence_id": evidence_id,
         "dataset_id": "abcd-1234",
-        "soql_query": "SELECT total",
+        "soql_query": f"SELECT {column}",
         "rows": list(rows),
         "narrative": None,
     }
@@ -336,6 +340,54 @@ def test_number_absent_from_claims_and_textual_facts_remains_orphan() -> None:
     assert result.orphan_figure_count == 1
     assert result.integrity_ok is False
     assert "orphan_figures" in result.failure_codes
+
+
+def test_numbers_in_verified_structural_claim_label_are_not_orphans() -> None:
+    """RF-212: una etiqueta verificada procede del nombre real de columna.
+
+    Los números que forman parte de ese nombre estructural (p. ej. el rango
+    etario ``5_16``) no son cifras cuantitativas inventadas por la síntesis.
+    """
+
+    final = _valid_final(
+        summary="Tasa matriculacion 5 16: 100.",
+        column="tasa_matriculacion_5_16",
+    )
+    final["claims"][0].update(
+        {
+            "label": "Tasa matriculacion 5 16",
+            "label_status": "verified",
+        }
+    )
+
+    result = evaluate_claims_integrity(final)
+
+    assert result.orphan_figure_count == 0
+    assert result.claims_coverage == 1.0
+    assert result.integrity_ok is True
+
+
+@pytest.mark.parametrize(
+    ("label", "label_status"),
+    [
+        ("Tasa matriculacion 5 16", "ambiguous"),
+        ("Tasa matriculacion 5 16 y meta 2027", "verified"),
+    ],
+)
+def test_unverified_or_tampered_claim_label_cannot_whitelist_numbers(
+    label: str,
+    label_status: str,
+) -> None:
+    final = _valid_final(
+        summary=f"{label}: 100.",
+        column="tasa_matriculacion_5_16",
+    )
+    final["claims"][0].update({"label": label, "label_status": label_status})
+
+    result = evaluate_claims_integrity(final)
+
+    assert result.orphan_figure_count >= 1
+    assert result.integrity_ok is False
 
 
 def test_claims_integrity_does_not_use_expected_facts() -> None:

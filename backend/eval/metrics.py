@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.quality.claim_labels import derive_claim_label
 from app.quality.claims import find_orphan_figures
 from app.quality.grounded_facts import GroundedSynthesisPlan, TextualFactOperation
 from app.quality.grounded_synthesis import (
@@ -392,6 +393,7 @@ def _collect_orphan_figures(final_answer: dict[str, Any]) -> tuple[str, ...]:
 
     claims = final_answer.get("claims") or []
     accepted = [item["display_value"] for item in claims if item.get("display_value")]
+    accepted.extend(label for item in claims if (label := _verified_structural_claim_label(item)))
     textual_facts = final_answer.get("textual_facts") or []
     accepted.extend(item["display_value"] for item in textual_facts if item.get("display_value"))
     texts = [final_answer.get("summary") or "", final_answer.get("narrative") or ""]
@@ -402,6 +404,8 @@ def _collect_orphan_figures(final_answer: dict[str, Any]) -> tuple[str, ...]:
     for claim in claims:
         if claim.get("evidence_id") and claim.get("display_value"):
             claims_by_evidence.setdefault(claim["evidence_id"], []).append(claim["display_value"])
+        if claim.get("evidence_id") and (label := _verified_structural_claim_label(claim)):
+            claims_by_evidence.setdefault(claim["evidence_id"], []).append(label)
     for fact in textual_facts:
         if fact.get("evidence_id") and fact.get("display_value"):
             claims_by_evidence.setdefault(fact["evidence_id"], []).append(fact["display_value"])
@@ -414,6 +418,30 @@ def _collect_orphan_figures(final_answer: dict[str, Any]) -> tuple[str, ...]:
                 )
             )
     return tuple(dict.fromkeys(orphans))
+
+
+def _verified_structural_claim_label(claim: dict[str, Any]) -> str | None:
+    """Acepta una etiqueta solo si se reproduce desde columnas públicas reales.
+
+    Evita que ``label`` o ``label_status`` manipulados conviertan cifras
+    inventadas en contenido permitido por el evaluador (RF-212/RNF-005).
+    """
+
+    columns = claim.get("columns")
+    if (
+        not isinstance(columns, list)
+        or not columns
+        or not all(isinstance(column, str) for column in columns)
+    ):
+        return None
+    expected_label, expected_status = derive_claim_label(tuple(columns))
+    if (
+        expected_status != "verified"
+        or claim.get("label_status") != expected_status
+        or claim.get("label") != expected_label
+    ):
+        return None
+    return expected_label
 
 
 def assess_case(

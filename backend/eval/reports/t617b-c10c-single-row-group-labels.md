@@ -1,7 +1,7 @@
 # T-617B-C10C — Etiquetas textuales en agregados de una fila
 
-**Fecha:** 2026-07-19  
-**Baseline:** `95ecb5dbb21b22bec8becfe78c13efa5b9fa5767`  
+**Fecha:** 2026-07-19
+**Baseline:** `95ecb5dbb21b22bec8becfe78c13efa5b9fa5767`
 **Estado:** `READY_FOR_DIRECTED_REAL_VALIDATION / FULL_GATE_BLOCKED`
 
 ## 1. Hallazgo real
