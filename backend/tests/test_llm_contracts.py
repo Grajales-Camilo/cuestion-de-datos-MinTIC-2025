@@ -527,6 +527,96 @@ def test_identifier_filter_does_not_replace_unrelated_institution_filter() -> No
         )
 
 
+def test_unrelated_identifier_column_does_not_block_grounded_place_filter() -> None:
+    """Una columna ``codigo`` no convierte un municipio en identificador.
+
+    La protección R5 debe impedir perder una entidad institucional o un código
+    explícito; no debe rechazar un filtro territorial correcto solo porque el
+    mismo dataset también publique una columna auxiliar de código.
+    """
+
+    context = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="plac-1234",
+                title="Indicadores municipales",
+                publisher="Entidad oficial",
+                columns=(
+                    ColumnOption(
+                        index=0,
+                        field_name="codigo",
+                        display_name="Código",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=1,
+                        field_name="nombre_empresa",
+                        display_name="Nombre empresa",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=2,
+                        field_name="municipio",
+                        display_name="Municipio",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=3,
+                        field_name="cantidad",
+                        display_name="Cantidad",
+                        data_type=ColumnDataType.INTEGER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                ),
+            ),
+        )
+    )
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1, 2, 3),
+        filters=(
+            FilterChoice(
+                column_index=2,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("VILLAMARÍA",),
+            ),
+        ),
+        limit=1,
+    )
+
+    plan = materialize_query_plan(
+        selection,
+        intent=_entity_intent("Villamaría"),
+        context=context,
+    )
+
+    assert plan.filters[0].column.column_index == 2
+
+
+def test_explicit_identifier_still_requires_identifier_filter() -> None:
+    """Un identificador alfanumérico explícito no puede perderse del plan."""
+
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(2,),
+        limit=1,
+    )
+
+    with pytest.raises(ValueError, match="omite la restricción de entidad"):
+        materialize_query_plan(
+            selection,
+            intent=_entity_intent("APP PRY00062"),
+            context=_entity_identifier_context(),
+        )
+
+
 def test_materialization_rejects_plan_that_contradicts_entity_filter() -> None:
     selection = EnumeratedPlanSelection(
         dataset_index=0,

@@ -1161,6 +1161,27 @@ def _is_identifier_designating_column(field_name: str, display_name: str) -> boo
     return bool(tokens & _IDENTIFIER_COLUMN_TOKENS)
 
 
+def _entity_contains_explicit_identifier(entity: str) -> bool:
+    """Distingue una referencia de código de un nombre o lugar ordinario.
+
+    Una columna auxiliar ``codigo``/``id`` no basta para convertir cualquier
+    ``intent.entity`` en un identificador obligatorio. La protección se activa
+    cuando la propia entidad contiene un token alfanumérico inequívoco
+    (``PRY00062``) o declara un concepto de identificador junto a un número.
+    """
+
+    tokens = _semantic_tokens(entity)
+    has_alphanumeric_code = any(
+        any(character.isalpha() for character in token)
+        and any(character.isdigit() for character in token)
+        for token in tokens
+    )
+    has_labeled_numeric_code = bool(tokens & _IDENTIFIER_COLUMN_TOKENS) and any(
+        token.isdigit() for token in tokens
+    )
+    return has_alphanumeric_code or has_labeled_numeric_code
+
+
 def _entity_grounded_in_value(entity: str, value: str) -> bool:
     """Compara `entity` y `value` tolerando mayúsculas, acentos y orden.
 
@@ -1206,12 +1227,13 @@ def _require_entity_constraint_preserved(
 ) -> None:
     """Impide perder o contradecir una entidad explícita de alta confianza.
 
-    Si la intención identifica una entidad específica y el dataset seleccionado
-    tiene al menos una columna que semánticamente designa entidades, el plan
-    final debe restringir esa columna, sin ambigüedad, a la entidad
-    solicitada. Preguntas sin entidad explícita o datasets sin columna de
-    entidad no activan esta comprobación: no es una regla de pilot-005, es la
-    misma frontera determinista que ya impide operation != intent.operation.
+    Si la intención identifica una entidad específica, cualquier filtro
+    inequívoco que preserve su valor cuenta como anclaje. Si no existe, una
+    columna institucional o un identificador explícito en la propia entidad
+    hacen obligatoria la restricción. La mera presencia de una columna auxiliar
+    ``codigo``/``id`` no convierte un lugar o proyecto en identificador. No es
+    una regla de pilot-005: es la frontera determinista que evita sustituir la
+    entidad solicitada por otra sin bloquear filtros territoriales correctos.
     """
 
     entity = (intent.entity or "").strip()
@@ -1228,8 +1250,23 @@ def _require_entity_constraint_preserved(
         for column in candidate.columns
         if _is_identifier_designating_column(column.field_name, column.display_name)
     }
-    if not entity_column_indexes and not identifier_column_indexes:
+    identifier_constraint_required = _entity_contains_explicit_identifier(entity)
+    if not entity_column_indexes and not (
+        identifier_column_indexes and identifier_constraint_required
+    ):
         return
+    grounded_filters = [
+        item for item in plan.filters if item.operator in {FilterOperator.EQ, FilterOperator.IN}
+    ]
+    if any(
+        _filter_unambiguously_grounds_entity(
+            entity,
+            tuple(value.value for value in item.values),
+        )
+        for item in grounded_filters
+    ):
+        return
+    identifier_filters_relevant = bool(entity_column_indexes) or identifier_constraint_required
     matching_entity_filters = [
         item
         for item in plan.filters
@@ -1239,18 +1276,10 @@ def _require_entity_constraint_preserved(
     matching_identifier_filters = [
         item
         for item in plan.filters
-        if item.column.column_index in identifier_column_indexes
+        if identifier_filters_relevant
+        and item.column.column_index in identifier_column_indexes
         and item.operator in {FilterOperator.EQ, FilterOperator.IN}
     ]
-    grounded = any(
-        _filter_unambiguously_grounds_entity(
-            entity,
-            tuple(value.value for value in item.values),
-        )
-        for item in (*matching_entity_filters, *matching_identifier_filters)
-    )
-    if grounded:
-        return
     if not matching_entity_filters and not matching_identifier_filters:
         raise ValueError(
             "el plan omite la restricción de entidad requerida por la intención: "
