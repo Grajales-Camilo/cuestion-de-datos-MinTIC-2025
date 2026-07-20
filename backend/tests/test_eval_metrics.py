@@ -555,6 +555,8 @@ def test_diagnostics_approved_case_has_no_failure() -> None:
     "provider_error_code,expected_failure_code",
     [
         ("LLM_PROVIDER_ERROR", "provider_error"),
+        ("SOCRATA_TIMEOUT", "socrata_timeout"),
+        ("SOCRATA_ERROR", "socrata_error"),
         ("RUN_TIMEOUT", "run_timeout"),
         ("HEARTBEAT_EXPIRED", "heartbeat_expired"),
         ("WORKER_LOST", "worker_lost"),

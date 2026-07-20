@@ -45,6 +45,8 @@ class FailureCode(StrEnum):
     AMBIGUOUS_GOLDEN = "ambiguous_golden"
     BUDGET_EXCEEDED = "budget_exceeded"
     PROVIDER_ERROR = "provider_error"
+    SOCRATA_TIMEOUT = "socrata_timeout"
+    SOCRATA_ERROR = "socrata_error"
     RUN_TIMEOUT = "run_timeout"
     HEARTBEAT_EXPIRED = "heartbeat_expired"
     WORKER_LOST = "worker_lost"
@@ -81,9 +83,11 @@ class FailureCode(StrEnum):
 #   infraestructura. Se clasifica aparte (ver `_STRUCTURED_OUTPUT_INVALID`
 #   abajo) con `failure_owner="agent"` y SÍ puede contar como regresión
 #   semántica bloqueante de un positivo sólido.
-# - Códigos aplicativos que no terminan la corrida (p. ej.
-#   `SOCRATA_TIMEOUT`/`SOCRATA_ERROR`), que ocurren dentro de una corrida que
-#   puede seguir y terminar `completed`/`no_evidence`.
+# `SOCRATA_TIMEOUT`/`SOCRATA_ERROR` pueden existir como errores aplicativos
+# recuperables dentro de una corrida, pero desde T-617B-C10 también son
+# terminales tipados cuando la exploración real no puede continuar. Solo
+# entran a este mapeo cuando provienen de `agent_runs.terminal_error_code` con
+# estado no evaluable; una observación intermedia nunca se promueve por sí sola.
 # Distinto de `infrastructure_error` (nombre de excepción de Python
 # capturada por el propio arnés de evaluación, ver `FailureCode.HARNESS_ERROR`
 # abajo): un código de este mapeo viene de `agent_runs.terminal_error_code`
@@ -93,6 +97,8 @@ class FailureCode(StrEnum):
 # persisten con `status="interrupted"`, `app.agent.heartbeat_sweep`).
 _INFRASTRUCTURE_TERMINAL_ERROR_CODE_TO_FAILURE_CODE: dict[str, FailureCode] = {
     "LLM_PROVIDER_ERROR": FailureCode.PROVIDER_ERROR,
+    "SOCRATA_TIMEOUT": FailureCode.SOCRATA_TIMEOUT,
+    "SOCRATA_ERROR": FailureCode.SOCRATA_ERROR,
     "RUN_TIMEOUT": FailureCode.RUN_TIMEOUT,
     "HEARTBEAT_EXPIRED": FailureCode.HEARTBEAT_EXPIRED,
     "WORKER_LOST": FailureCode.WORKER_LOST,

@@ -16,7 +16,9 @@ from app.agent.llm_contracts import (
     materialize_query_plan,
     normalize_aggregate_intent,
     normalize_budget_snapshot,
+    normalize_direct_quantity_lookup,
     normalize_explicit_date_filter,
+    normalize_intent_for_observed_schema,
     normalize_lookup_filters,
     normalize_lookup_output_columns,
     normalize_ranked_aggregate,
@@ -1038,6 +1040,225 @@ def test_count_operation_is_owned_by_system_and_always_becomes_count_star() -> N
     )
     assert normalized.operation is QueryOperation.COUNT
     assert normalized.metrics == (MetricChoice(operation=QueryOperation.COUNT),)
+
+
+def _quantity_context(*columns: tuple[str, str, ColumnDataType]) -> EnumeratedPlanningContext:
+    return EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="qty1-2345",
+                title="Indicadores publicados",
+                publisher="Entidad oficial",
+                columns=tuple(
+                    ColumnOption(
+                        index=index,
+                        field_name=field_name,
+                        display_name=display_name,
+                        data_type=data_type,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    )
+                    for index, (field_name, display_name, data_type) in enumerate(columns)
+                ),
+            ),
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("question", "columns", "expected_index"),
+    [
+        (
+            "¿Cuántos hallazgos administrativos se reportaron en 2019?",
+            (
+                ("vigencia", "Vigencia", ColumnDataType.INTEGER),
+                (
+                    "hallazgos_administrativos",
+                    "Hallazgos administrativos",
+                    ColumnDataType.INTEGER,
+                ),
+            ),
+            1,
+        ),
+        (
+            "¿Cuántas personas socializadas se reportaron en enero?",
+            (
+                ("a_o", "Año", ColumnDataType.INTEGER),
+                ("cantidad", "Cantidad", ColumnDataType.INTEGER),
+            ),
+            1,
+        ),
+    ],
+)
+def test_count_question_uses_published_numeric_measure_instead_of_counting_rows(
+    question: str,
+    columns: tuple[tuple[str, str, ColumnDataType], ...],
+    expected_index: int,
+) -> None:
+    observed = _quantity_context(*columns)
+    normalized_intent = normalize_intent_for_observed_schema(
+        intent(QueryOperation.COUNT),
+        question=question,
+        context=observed,
+    )
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.COUNT,
+        metrics=(MetricChoice(operation=QueryOperation.COUNT),),
+    )
+    normalized_selection = normalize_system_owned_operation(proposed, normalized_intent)
+    normalized_selection = normalize_direct_quantity_lookup(
+        normalized_selection,
+        question=question,
+        context=observed,
+    )
+
+    assert normalized_intent.operation is QueryOperation.LOOKUP
+    assert normalized_selection.operation is QueryOperation.LOOKUP
+    assert normalized_selection.metrics == ()
+    assert expected_index in normalized_selection.dimension_column_indexes
+
+
+def test_explicit_record_cardinality_remains_count_star() -> None:
+    question = "¿Cuántos registros existen para 2019?"
+    observed = _quantity_context(
+        ("vigencia", "Vigencia", ColumnDataType.INTEGER),
+        ("cantidad", "Cantidad", ColumnDataType.INTEGER),
+    )
+
+    normalized = normalize_intent_for_observed_schema(
+        intent(QueryOperation.COUNT),
+        question=question,
+        context=observed,
+    )
+
+    assert normalized.operation is QueryOperation.COUNT
+
+
+def test_ambiguous_published_quantities_do_not_replace_count() -> None:
+    question = "¿Cuántas personas se reportaron?"
+    observed = _quantity_context(
+        ("cantidad_hombres", "Cantidad hombres", ColumnDataType.INTEGER),
+        ("cantidad_mujeres", "Cantidad mujeres", ColumnDataType.INTEGER),
+    )
+
+    normalized = normalize_intent_for_observed_schema(
+        intent(QueryOperation.COUNT),
+        question=question,
+        context=observed,
+    )
+
+    assert normalized.operation is QueryOperation.COUNT
+
+
+@pytest.mark.parametrize(
+    ("question", "columns"),
+    [
+        (
+            "¿Cuántos puestos de votación se habilitaron para las elecciones?",
+            (
+                ("cantidad_elecciones", "Cantidad elecciones", ColumnDataType.INTEGER),
+                ("puesto", "Puesto", ColumnDataType.TEXT),
+            ),
+        ),
+        (
+            "¿Qué administrador, número de calzadas y categoría se registran?",
+            (
+                (
+                    "grupo_administrador_vial",
+                    "Grupo administrador vial",
+                    ColumnDataType.INTEGER,
+                ),
+                ("numero_calzadas", "Número de calzadas", ColumnDataType.INTEGER),
+            ),
+        ),
+    ],
+)
+def test_unrelated_numeric_columns_do_not_replace_count(
+    question: str,
+    columns: tuple[tuple[str, str, ColumnDataType], ...],
+) -> None:
+    normalized = normalize_intent_for_observed_schema(
+        intent(QueryOperation.COUNT),
+        question=question,
+        context=_quantity_context(*columns),
+    )
+
+    assert normalized.operation is QueryOperation.COUNT
+
+
+def test_observed_institutional_schema_recovers_missing_entity_from_grounded_term() -> None:
+    observed = _quantity_context(
+        ("sujeto_auditado", "Sujeto auditado", ColumnDataType.TEXT),
+        ("hallazgos_administrativos", "Hallazgos administrativos", ColumnDataType.INTEGER),
+    )
+    extracted = IntentExtraction(
+        topic="hallazgos administrativos",
+        operation=QueryOperation.COUNT,
+        administrative_terms=(
+            "administrativos",
+            "auditoría regular",
+            "Contraloría General de Antioquia",
+        ),
+    )
+
+    normalized = normalize_intent_for_observed_schema(
+        extracted,
+        question=(
+            "¿Cuántos hallazgos administrativos reportó la auditoría regular "
+            "a la Contraloría General de Antioquia?"
+        ),
+        context=observed,
+    )
+
+    assert normalized.entity == "Contraloría General de Antioquia"
+
+
+def test_recovered_entity_requires_subject_filter_during_materialization() -> None:
+    observed = _quantity_context(
+        ("sujeto_auditado", "Sujeto auditado", ColumnDataType.TEXT),
+        ("hallazgos_administrativos", "Hallazgos administrativos", ColumnDataType.INTEGER),
+    )
+    extracted = IntentExtraction(
+        topic="hallazgos administrativos",
+        operation=QueryOperation.COUNT,
+        administrative_terms=("Contraloría General de Antioquia",),
+    )
+    normalized = normalize_intent_for_observed_schema(
+        extracted,
+        question=(
+            "¿Cuántos hallazgos administrativos reportó la Contraloría General de Antioquia?"
+        ),
+        context=observed,
+    )
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(1,),
+        limit=1,
+    )
+
+    with pytest.raises(ValueError, match="omite la restricción de entidad"):
+        materialize_query_plan(selection, intent=normalized, context=observed)
+
+
+def test_missing_entity_is_not_inferred_without_institutional_schema() -> None:
+    extracted = IntentExtraction(
+        topic="cantidad de productos",
+        operation=QueryOperation.COUNT,
+        administrative_terms=("Ministerio de ejemplo",),
+    )
+
+    normalized = normalize_intent_for_observed_schema(
+        extracted,
+        question="¿Cuántos productos dicen Ministerio de ejemplo?",
+        context=_quantity_context(
+            ("nombre_producto", "Nombre producto", ColumnDataType.TEXT),
+            ("cantidad", "Cantidad", ColumnDataType.INTEGER),
+        ),
+    )
+
+    assert normalized.entity is None
 
 
 def test_lookup_preserves_metric_columns_as_enumerated_output_dimensions() -> None:

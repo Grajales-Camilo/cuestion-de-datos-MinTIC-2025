@@ -722,6 +722,166 @@ def normalize_lookup_total_column(
     )
 
 
+_QUANTITY_QUESTION_TOKENS = frozenset({"cuanto", "cuanta"})
+_EXPLICIT_ROW_CARDINALITY_TOKENS = frozenset(
+    {"registro", "fila", "dataset", "conjunto", "columna", "variable"}
+)
+_NON_MEASURE_COLUMN_TOKENS = frozenset(
+    {
+        "ano",
+        "anio",
+        "vigencia",
+        "mes",
+        "dia",
+        "semana",
+        "fecha",
+        "codigo",
+        "id",
+        "identificador",
+    }
+)
+_GENERIC_QUANTITY_COLUMN_TOKENS = frozenset({"cantidad", "total", "numero"})
+_INSTITUTION_HEAD_TOKENS = frozenset(
+    {
+        "agencia",
+        "alcaldia",
+        "consejo",
+        "contraloria",
+        "corporacion",
+        "direccion",
+        "entidad",
+        "fiscalia",
+        "gobernacion",
+        "institucion",
+        "instituto",
+        "ministerio",
+        "organismo",
+        "organizacion",
+        "procuraduria",
+        "secretaria",
+        "superintendencia",
+        "tribunal",
+        "unidad",
+    }
+)
+_QUANTITY_TARGET_STOP_TOKENS = frozenset(
+    {
+        "se",
+        "hay",
+        "existe",
+        "existen",
+        "existieron",
+        "fue",
+        "fueron",
+        "aparece",
+        "aparecen",
+        "registra",
+        "registran",
+        "registro",
+        "reporta",
+        "reportan",
+        "reporto",
+        "habilitaron",
+        "tiene",
+        "tuvo",
+    }
+)
+
+
+def _quantity_target_tokens(question: str) -> set[str]:
+    normalized = _normalized_phrase(question)
+    match = re.search(r"\bcuant[oa]s?\b", normalized)
+    if match is None:
+        return set()
+    target: list[str] = []
+    for token in re.findall(r"[a-z0-9]+", normalized[match.end() :]):
+        if token in _QUANTITY_TARGET_STOP_TOKENS:
+            break
+        target.append(token)
+    return _semantic_tokens(" ".join(target))
+
+
+def _direct_quantity_column(
+    *,
+    question: str,
+    context: EnumeratedPlanningContext,
+) -> ColumnOption | None:
+    """Resuelve una medida publicada sin confundirla con cardinalidad de filas.
+
+    La decisión usa exclusivamente pregunta y esquema observado. Prefiere una
+    única columna numérica cuyo concepto aparece en la pregunta; como fallback
+    admite una única columna explícitamente genérica (`cantidad`/`total`/
+    `numero`) cuando el usuario no pidió contar registros, filas o variables.
+    Ante empate o ambigüedad conserva COUNT: nunca elige una medida al azar.
+    """
+
+    if not context.candidates:
+        return None
+    words = _semantic_tokens(question)
+    target_words = _quantity_target_tokens(question)
+    if not words.intersection(_QUANTITY_QUESTION_TOKENS) or not target_words:
+        return None
+    columns = context.candidates[0].columns
+    candidates: list[tuple[ColumnOption, set[str]]] = []
+    for column in columns:
+        if column.data_type not in {ColumnDataType.NUMBER, ColumnDataType.INTEGER}:
+            continue
+        tokens = _semantic_tokens(f"{column.field_name} {column.display_name}")
+        if tokens.intersection(_NON_MEASURE_COLUMN_TOKENS):
+            continue
+        candidates.append((column, tokens))
+    if not candidates:
+        return None
+
+    if target_words.intersection(_EXPLICIT_ROW_CARDINALITY_TOKENS):
+        return None
+    scored = [
+        (
+            len((tokens - _GENERIC_QUANTITY_COLUMN_TOKENS).intersection(target_words)),
+            column,
+        )
+        for column, tokens in candidates
+    ]
+    best_score = max(score for score, _column in scored)
+    if best_score > 0:
+        best = [column for score, column in scored if score == best_score]
+        return best[0] if len(best) == 1 else None
+
+    generic = [
+        column
+        for column, tokens in candidates
+        if tokens and tokens <= _GENERIC_QUANTITY_COLUMN_TOKENS
+    ]
+    return generic[0] if len(generic) == 1 else None
+
+
+def _grounded_institutional_term(
+    intent: IntentExtraction,
+    *,
+    question: str,
+    columns: tuple[ColumnOption, ...],
+) -> str | None:
+    """Recupera una entidad omitida sin inventarla ni extraer texto libre."""
+
+    if intent.entity is not None or not any(
+        _is_entity_designating_column(column.field_name, column.display_name) for column in columns
+    ):
+        return intent.entity
+    normalized_question = _normalized_phrase(question)
+    grounded: list[tuple[int, int, str]] = []
+    for term in intent.administrative_terms:
+        normalized = _normalized_phrase(term)
+        tokens = _semantic_tokens(term)
+        if (
+            normalized
+            and normalized in normalized_question
+            and len(tokens) >= 2
+            and tokens.intersection(_INSTITUTION_HEAD_TOKENS)
+        ):
+            grounded.append((len(tokens), len(normalized), term))
+    return max(grounded, default=(0, 0, None))[2]
+
+
 def normalize_intent_for_observed_schema(
     intent: IntentExtraction,
     *,
@@ -733,10 +893,8 @@ def normalize_intent_for_observed_schema(
     if not context.candidates:
         return intent
     words = _semantic_tokens(question)
-    column_tokens = {
-        column.index: _semantic_tokens(column.field_name)
-        for column in context.candidates[0].columns
-    }
+    columns = context.candidates[0].columns
+    column_tokens = {column.index: _semantic_tokens(column.field_name) for column in columns}
     has_total_concept = any(
         "total" in tokens and len((tokens - {"total", "no"}).intersection(words)) > 0
         for tokens in column_tokens.values()
@@ -760,10 +918,32 @@ def normalize_intent_for_observed_schema(
         or (bool(words.intersection({"sexo", "genero"})) and has_gender_breakdown)
         or (bool(words.intersection({"tasa", "porcentaje"})) and has_rate_columns)
         or ("volumen" in words and has_volume_column)
+        or _direct_quantity_column(question=question, context=context) is not None
     )
+    update: dict[str, object] = {}
     if should_lookup:
-        return intent.model_copy(update={"operation": QueryOperation.LOOKUP})
-    return intent
+        update["operation"] = QueryOperation.LOOKUP
+    entity = _grounded_institutional_term(intent, question=question, columns=columns)
+    if entity is not None and entity != intent.entity:
+        update["entity"] = entity
+    return intent.model_copy(update=update) if update else intent
+
+
+def normalize_direct_quantity_lookup(
+    selection: EnumeratedPlanSelection,
+    *,
+    question: str,
+    context: EnumeratedPlanningContext,
+) -> EnumeratedPlanSelection:
+    """Incluye la medida numérica inequívoca cuando COUNT se normalizó a LOOKUP."""
+
+    if selection.operation is not QueryOperation.LOOKUP:
+        return selection
+    column = _direct_quantity_column(question=question, context=context)
+    if column is None:
+        return selection
+    dimensions = tuple(dict.fromkeys((*selection.dimension_column_indexes, column.index)))
+    return selection.model_copy(update={"dimension_column_indexes": dimensions, "metrics": ()})
 
 
 def normalize_lookup_output_columns(
@@ -926,10 +1106,19 @@ def normalize_lookup_filters(
     return selection.model_copy(update={"filters": filters})
 
 
-_ENTITY_COLUMN_TOKENS = {"entidad", "empresa", "institucion", "organismo", "organizacion"}
+_ENTITY_COLUMN_TOKENS = {
+    "entidad",
+    "empresa",
+    "institucion",
+    "organismo",
+    "organizacion",
+    "sujeto",
+}
 _IDENTIFIER_COLUMN_TOKENS = {"codigo", "id", "identificador"}
 
 _GENERIC_ENTITY_TOKENS = {
+    "alcaldia",
+    "contraloria",
     "ministerio",
     "instituto",
     "entidad",
@@ -946,6 +1135,10 @@ _GENERIC_ENTITY_TOKENS = {
     "corporacion",
     "comision",
     "consejo",
+    "fiscalia",
+    "gobernacion",
+    "procuraduria",
+    "tribunal",
 }
 
 

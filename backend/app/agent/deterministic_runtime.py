@@ -36,6 +36,7 @@ from app.agent.llm_contracts import (
     materialize_query_plan,
     normalize_aggregate_intent,
     normalize_budget_snapshot,
+    normalize_direct_quantity_lookup,
     normalize_explicit_date_filter,
     normalize_intent_for_observed_schema,
     normalize_lookup_filters,
@@ -606,6 +607,11 @@ async def run_deterministic_agent(
             )
             llm_calls += 1
             selection = normalize_system_owned_operation(selection, intent)
+            selection = normalize_direct_quantity_lookup(
+                selection,
+                question=question,
+                context=profile.context,
+            )
             selection = normalize_budget_snapshot(
                 selection,
                 question=question,

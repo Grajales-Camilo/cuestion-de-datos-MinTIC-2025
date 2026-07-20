@@ -294,6 +294,99 @@ async def test_runtime_completes_only_after_grounded_synthesis() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_reads_published_quantity_instead_of_counting_matching_rows() -> None:
+    columns = (
+        ColumnOption(
+            index=0,
+            field_name="a_o",
+            display_name="Año",
+            data_type=ColumnDataType.INTEGER,
+            pii_risk_level=PiiRiskLevel.LOW,
+        ),
+        ColumnOption(
+            index=1,
+            field_name="cantidad",
+            display_name="Cantidad",
+            data_type=ColumnDataType.INTEGER,
+            pii_risk_level=PiiRiskLevel.LOW,
+        ),
+    )
+    profiled = ProfiledCandidate(
+        option=DatasetOption(
+            index=0,
+            dataset_id="qty1-2345",
+            title="Personas socializadas",
+            publisher="Entidad oficial",
+            columns=columns,
+        ),
+        schema=ObservedDatasetSchema(
+            dataset_id="qty1-2345",
+            eligibility_status=EligibilityStatus.ELIGIBLE,
+            pii_risk_level=PiiRiskLevel.LOW,
+            columns=tuple(
+                ObservedColumn(
+                    field_name=column.field_name,
+                    data_type=column.data_type,
+                    pii_risk_level=column.pii_risk_level,
+                )
+                for column in columns
+            ),
+        ),
+    )
+
+    async def extract(_question: str) -> IntentExtraction:
+        return IntentExtraction(topic="personas socializadas", operation=QueryOperation.COUNT)
+
+    async def retrieve(_intent_arg: IntentExtraction) -> MultiQueryRetrievalResult:
+        return MultiQueryRetrievalResult(
+            queries=("personas socializadas",),
+            candidates=(_candidate("qty1-2345"),),
+        )
+
+    async def profile(_dataset_id: str) -> ProfiledCandidate:
+        return profiled
+
+    async def plan(intent_arg, _context, _explored, _error) -> EnumeratedPlanSelection:
+        assert intent_arg.operation is QueryOperation.LOOKUP
+        return EnumeratedPlanSelection(
+            dataset_index=0,
+            operation=QueryOperation.COUNT,
+            metrics=(MetricChoice(operation=QueryOperation.COUNT),),
+            limit=1,
+        )
+
+    async def execute(validated) -> DeterministicExecutionResult:
+        assert validated.operation is QueryOperation.LOOKUP
+        assert validated.metrics == ()
+        assert "cantidad" in [item.field_name for item in validated.dimensions]
+        return _execution()
+
+    async def explore(*_args, **_kwargs):
+        raise AssertionError("la lectura directa no requiere exploración")
+
+    async def synthesize(_intent_arg, _claims) -> GroundedSynthesis:
+        return GroundedSynthesis(
+            answer="La cantidad observada fue 42.",
+            cited_claim_indexes=(0,),
+        )
+
+    result = await run_deterministic_agent(
+        "¿Cuántas personas socializadas se reportaron?",
+        dependencies=DeterministicRuntimeDependencies(
+            extract,
+            retrieve,
+            profile,
+            plan,
+            explore,
+            execute,
+            synthesize,
+        ),
+    )
+
+    assert result.status == "completed"
+
+
+@pytest.mark.asyncio
 async def test_runtime_rejects_failed_candidate_and_tries_next() -> None:
     result = await run_deterministic_agent(
         "¿Cuál es el total?",
