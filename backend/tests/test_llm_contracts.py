@@ -1556,6 +1556,64 @@ def test_generic_characteristics_lookup_keeps_all_columns_without_narrowing() ->
     assert 5 in normalized.dimension_column_indexes  # categoria
 
 
+def test_lookup_output_columns_matches_spanish_es_plural_of_requested_entity() -> None:
+    """T-617B-C13-D5 (pilot-019-trafico-portuario, golden-v2, dataset
+    `5r3g-zv5z`): "¿Qué sociedades portuarias... reportan tráfico?" no
+    seleccionaba `sociedad_portuaria` -- "sociedades" solo pierde una "s"
+    final con el stemmer antiguo ("sociedade"), nunca reduce al singular
+    real de un plural español en "-es". El fix agrega esa variante sin
+    quitar la coincidencia regular en "-s" que ya funcionaba (`tipos` ->
+    `tipo`, cubierto también en este mismo caso)."""
+
+    port_context = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="5r3g-zv5z",
+                title="Tráfico portuario",
+                publisher="Supertransporte",
+                columns=tuple(
+                    ColumnOption(
+                        index=index,
+                        field_name=name,
+                        display_name=name,
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    )
+                    for index, name in enumerate(
+                        ("zona_portuaria", "sociedad_portuaria", "tipo_servicio")
+                    )
+                ),
+            ),
+        )
+    )
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0, 2),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("BARRANQUILLA",),
+            ),
+        ),
+    )
+
+    normalized = normalize_lookup_output_columns(
+        proposed,
+        question=(
+            "¿Qué sociedades portuarias y tipos de servicio reportan tráfico "
+            "en la zona portuaria de Barranquilla?"
+        ),
+        context=port_context,
+    )
+
+    assert 1 in normalized.dimension_column_indexes  # sociedad_portuaria
+    assert 2 in normalized.dimension_column_indexes  # tipo_servicio
+
+
 def test_ranked_aggregate_materializes_group_order_and_top_one() -> None:
     proposed = EnumeratedPlanSelection(
         dataset_index=0,

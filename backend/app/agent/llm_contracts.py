@@ -523,9 +523,32 @@ def normalize_sort_references(
 
 
 def _semantic_tokens(value: str) -> set[str]:
+    """Tokeniza y agrega, ADEMÁS del token literal, su variante singular.
+
+    Hallazgo real (T-617B-C13-D5, pilot-018-transporte-ferreo/pilot-019-
+    trafico-portuario, golden-v2): el plural español en "-es" ("concesiones"
+    -> "concesion", "operadores" -> "operador", "sociedades" -> "sociedad")
+    no se reduce quitando una sola "s" final -- eso solo cubre el plural
+    regular en "-s" ("departamentos" -> "departamento"). Sin esto, ninguna
+    función de coincidencia léxica (`normalize_lookup_output_columns` entre
+    otras) reconocía "¿Qué concesiones y operadores...?"/"¿Qué sociedades
+    portuarias...?" como referidas a las columnas `concesion`/`operador`/
+    `sociedad_portuaria`, y el LOOKUP terminaba sin esas dimensiones.
+
+    Se AGREGA el token singular sin retirar el original (nunca se pierde una
+    coincidencia que ya funcionaba); el umbral de longitud evita strings
+    cortos ambiguos.
+    """
+
     plain = unicodedata.normalize("NFKD", value.casefold()).encode("ascii", "ignore").decode()
-    tokens = set(re.findall(r"[a-z0-9]+", plain))
-    return {token[:-1] if token.endswith("s") and len(token) > 4 else token for token in tokens}
+    raw_tokens = set(re.findall(r"[a-z0-9]+", plain))
+    tokens = set(raw_tokens)
+    for token in raw_tokens:
+        if token.endswith("es") and len(token) > 5:
+            tokens.add(token[:-2])
+        elif token.endswith("s") and len(token) > 4:
+            tokens.add(token[:-1])
+    return tokens
 
 
 def _normalized_phrase(value: str) -> str:
