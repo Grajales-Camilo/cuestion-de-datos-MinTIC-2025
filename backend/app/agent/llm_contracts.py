@@ -677,6 +677,72 @@ def normalize_ranked_aggregate(
     )
 
 
+def normalize_extremum_sort_target(
+    selection: EnumeratedPlanSelection,
+    *,
+    question: str,
+    context: EnumeratedPlanningContext,
+) -> EnumeratedPlanSelection:
+    """Redirige un `ORDER BY` que apunta a una dimensión ya fijada por un
+    filtro de igualdad -- ordenar por un valor constante nunca es
+    informativo -- hacia la única dimensión numérica no filtrada, cuando la
+    pregunta pide un extremo por fila (no un agregado: ver
+    `normalize_ranked_aggregate`, que ya cubre el caso con `metrics`).
+
+    Hallazgo real (T-617B-C13-D3, pilot-001-educacion-magdalena, golden-v2,
+    dataset `c4qb-ek68`): la pregunta pide el municipio con la MAYOR tasa de
+    deserción de 2024; el plan crudo del LLM ordenó por `a_o` (el año, ya
+    fijado por el filtro `a_o=2024`) en vez de por `tasa_de_deserci_n`,
+    devolviendo una fila esencialmente arbitraria en vez del máximo real.
+
+    La señal es puramente estructural (columna de orden == columna con
+    filtro `EQ`) y nunca depende de `case_id`/`dataset_id`/el texto literal
+    de una pregunta concreta. Ante ambigüedad -- ninguna o más de una
+    dimensión numérica no filtrada disponible -- se abstiene de adivinar y
+    conserva el plan tal cual, dejando que la validación normal lo repare o
+    rechace.
+    """
+
+    if selection.operation is not QueryOperation.LOOKUP or not selection.order_by:
+        return selection
+    words = _semantic_tokens(question)
+    descending = bool(words.intersection({"mayor", "mas", "concentra", "alto"}))
+    ascending = bool(words.intersection({"menor", "menos", "bajo"}))
+    if not (descending or ascending):
+        return selection
+    if selection.dataset_index >= len(context.candidates):
+        return selection
+    columns = context.candidates[selection.dataset_index].columns
+    dimensions = selection.dimension_column_indexes
+
+    sort = selection.order_by[0]
+    if sort.target_kind is not SortTargetKind.DIMENSION or sort.target_index >= len(dimensions):
+        return selection
+    sort_column_index = dimensions[sort.target_index]
+    filtered_eq_columns = {
+        item.column_index for item in selection.filters if item.operator is FilterOperator.EQ
+    }
+    if sort_column_index not in filtered_eq_columns:
+        return selection
+
+    numeric_positions = [
+        position
+        for position, index in enumerate(dimensions)
+        if index not in filtered_eq_columns
+        and index < len(columns)
+        and columns[index].data_type in {ColumnDataType.NUMBER, ColumnDataType.INTEGER}
+    ]
+    if len(numeric_positions) != 1:
+        return selection
+    new_sort = sort.model_copy(
+        update={
+            "target_index": numeric_positions[0],
+            "direction": SortDirection.DESC if descending else SortDirection.ASC,
+        }
+    )
+    return selection.model_copy(update={"order_by": (new_sort, *selection.order_by[1:])})
+
+
 def normalize_lookup_total_column(
     selection: EnumeratedPlanSelection,
     *,

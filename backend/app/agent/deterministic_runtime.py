@@ -38,6 +38,7 @@ from app.agent.llm_contracts import (
     normalize_budget_snapshot,
     normalize_direct_quantity_lookup,
     normalize_explicit_date_filter,
+    normalize_extremum_sort_target,
     normalize_intent_for_observed_schema,
     normalize_lookup_filters,
     normalize_lookup_output_columns,
@@ -701,6 +702,11 @@ async def run_deterministic_agent(
                 context=profile.context,
             )
             selection = normalize_sort_references(selection, profile.context)
+            selection = normalize_extremum_sort_target(
+                selection,
+                question=question,
+                context=profile.context,
+            )
             selection = normalize_temporal_year_filters(selection, profile.context)
             selection = _normalize_explored_filter_values(selection, explored)
             if _requires_exploration(selection, explored):

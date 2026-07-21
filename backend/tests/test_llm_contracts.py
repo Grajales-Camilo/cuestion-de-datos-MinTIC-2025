@@ -18,6 +18,7 @@ from app.agent.llm_contracts import (
     normalize_budget_snapshot,
     normalize_direct_quantity_lookup,
     normalize_explicit_date_filter,
+    normalize_extremum_sort_target,
     normalize_intent_for_observed_schema,
     normalize_lookup_filters,
     normalize_lookup_output_columns,
@@ -1577,6 +1578,199 @@ def test_ranked_aggregate_materializes_group_order_and_top_one() -> None:
         ),
     )
     assert normalized.limit == 1
+
+
+def _deserition_rate_context() -> EnumeratedPlanningContext:
+    return EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="c4qb-ek68",
+                title="Indicadores educativos del Magdalena por municipios",
+                publisher="Secretaría de Educación",
+                columns=(
+                    ColumnOption(
+                        index=0,
+                        field_name="a_o",
+                        display_name="Año",
+                        data_type=ColumnDataType.NUMBER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=1,
+                        field_name="tasa_de_deserci_n",
+                        display_name="Tasa de deserción",
+                        data_type=ColumnDataType.NUMBER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=2,
+                        field_name="municipios",
+                        display_name="Municipios",
+                        data_type=ColumnDataType.TEXT,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                ),
+            ),
+        )
+    )
+
+
+def test_extremum_sort_target_redirects_from_filtered_constant_to_numeric_metric() -> None:
+    """T-617B-C13-D3 (pilot-001-educacion-magdalena, golden-v2, dataset
+    `c4qb-ek68`): el LLM ordenó por `a_o` (ya fijado por `a_o=2024`) en vez
+    de `tasa_de_deserci_n`, devolviendo una fila arbitraria en vez del
+    máximo real pedido por "mayor tasa de deserción"."""
+
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0, 1, 2),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.NUMBER,
+                values=("2024",),
+            ),
+        ),
+        order_by=(
+            SortChoice(
+                target_kind=SortTargetKind.DIMENSION, target_index=0, direction=SortDirection.DESC
+            ),
+        ),
+    )
+
+    normalized = normalize_extremum_sort_target(
+        proposed,
+        question="¿Qué municipio de Magdalena registró la mayor tasa de deserción escolar en 2024?",
+        context=_deserition_rate_context(),
+    )
+
+    assert normalized.order_by == (
+        SortChoice(
+            target_kind=SortTargetKind.DIMENSION, target_index=1, direction=SortDirection.DESC
+        ),
+    )
+
+
+def test_extremum_sort_target_uses_ascending_direction_for_minimum_wording() -> None:
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0, 1, 2),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.NUMBER,
+                values=("2024",),
+            ),
+        ),
+        order_by=(
+            SortChoice(
+                target_kind=SortTargetKind.DIMENSION, target_index=0, direction=SortDirection.DESC
+            ),
+        ),
+    )
+
+    normalized = normalize_extremum_sort_target(
+        proposed,
+        question="¿Qué municipio de Magdalena registró la menor tasa de deserción escolar en 2024?",
+        context=_deserition_rate_context(),
+    )
+
+    assert normalized.order_by[0].direction is SortDirection.ASC
+    assert normalized.order_by[0].target_index == 1
+
+
+def test_extremum_sort_target_leaves_unfiltered_sort_column_untouched() -> None:
+    """Si la columna de orden no está fijada por un filtro de igualdad, no
+    hay nada estructuralmente sospechoso: se conserva el plan tal cual."""
+
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0, 1, 2),
+        order_by=(
+            SortChoice(
+                target_kind=SortTargetKind.DIMENSION, target_index=1, direction=SortDirection.DESC
+            ),
+        ),
+    )
+
+    normalized = normalize_extremum_sort_target(
+        proposed,
+        question="¿Qué municipio de Magdalena registró la mayor tasa de deserción escolar?",
+        context=_deserition_rate_context(),
+    )
+
+    assert normalized.order_by == proposed.order_by
+
+
+def test_extremum_sort_target_abstains_when_numeric_candidates_are_ambiguous() -> None:
+    """Dos dimensiones numéricas no filtradas: no se adivina cuál es la
+    métrica pedida, se conserva el plan tal cual."""
+
+    context_with_two_numeric = EnumeratedPlanningContext(
+        candidates=(
+            DatasetOption(
+                index=0,
+                dataset_id="c4qb-ek68",
+                title="Indicadores educativos del Magdalena por municipios",
+                publisher="Secretaría de Educación",
+                columns=(
+                    ColumnOption(
+                        index=0,
+                        field_name="a_o",
+                        display_name="Año",
+                        data_type=ColumnDataType.NUMBER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=1,
+                        field_name="tasa_de_deserci_n",
+                        display_name="Tasa de deserción",
+                        data_type=ColumnDataType.NUMBER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                    ColumnOption(
+                        index=2,
+                        field_name="tasa_de_repitencia",
+                        display_name="Tasa de repitencia",
+                        data_type=ColumnDataType.NUMBER,
+                        pii_risk_level=PiiRiskLevel.LOW,
+                    ),
+                ),
+            ),
+        )
+    )
+    proposed = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0, 1, 2),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.NUMBER,
+                values=("2024",),
+            ),
+        ),
+        order_by=(
+            SortChoice(
+                target_kind=SortTargetKind.DIMENSION, target_index=0, direction=SortDirection.DESC
+            ),
+        ),
+    )
+
+    normalized = normalize_extremum_sort_target(
+        proposed,
+        question="¿Qué municipio de Magdalena registró la mayor tasa de deserción escolar en 2024?",
+        context=context_with_two_numeric,
+    )
+
+    assert normalized.order_by == proposed.order_by
 
 
 def test_lookup_sort_column_is_added_and_converted_to_dimension_position() -> None:
