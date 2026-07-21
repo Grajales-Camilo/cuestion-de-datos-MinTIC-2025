@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SupervisorNode(StrEnum):
@@ -79,6 +79,23 @@ class CandidateProgress(BaseModel):
 
     dataset_index: int = Field(ge=0)
     status: CandidateStatus = CandidateStatus.UNSEEN
+    #: Invariante de telemetría (T-617B-C13-D6): todo candidato marcado
+    #: `REJECTED` debe conservar un código/razón determinista de rechazo, no
+    #: solo el estado. Antes de esto, un candidato rechazado por un error de
+    #: validación de plan inmediato (p. ej. `DATASET_MISMATCH`) perdía esa
+    #: razón al pasar a `select_candidate` para el siguiente candidato --
+    #: `plan_validation_errors` quedaba vacío en el evento persistido y la
+    #: causa real de descartar el candidato correcto era irreconstruible
+    #: (hallazgo real, pilot-025/pilot-026, golden-v2).
+    rejection_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _rejection_reason_matches_status(self) -> CandidateProgress:
+        if self.status is CandidateStatus.REJECTED and self.rejection_reason is None:
+            raise ValueError("un candidato REJECTED debe conservar rejection_reason")
+        if self.status is not CandidateStatus.REJECTED and self.rejection_reason is not None:
+            raise ValueError("rejection_reason solo aplica a candidatos REJECTED")
+        return self
 
 
 class SupervisorSnapshot(BaseModel):
@@ -114,9 +131,7 @@ class Transition(BaseModel):
 
 def _budget_stop(state: SupervisorSnapshot) -> Transition | None:
     usage, limits = state.usage, state.budgets
-    checks = (
-        (usage.elapsed_ms >= limits.max_duration_ms, StopReason.DURATION_BUDGET_EXCEEDED),
-    )
+    checks = ((usage.elapsed_ms >= limits.max_duration_ms, StopReason.DURATION_BUDGET_EXCEEDED),)
     for exhausted, reason in checks:
         if exhausted:
             return Transition(node=SupervisorNode.ABSTAIN, reason=reason.value, stop_reason=reason)

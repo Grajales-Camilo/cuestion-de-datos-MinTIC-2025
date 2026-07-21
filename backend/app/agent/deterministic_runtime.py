@@ -175,9 +175,15 @@ class DeterministicRuntimeDependencies:
 
 
 def _replace_status(
-    candidates: list[CandidateProgress], index: int, status: CandidateStatus
+    candidates: list[CandidateProgress],
+    index: int,
+    status: CandidateStatus,
+    *,
+    reason: str | None = None,
 ) -> None:
-    candidates[index] = CandidateProgress(dataset_index=index, status=status)
+    candidates[index] = CandidateProgress(
+        dataset_index=index, status=status, rejection_reason=reason
+    )
 
 
 def _text_filter_indexes(selection: EnumeratedPlanSelection) -> tuple[int, ...]:
@@ -487,6 +493,11 @@ async def run_deterministic_agent(
     explored: tuple[ExploredColumnValues, ...] = ()
     explorations = queries = repairs = 0
     trace: list[RuntimeTraceEntry] = []
+    #: T-617B-C13-D6: razón de rechazo del último candidato descartado,
+    #: expuesta en el `diagnostic_code` del siguiente `select_candidate`
+    #: (se consume una sola vez) para que el evento persistido conserve la
+    #: causa exacta -- antes se perdía en cuanto `current` volvía a `None`.
+    pending_rejection_reason: str | None = None
 
     while True:
         if is_cancelled is not None and is_cancelled():
@@ -574,6 +585,9 @@ async def run_deterministic_agent(
             if transition.node is SupervisorNode.BUILD_PLAN and validation_error is not None
             else None
         )
+        if transition.node is SupervisorNode.SELECT_CANDIDATE and pending_rejection_reason:
+            diagnostic_code = pending_rejection_reason
+            pending_rejection_reason = None
         textual_rejections = (
             getattr(execution, "textual_rejections", ()) if execution is not None else ()
         )
@@ -732,7 +746,10 @@ async def run_deterministic_agent(
                     PlanValidationCode.PII_REQUIRES_AGGREGATION,
                 }:
                     assert current is not None
-                    _replace_status(candidates, current, CandidateStatus.REJECTED)
+                    _replace_status(
+                        candidates, current, CandidateStatus.REJECTED, reason=exc.code.value
+                    )
+                    pending_rejection_reason = exc.code.value
                     current = None
                     profile = selection = validated = execution = None
                     explored = ()
@@ -768,7 +785,10 @@ async def run_deterministic_agent(
                 raise
             except (LookupError, ValueError):
                 assert current is not None
-                _replace_status(candidates, current, CandidateStatus.REJECTED)
+                _replace_status(
+                    candidates, current, CandidateStatus.REJECTED, reason="EXPLORATION_ERROR"
+                )
+                pending_rejection_reason = "EXPLORATION_ERROR"
                 current = None
                 profile = selection = validated = execution = None
                 explored = ()
@@ -781,7 +801,13 @@ async def run_deterministic_agent(
             explorations += item.tool_calls
             if not item.values:
                 assert current is not None
-                _replace_status(candidates, current, CandidateStatus.REJECTED)
+                _replace_status(
+                    candidates,
+                    current,
+                    CandidateStatus.REJECTED,
+                    reason="EXPLORATION_NO_VALUES",
+                )
+                pending_rejection_reason = "EXPLORATION_NO_VALUES"
                 current = None
                 profile = selection = validated = execution = None
                 explored = ()
@@ -799,10 +825,17 @@ async def run_deterministic_agent(
                 _replace_status(candidates, current, CandidateStatus.QUERIED)
             except DeterministicPersistenceCancelled as exc:
                 raise DeterministicRunCancelled(str(exc)) from exc
-            except DeterministicExecutionError:
+            except DeterministicExecutionError as exc:
                 queries += 1
                 assert current is not None
-                _replace_status(candidates, current, CandidateStatus.REJECTED)
+                execution_error_code = str(exc).split(":", 1)[0].strip()
+                _replace_status(
+                    candidates,
+                    current,
+                    CandidateStatus.REJECTED,
+                    reason=execution_error_code,
+                )
+                pending_rejection_reason = execution_error_code
                 current = None
                 profile = selection = validated = execution = None
                 explored = ()
@@ -833,7 +866,15 @@ async def run_deterministic_agent(
             continue
         if transition.node is SupervisorNode.NEXT_CANDIDATE:
             assert current is not None
-            _replace_status(candidates, current, CandidateStatus.REJECTED)
+            next_candidate_reason = (
+                transition.stop_reason.value
+                if transition.stop_reason is not None
+                else transition.reason
+            )
+            _replace_status(
+                candidates, current, CandidateStatus.REJECTED, reason=next_candidate_reason
+            )
+            pending_rejection_reason = next_candidate_reason
             current = None
             profile = selection = validated = execution = None
             explored = ()

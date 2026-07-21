@@ -25,6 +25,33 @@ def state(**updates: object) -> SupervisorSnapshot:
     return SupervisorSnapshot.model_validate(values)
 
 
+def test_rejected_candidate_requires_rejection_reason() -> None:
+    """T-617B-C13-D6: un candidato REJECTED sin razón violaba el invariante
+    de telemetría -- la causa de descartar el candidato correcto se perdía
+    en cuanto se avanzaba al siguiente (pilot-025/pilot-026, golden-v2)."""
+
+    with pytest.raises(ValueError, match="rejection_reason"):
+        CandidateProgress(dataset_index=0, status=CandidateStatus.REJECTED)
+
+
+def test_non_rejected_candidate_forbids_rejection_reason() -> None:
+    with pytest.raises(ValueError, match="rejection_reason"):
+        CandidateProgress(
+            dataset_index=0,
+            status=CandidateStatus.SELECTED,
+            rejection_reason="DATASET_MISMATCH",
+        )
+
+
+def test_rejected_candidate_with_reason_is_valid() -> None:
+    progress = CandidateProgress(
+        dataset_index=0,
+        status=CandidateStatus.REJECTED,
+        rejection_reason="DATASET_MISMATCH",
+    )
+    assert progress.rejection_reason == "DATASET_MISMATCH"
+
+
 def test_retrieves_then_selects_candidates_deterministically() -> None:
     assert decide_next_transition(SupervisorSnapshot()).node is SupervisorNode.RETRIEVE_CANDIDATES
     snapshot = SupervisorSnapshot(candidates=(candidate(CandidateStatus.UNSEEN),))
@@ -151,7 +178,11 @@ def test_candidate_budget_blocks_only_before_selecting_an_additional_candidate()
     at_limit_with_current = state(usage=SupervisorUsage(candidates=5))
     at_limit_without_current = SupervisorSnapshot(
         candidates=tuple(
-            CandidateProgress(dataset_index=index, status=CandidateStatus.REJECTED)
+            CandidateProgress(
+                dataset_index=index,
+                status=CandidateStatus.REJECTED,
+                rejection_reason="evidencia no elegible",
+            )
             for index in range(5)
         )
         + (CandidateProgress(dataset_index=5),),

@@ -1272,6 +1272,39 @@ async def test_runtime_tries_next_candidate_before_abstaining_on_irrelevant_clai
 
 
 @pytest.mark.asyncio
+async def test_rejected_candidate_reason_surfaces_on_next_select_candidate() -> None:
+    """T-617B-C13-D6 (pilot-025/pilot-026, golden-v2): un candidato rechazado
+    perdía su razón exacta en cuanto `current` volvía a `None` -- el evento
+    `select_candidate` siguiente quedaba con `diagnostic_code=None`
+    (`plan_validation_errors=[]` en el evento persistido, ver runner.py),
+    haciendo irreconstruible por qué se abandonó el dataset correcto. Ahora
+    la razón de `NEXT_CANDIDATE` se propaga una sola vez al siguiente
+    `select_candidate`."""
+
+    intent = IntentExtraction(topic="total observado en el catálogo", operation=QueryOperation.SUM)
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado en el catálogo?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(
+                ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),
+                ClaimsBuildResult(claims=(_relevant_claim(),), rejected=()),
+            ),
+        ),
+    )
+
+    assert result.status == "completed"
+    next_candidate_index = next(
+        index
+        for index, entry in enumerate(result.trace)
+        if entry.node is SupervisorNode.NEXT_CANDIDATE
+    )
+    following_select_candidate = result.trace[next_candidate_index + 1]
+    assert following_select_candidate.node is SupervisorNode.SELECT_CANDIDATE
+    assert following_select_candidate.diagnostic_code == (result.trace[next_candidate_index].reason)
+
+
+@pytest.mark.asyncio
 async def test_runtime_abstains_cleanly_when_all_candidates_are_irrelevant() -> None:
     """Trazabilidad de datasets revisados/rechazados: con dos candidatos
     ajenos a la intención, ambos quedan rechazados por pertinencia antes de
