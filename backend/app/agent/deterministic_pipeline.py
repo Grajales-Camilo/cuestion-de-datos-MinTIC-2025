@@ -151,6 +151,39 @@ def _column_field_names(plan: ValidatedQueryPlan, rendered: RenderedQuery) -> di
     return mapping
 
 
+def _distinct_lookup_row_indexes(
+    rows: tuple[dict, ...], dimension_aliases: tuple[str, ...]
+) -> tuple[int, ...]:
+    """Índices de filas que no son un duplicado exacto -en TODAS las columnas
+    de dimensión proyectadas- de una fila ya vista.
+
+    Hallazgo real (T-617B-C13-D2, pilot-022-red-vial, golden-v2, dataset
+    `ie7y-asdn`): un LOOKUP sobre un único registro (`codigo_tramo=55ST02`)
+    devolvió tres filas fuente idénticas (duplicado de publicación, no tres
+    registros distintos), y tanto los claims cuantitativos como el fallback
+    textual repetían el mismo valor ya correcto tres veces.
+
+    La igualdad se exige sobre el conjunto COMPLETO de columnas de dimensión,
+    nunca una sola: dos filas que describen registros distintos y coinciden
+    por azar en una única columna nunca se colapsan -- solo aquellas
+    idénticas en todo lo proyectado (`duplicate_policy: collapse_normalized`,
+    ya documentado en los `expected_facts` del propio golden). Perder una
+    columna de una fila genuinamente distinta violaría RF-208/Art. I (no
+    descartar datos en silencio); este criterio nunca lo hace porque exige
+    coincidencia total, no parcial.
+    """
+
+    seen: set[tuple[object, ...]] = set()
+    kept: list[int] = []
+    for index, row in enumerate(rows):
+        signature = tuple(row.get(alias) for alias in dimension_aliases)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        kept.append(index)
+    return tuple(kept)
+
+
 def _claim_specs(
     plan: ValidatedQueryPlan, rendered: RenderedQuery, rows: tuple[dict, ...]
 ) -> tuple[ClaimSpec, ...]:
@@ -170,7 +203,13 @@ def _claim_specs(
         )
         if is_identifier_field_name(dimension.field_name)
     }
-    for row_index, row in enumerate(rows):
+    row_indexes = (
+        _distinct_lookup_row_indexes(rows, rendered.dimension_aliases)
+        if plan.operation is QueryOperation.LOOKUP
+        else tuple(range(len(rows)))
+    )
+    for row_index in row_indexes:
+        row = rows[row_index]
         for alias in aliases:
             if row.get(alias) is None or alias in identifier_aliases:
                 continue
@@ -519,14 +558,12 @@ def _prepare_single_row_textual_fallback(
     normal y nunca llegan aquí.
 
     Hallazgo real (T-617B-C13-D2, pilot-022-red-vial, golden-v2, dataset
-    `ie7y-asdn`): un LOOKUP con filas fuente duplicadas en las columnas
-    solicitadas (p. ej. tres filas idénticas para `codigo_tramo=55ST02`)
-    emitía un hecho por fila sin colapsar, repitiendo el mismo valor varias
-    veces en la narrativa. El valor ya era correcto; la repetición no lo era.
-    Se deduplica por `(alias, normalized_values)` -- mismo criterio
-    `duplicate_policy: collapse_normalized` que ya usan los `expected_facts`
-    del propio golden -- sin inspeccionar el valor concreto ni depender de
-    `case_id`/`dataset_id`.
+    `ie7y-asdn`): un LOOKUP con filas fuente duplicadas (tres filas idénticas
+    para `codigo_tramo=55ST02`) emitía un hecho por fila sin colapsar,
+    repitiendo el mismo valor ya correcto varias veces en la narrativa. Las
+    filas duplicadas se colapsan vía `_distinct_lookup_row_indexes` (misma
+    función que usa `_claim_specs`, exige coincidencia en TODAS las columnas
+    de dimensión, nunca una sola) antes de generar el hecho por fila.
     """
 
     if plan.textual_requests or not rows:
@@ -548,7 +585,12 @@ def _prepare_single_row_textual_fallback(
         rows=rows,
         validated_order_is_total=False,
     )
-    row_indexes = range(min(len(rows), _MULTI_ROW_TEXTUAL_FALLBACK_LIMIT))
+    distinct_indexes = (
+        _distinct_lookup_row_indexes(rows, rendered.dimension_aliases)
+        if plan.operation is QueryOperation.LOOKUP
+        else tuple(range(len(rows)))
+    )
+    row_indexes = distinct_indexes[:_MULTI_ROW_TEXTUAL_FALLBACK_LIMIT]
     for dimension, alias in zip(
         plan.dimensions,
         rendered.dimension_aliases,
@@ -563,7 +605,6 @@ def _prepare_single_row_textual_fallback(
             )
         ):
             continue
-        seen_normalized_values: set[tuple[str, ...]] = set()
         for row_index in row_indexes:
             spec = TextualFactSpec(
                 operation=TextualFactOperation.DIRECT_TEXT,
@@ -572,7 +613,7 @@ def _prepare_single_row_textual_fallback(
                 operation_params=EmptyTextualFactOperationParams(),
             )
             try:
-                result = evaluate_textual_operation(evidence=evidence, spec=spec)
+                evaluate_textual_operation(evidence=evidence, spec=spec)
             except TextualOperationError as exc:
                 rejected.append(
                     TextualRejection(
@@ -581,9 +622,6 @@ def _prepare_single_row_textual_fallback(
                     )
                 )
                 continue
-            if result.normalized_values in seen_normalized_values:
-                continue
-            seen_normalized_values.add(result.normalized_values)
             prepared.append(
                 PreparedTextualFact(
                     spec=spec,

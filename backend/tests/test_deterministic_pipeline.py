@@ -195,6 +195,38 @@ async def test_lookup_keeps_valid_numeric_claim_when_context_column_is_text() ->
 
 
 @pytest.mark.asyncio
+async def test_lookup_deduplicates_quantitative_claims_from_duplicate_source_rows() -> None:
+    """T-617B-C13-D2 (pilot-022-red-vial, golden-v2, dataset `ie7y-asdn`): un
+    LOOKUP sobre un único registro (`codigo_tramo=55ST02`) devolvió tres
+    filas fuente idénticas (duplicado de publicación) para una columna
+    numérica ("categoria"=1) -- `_claim_specs` generaba un claim por fila sin
+    colapsar, repitiendo el mismo valor ya correcto tres veces. Una cuarta
+    fila con un valor genuinamente distinto (999) se conserva íntegra."""
+
+    plan = QueryPlan(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimensions=(
+            DimensionSelection(column=ColumnReference(column_index=1), provenance=provenance()),
+        ),
+        limit=4,
+        purpose="Consultar valor del tramo",
+    )
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [{"dim_1": "1250"}, {"dim_1": "1250"}, {"dim_1": "1250"}, {"dim_1": "999"}],
+            "source_url": "https://example.test/resource/abcd-1234.json",
+        }
+
+    result = await execute_validated_plan(validated(plan), executor=executor, metadata=metadata())
+    assert [claim.raw_value for claim in result.claims.claims] == [1250, 999]
+    assert [claim.source_row_indexes for claim in result.claims.claims] == [(0,), (3,)]
+
+
+@pytest.mark.asyncio
 async def test_text_lookup_builds_grounded_presence_claim() -> None:
     plan = QueryPlan(
         dataset_index=0,
