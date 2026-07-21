@@ -225,6 +225,52 @@ def _claim_specs(
     return tuple(specs)
 
 
+_DISTINCT_COUNT_VALUE_TOKENS = frozenset({"distinto", "distinta", "distintos", "distintas"})
+_DISTINCT_COUNT_QUANTITY_TOKENS = frozenset({"cuanto", "cuanta", "cuantos", "cuantas"})
+
+
+def _distinct_count_specs(
+    plan: ValidatedQueryPlan, rendered: RenderedQuery, rows: tuple[dict, ...]
+) -> tuple[ClaimSpec, ...]:
+    """Deriva un claim agregado de conteo de valores distintos cuando el plan
+    agrupa por una dimensión (`COUNT(*)` por grupo) y la pregunta pide
+    explícitamente cuántos valores DISTINTOS existen -- no cuántos registros
+    tiene cada grupo.
+
+    Hallazgo real (T-617B-C13-D4, pilot-037-calidad-aire, golden-v2, dataset
+    `kekd-7v7h`): "¿Cuántas estaciones de calidad del aire distintas
+    aparecen...?" no tiene primitivo `COUNT(DISTINCT)` en el contrato
+    (`QueryOperation.COUNT` representa exclusivamente `count(*)`, ver
+    `MetricChoice._shape`); el plan más cercano disponible agrupa por la
+    dimensión y cuenta filas por grupo, lo que ya enumera cada estación pero
+    nunca produce el escalar "número de grupos" que pide la pregunta. El
+    número de filas ya persistidas (una por grupo, por construcción del
+    `GROUP BY`) ES exactamente ese escalar -- se cuenta evidencia ya
+    obtenida, no se inventa nada. `plan.purpose` incluye el texto literal de
+    la pregunta (`f"{operation}: {intent.topic}"`, y `intent.topic` queda
+    anclado a la pregunta completa por `ground_intent_topic_in_question`),
+    así que la señal léxica nunca depende de `case_id`/`dataset_id`.
+    """
+
+    if plan.operation is not QueryOperation.COUNT or not plan.dimensions or not rows:
+        return ()
+    tokens = intent_relevance_tokens(plan.purpose, ())
+    if not (tokens & _DISTINCT_COUNT_VALUE_TOKENS and tokens & _DISTINCT_COUNT_QUANTITY_TOKENS):
+        return ()
+    dimension_alias = rendered.dimension_aliases[0]
+    column_field_names = _column_field_names(plan, rendered)
+    return (
+        ClaimSpec(
+            claim_type="derived",
+            description=f"{plan.purpose} (conteo de valores distintos)",
+            source_row_indexes=tuple(range(len(rows))),
+            columns=(dimension_alias,),
+            formula={"agg": "count", "col": dimension_alias},
+            column_field_names=column_field_names,
+        ),
+    )
+
+
 def _lookup_presence_specs(
     plan: ValidatedQueryPlan,
     rendered: RenderedQuery,
@@ -686,7 +732,7 @@ async def execute_validated_plan(
             canonical_soql=canonical_soql,
             rows=rows,
         ),
-        _claim_specs(plan, rendered, rows),
+        (*_claim_specs(plan, rendered, rows), *_distinct_count_specs(plan, rendered, rows)),
     )
     textual_facts: tuple[PreparedTextualFact, ...] = ()
     textual_rejections: tuple[TextualRejection, ...] = ()

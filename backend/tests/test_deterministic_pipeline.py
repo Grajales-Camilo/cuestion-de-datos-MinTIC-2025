@@ -123,6 +123,81 @@ async def test_count_vertical_without_llm() -> None:
 
 
 @pytest.mark.asyncio
+async def test_count_group_by_derives_additional_distinct_count_claim() -> None:
+    """T-617B-C13-D4 (pilot-037-calidad-aire, golden-v2, dataset `kekd-7v7h`):
+    `QueryOperation.COUNT` no admite `COUNT(DISTINCT)` (ver
+    `MetricChoice._shape`), así que "cuántas estaciones distintas aparecen"
+    solo podía expresarse como `GROUP BY` + `COUNT(*)` por grupo -- cada
+    fila enumera un grupo, pero ninguna produce el escalar "número de
+    grupos" pedido. Se deriva un claim adicional contando las filas ya
+    persistidas (una por grupo), sin inventar ningún valor."""
+
+    metric = MetricSelection(operation=QueryOperation.COUNT, provenance=provenance())
+    plan = sum_plan(
+        operation=QueryOperation.COUNT,
+        metrics=(metric,),
+        order_by=(),
+        purpose="count: ¿Cuántas estaciones distintas aparecen para la autoridad AMVA?",
+    )
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [
+                {"dim_1": "Pasto", "metric_count_1": "7"},
+                {"dim_1": "Ipiales", "metric_count_1": "27"},
+                {"dim_1": "Tumaco", "metric_count_1": "5"},
+            ],
+            "source_url": "https://example.test/resource/abcd-1234.json",
+        }
+
+    result = await execute_validated_plan(validated(plan), executor=executor, metadata=metadata())
+    per_group_values = [
+        claim.raw_value
+        for claim in result.claims.claims
+        if claim.columns_used == ("metric_count_1",)
+    ]
+    assert per_group_values == [7, 27, 5]
+    distinct_count_claims = [
+        claim for claim in result.claims.claims if claim.columns_used == ("dim_1",)
+    ]
+    assert len(distinct_count_claims) == 1
+    assert distinct_count_claims[0].raw_value == 3
+    assert distinct_count_claims[0].claim_type == "derived"
+
+
+@pytest.mark.asyncio
+async def test_count_group_by_without_distinct_wording_skips_extra_claim() -> None:
+    """Sin la señal léxica de "distintos/as", no se agrega ningún claim
+    adicional -- el comportamiento existente (un claim por grupo) queda
+    intacto."""
+
+    metric = MetricSelection(operation=QueryOperation.COUNT, provenance=provenance())
+    plan = sum_plan(
+        operation=QueryOperation.COUNT,
+        metrics=(metric,),
+        order_by=(),
+        purpose="count: ¿Cuántos registros hay por estación?",
+    )
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [
+                {"dim_1": "Pasto", "metric_count_1": "7"},
+                {"dim_1": "Ipiales", "metric_count_1": "27"},
+            ],
+            "source_url": "https://example.test/resource/abcd-1234.json",
+        }
+
+    result = await execute_validated_plan(validated(plan), executor=executor, metadata=metadata())
+    assert len(result.claims.claims) == 2
+    assert all(claim.columns_used == ("metric_count_1",) for claim in result.claims.claims)
+
+
+@pytest.mark.asyncio
 async def test_sum_with_privacy_group_count_without_llm() -> None:
     async def executor(payload: dict) -> dict:
         assert "sum(valor) as metric_sum_1" in payload["soql"]
