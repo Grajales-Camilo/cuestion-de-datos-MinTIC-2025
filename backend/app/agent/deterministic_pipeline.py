@@ -517,6 +517,16 @@ def _prepare_single_row_textual_fallback(
     la intención y excluye los aliases que ya produjeron un claim
     cuantitativo. Solicitudes textuales explícitas se procesan por la ruta
     normal y nunca llegan aquí.
+
+    Hallazgo real (T-617B-C13-D2, pilot-022-red-vial, golden-v2, dataset
+    `ie7y-asdn`): un LOOKUP con filas fuente duplicadas en las columnas
+    solicitadas (p. ej. tres filas idénticas para `codigo_tramo=55ST02`)
+    emitía un hecho por fila sin colapsar, repitiendo el mismo valor varias
+    veces en la narrativa. El valor ya era correcto; la repetición no lo era.
+    Se deduplica por `(alias, normalized_values)` -- mismo criterio
+    `duplicate_policy: collapse_normalized` que ya usan los `expected_facts`
+    del propio golden -- sin inspeccionar el valor concreto ni depender de
+    `case_id`/`dataset_id`.
     """
 
     if plan.textual_requests or not rows:
@@ -553,6 +563,7 @@ def _prepare_single_row_textual_fallback(
             )
         ):
             continue
+        seen_normalized_values: set[tuple[str, ...]] = set()
         for row_index in row_indexes:
             spec = TextualFactSpec(
                 operation=TextualFactOperation.DIRECT_TEXT,
@@ -561,7 +572,7 @@ def _prepare_single_row_textual_fallback(
                 operation_params=EmptyTextualFactOperationParams(),
             )
             try:
-                evaluate_textual_operation(evidence=evidence, spec=spec)
+                result = evaluate_textual_operation(evidence=evidence, spec=spec)
             except TextualOperationError as exc:
                 rejected.append(
                     TextualRejection(
@@ -570,6 +581,9 @@ def _prepare_single_row_textual_fallback(
                     )
                 )
                 continue
+            if result.normalized_values in seen_normalized_values:
+                continue
+            seen_normalized_values.add(result.normalized_values)
             prepared.append(
                 PreparedTextualFact(
                     spec=spec,

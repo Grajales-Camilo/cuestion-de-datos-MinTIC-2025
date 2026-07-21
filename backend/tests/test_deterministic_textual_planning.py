@@ -339,6 +339,36 @@ async def test_enabled_multirow_lookup_derives_text_per_row_without_count_one_su
     assert result.textual_rejections == ()
 
 
+@pytest.mark.asyncio
+async def test_enabled_multirow_lookup_deduplicates_identical_normalized_values() -> None:
+    """T-617B-C13-D2 (pilot-022-red-vial, golden-v2, dataset `ie7y-asdn`): tres
+    filas idénticas para `codigo_tramo=55ST02` producían tres `direct_text`
+    idénticos ("Municipio: Medellín" repetido 3 veces) -- el valor ya era
+    correcto, la repetición no. Filas con el mismo valor normalizado colapsan
+    a un solo hecho; filas con valores distintos se conservan todas (ver
+    `test_enabled_multirow_lookup_derives_text_per_row_without_count_one_surrogate`)."""
+
+    plan = _lookup_plan()
+
+    async def executor(payload: dict) -> dict:
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [{"dim_1": "Medellín"}, {"dim_1": "Medellín"}, {"dim_1": "Bogotá"}],
+        }
+
+    result = await execute_validated_plan(
+        _validated(plan),
+        executor=executor,
+        metadata=metadata(),
+        textual_facts_enabled=True,
+    )
+
+    assert result.claims.claims == ()
+    assert [fact.spec.source_row_indexes for fact in result.textual_facts] == [(0,), (2,)]
+    assert result.textual_rejections == ()
+
+
 def _single_project_lookup() -> tuple[QueryPlan, EnumeratedPlanningContext, ObservedDatasetSchema]:
     columns = (
         ColumnOption(
