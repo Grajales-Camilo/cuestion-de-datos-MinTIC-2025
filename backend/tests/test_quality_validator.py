@@ -272,6 +272,60 @@ def test_case_12_medium_pii_with_insufficient_aggregation_is_blocked() -> None:
     assert "pii_aggregation_insufficient" in result.eligibility_reasons
 
 
+def test_case_12_dataset_level_medium_pii_reason_still_blocks_by_default() -> None:
+    """`aggregation_safety_required` por defecto es `True`: cualquier
+    llamador que no lo fije explícitamente (runtime legado, pruebas
+    existentes) conserva el bloqueo estricto previo, aunque la razón
+    `pii_medium_requires_aggregation` provenga del DATASET (catálogo) y no
+    de ninguna columna realmente seleccionada."""
+
+    result = validate_evidence(
+        draft(
+            dataset_pii_risk_level="medium",
+            dataset_eligibility_reasons=("pii_medium_requires_aggregation",),
+            selected_columns=(SelectedColumn("c_digo_municipio", "low"),),
+            canonical_soql=(
+                "SELECT c_digo_municipio WHERE municipio = 'Abriaquí' LIMIT 100 OFFSET 0"
+            ),
+            rows=({"c_digo_municipio": "05004"},),
+            row_count=1,
+        )
+    )
+
+    assert result.eligibility_status == "blocked"
+    assert "pii_aggregation_insufficient" in result.eligibility_reasons
+
+
+def test_case_12_lookup_of_low_risk_column_is_eligible_when_aggregation_safety_not_required() -> (
+    None
+):
+    """T-617B-C13-D7 continuación (pilot-025/pilot-026, golden-v2, datasets
+    nudc-7mev/f5ai-gvqt): un LOOKUP de un solo identificador `low`
+    (`c_digo_municipio`) nunca puede cumplir `aggregation_min_count >= 5`
+    (por construcción devuelve 1 fila para una entidad nombrada), así que
+    heredar ciegamente `pii_medium_requires_aggregation` del DATASET
+    bloqueaba una respuesta correcta sin exponer ninguna columna sensible.
+    El pipeline determinista fija `aggregation_safety_required` a
+    `plan.include_group_count` -- `False` para exactamente este caso."""
+
+    result = validate_evidence(
+        draft(
+            dataset_pii_risk_level="medium",
+            dataset_eligibility_reasons=("pii_medium_requires_aggregation",),
+            selected_columns=(SelectedColumn("c_digo_municipio", "low"),),
+            canonical_soql=(
+                "SELECT c_digo_municipio WHERE municipio = 'Abriaquí' LIMIT 100 OFFSET 0"
+            ),
+            rows=({"c_digo_municipio": "05004"},),
+            row_count=1,
+            aggregation_safety_required=False,
+        )
+    )
+
+    assert result.eligibility_status == "eligible"
+    assert "pii_aggregation_insufficient" not in result.eligibility_reasons
+
+
 def test_case_12_medium_pii_count_without_explicit_alias_still_counts() -> None:
     """Regresion del hallazgo T-303: `count(*)` sin `AS` es una consulta valida
     (RF-401 solo exige "count(*) o agregado equivalente", no un alias); Socrata

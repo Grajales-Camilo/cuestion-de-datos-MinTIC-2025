@@ -24,10 +24,14 @@ from app.agent.query_plan import (
     DimensionSelection,
     EligibilityStatus,
     EnumeratedPlanningContext,
+    FilterOperator,
+    FilterSelection,
     MetricSelection,
     PiiRiskLevel,
     QueryOperation,
     QueryPlan,
+    ScalarType,
+    ScalarValue,
 )
 from tests.test_query_plan import context, provenance, sum_plan
 from tests.test_soql_renderer import schema
@@ -215,6 +219,49 @@ async def test_sum_with_privacy_group_count_without_llm() -> None:
     assert result.quality.eligibility_status == "eligible"
     assert result.quality.row_policy.aggregation_min_count == 15
     assert result.claims.claims[0].raw_value == 1250
+
+
+@pytest.mark.asyncio
+async def test_lookup_of_low_risk_column_is_eligible_despite_dataset_medium_pii() -> None:
+    """T-617B-C13-D7 continuación (pilot-025/pilot-026, golden-v2): un LOOKUP
+    que solo selecciona `municipio` (`low`) de un dataset marcado `medium`
+    a nivel de esquema no debe exigir `count(*)`/agregación mínima -- ni en
+    el SoQL renderizado (ya corregido en `plan_validator.py`:
+    `include_group_count` excluye LOOKUP) ni en la elegibilidad de
+    evidencia (`aggregation_safety_required=plan.include_group_count`,
+    ahora `False` aquí). Antes de este fix, esto se rechazaba con
+    `EVIDENCE_NOT_ELIGIBLE` pese a no exponer ninguna columna sensible."""
+
+    plan = QueryPlan(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimensions=(
+            DimensionSelection(column=ColumnReference(column_index=0), provenance=provenance()),
+        ),
+        filters=(
+            FilterSelection(
+                column=ColumnReference(column_index=0),
+                operator=FilterOperator.EQ,
+                values=(ScalarValue(type=ScalarType.TEXT, value="Pasto"),),
+                provenance=provenance(),
+            ),
+        ),
+        purpose="Consultar municipio",
+    )
+
+    async def executor(payload: dict) -> dict:
+        assert "count(*)" not in payload["soql"]
+        return {
+            "ok": True,
+            "canonical_soql": payload["soql"],
+            "rows": [{"dim_1": "Pasto"}],
+            "source_url": "https://example.test/resource/abcd-1234.json",
+        }
+
+    result = await execute_validated_plan(
+        validated(plan, medium=True), executor=executor, metadata=metadata(medium=True)
+    )
+    assert result.quality.eligibility_status == "eligible"
 
 
 @pytest.mark.asyncio

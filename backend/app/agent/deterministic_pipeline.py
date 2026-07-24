@@ -717,6 +717,7 @@ async def execute_validated_plan(
         row_count=len(rows),
         data_updated_at=metadata.data_updated_at,
         evaluated_at=datetime.now(UTC),
+        aggregation_safety_required=plan.include_group_count,
     )
     quality = validate_evidence(evidence)
     if quality.eligibility_status != "eligible":
