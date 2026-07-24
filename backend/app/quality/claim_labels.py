@@ -59,10 +59,61 @@ _TEMPORAL_TOKENS = frozenset(
 
 ColumnRelevance = Literal["primary", "temporal", "auxiliary"]
 
+#: Artículos, preposiciones y conjunciones sin contenido temático propio.
+#: T-617B-C13-D8 (golden-v2, pilot-018-transporte-ferreo):
+#: `dataset_topic_overlaps_intent` comparaba tokens sin filtrar estos
+#: conectores, así que CUALQUIER par de textos en español coincidía
+#: trivialmente en "de"/"y" -- la pregunta ("¿Qué concesiones y
+#: operadores...?") y el dataset de repliegue equivocado ("Operación de
+#: pasajeros... por carretera") solo compartían esos conectores, nunca un
+#: token con contenido real, pero el gate igual devolvía `True`. Se filtran
+#: aquí, en el tokenizador compartido, porque ninguno de los cuatro usos de
+#: `_tokens` (columnas, identificadores, tokens de intención, nombre de
+#: dataset) puede depender legítimamente de un conector como señal.
+#: Deliberadamente NO incluye pronombres interrogativos ("cuanto"/"cuanta"/
+#: "cuantos"/"cuantas", "cual", "donde", etc.): `_distinct_count_specs`
+#: (`deterministic_pipeline.py`) y `_direct_quantity_column`
+#: (`llm_contracts.py`) ya los usan como señal léxica real -- filtrarlos
+#: aquí les habría quitado la única evidencia con la que detectan la
+#: pregunta ("¿Cuántas... distintas...?").
+_STOPWORDS = frozenset(
+    {
+        "a",
+        "al",
+        "con",
+        "de",
+        "del",
+        "desde",
+        "e",
+        "el",
+        "en",
+        "entre",
+        "hacia",
+        "hasta",
+        "la",
+        "las",
+        "lo",
+        "los",
+        "ni",
+        "o",
+        "para",
+        "por",
+        "segun",
+        "sin",
+        "sobre",
+        "u",
+        "un",
+        "una",
+        "unas",
+        "unos",
+        "y",
+    }
+)
+
 
 def _tokens(value: str) -> set[str]:
     plain = unicodedata.normalize("NFKD", value.casefold()).encode("ascii", "ignore").decode()
-    return set(re.findall(r"[a-z0-9]+", plain))
+    return set(re.findall(r"[a-z0-9]+", plain)) - _STOPWORDS
 
 
 def looks_like_internal_alias(value: str) -> bool:

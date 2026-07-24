@@ -968,7 +968,20 @@ async def test_h2_first_candidate_rejected_second_candidate_completes_without_ea
         raise AssertionError("historia 2 no debe requerir exploración")
 
     async def execute(validated):
-        return await execute_validated_plan(validated, executor=executor, metadata=_metadata())
+        # T-617B-C13-D8: `dataset_topic_overlaps_intent` rechaza un candidato de
+        # repliegue (`current > 0`, este es el segundo) cuyo nombre publicado no
+        # comparte tema con la intención -- la intención queda anclada al texto
+        # literal de la pregunta (`ground_intent_topic_in_question`), y la
+        # pregunta sintética de esta historia es "T-611 historia 2: cambio de
+        # candidato" (no menciona "monto"). El nombre genérico por defecto de
+        # `_metadata()` no comparte ningún token real con ese texto, así que
+        # necesita uno que sí lo haga, igual que un dataset real compartiría
+        # vocabulario con la pregunta que responde.
+        return await execute_validated_plan(
+            validated,
+            executor=executor,
+            metadata=_metadata(dataset_name="Datos de historia 2: cambio de candidato"),
+        )
 
     async def synthesize(intent, claims) -> GroundedSynthesis:
         display = claims.claims[0].display_value

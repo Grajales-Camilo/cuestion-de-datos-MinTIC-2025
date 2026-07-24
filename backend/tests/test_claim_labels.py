@@ -161,6 +161,23 @@ def test_dataset_topic_overlaps_intent_matches_by_shared_root() -> None:
     )
 
 
+def test_dataset_topic_overlaps_intent_ignores_shared_stopwords() -> None:
+    """T-617B-C13-D8 (golden-v2, pilot-018-transporte-ferreo): antes de este
+    fix, `_tokens` no filtraba conectores sin contenido temático ("de"/"y"),
+    así que cualquier par de textos en español coincidía trivialmente en
+    ellos. La pregunta por "concesiones y operadores" de "carga férrea" solo
+    compartía "de"/"y" con el dataset de repliegue de transporte por
+    carretera (tema real distinto) -- el gate debía rechazarlo y no lo
+    hacía."""
+
+    tokens = intent_relevance_tokens("concesiones y operadores", ("carga férrea",))
+    assert not dataset_topic_overlaps_intent(
+        "Operación de pasajeros y despacho de vehículos en la modalidad de "
+        "transporte de pasajeros por carretera",
+        requested_tokens=tokens,
+    )
+
+
 def test_column_is_explicitly_requested_still_behaves_after_shared_helper_refactor() -> None:
     """`column_is_explicitly_requested` reutiliza ahora el mismo comparador
     léxico que `dataset_topic_overlaps_intent`; esta prueba fija su
