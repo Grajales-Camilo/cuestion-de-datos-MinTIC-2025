@@ -68,7 +68,7 @@ from app.agent.query_plan import (
 from app.llm.factory import LLMProviderError
 from app.quality.claim_labels import (
     claim_is_relevant_to_narrative,
-    dataset_topic_overlaps_intent,
+    fallback_dataset_topically_relevant,
     intent_relevance_tokens,
 )
 from app.quality.claims import BuiltClaim, ClaimsBuildResult
@@ -510,14 +510,18 @@ async def run_deterministic_agent(
         # la intención — sin heurísticas nuevas, sin `case_id`/`dataset_id`,
         # sin juicio de LLM.
         claims_materially_relevant = True
-        if execution is not None and execution.claims.claims:
+        textual_result_available = execution is not None and bool(
+            getattr(execution, "textual_facts", ())
+        )
+        if execution is not None:
             requested_tokens = intent_relevance_tokens(intent.topic, intent.administrative_terms)
-            claims_materially_relevant = any(
-                claim_is_relevant_to_narrative(
-                    getattr(claim, "public_columns", ()), requested_tokens=requested_tokens
+            if execution.claims.claims:
+                claims_materially_relevant = any(
+                    claim_is_relevant_to_narrative(
+                        getattr(claim, "public_columns", ()), requested_tokens=requested_tokens
+                    )
+                    for claim in execution.claims.claims
                 )
-                for claim in execution.claims.claims
-            )
             # T-617B-C13 (RF-205/RF-211): un nombre de columna ("cantidad",
             # "capacidad") casi nunca repite el tema de la pregunta incluso
             # en el candidato correcto -- exigir solapamiento léxico ahí
@@ -528,18 +532,30 @@ async def run_deterministic_agent(
             # a un dataset de tema no relacionado (`ji8i-4anb`, "deserción
             # escolar") cuyas columnas son léxicamente "primarias" y por eso
             # pasaban el chequeo anterior sin verificar el dataset en sí.
+            #
+            # T-617B-C13-D9 (golden-v2, pilot-018-transporte-ferreo):
+            # `textual_result_available` se calculaba sin este chequeo, así
+            # que un candidato de repliegue con claims correctamente
+            # descartados (`claims_materially_relevant=False`, columnas
+            # `anno_vigencia`/`mes_vigencia`) igual completaba la síntesis
+            # con un HECHO TEXTUAL de un dataset sin relación temática
+            # (`5r3g-zv5z`, "Tráfico Portuario Marítimo") citando valores de
+            # `tipo_carga` ("GRANEL LÍQUIDO", "CONTENEDORES"...) para una
+            # pregunta de concesiones ferroviarias: `decide_next_transition`
+            # avanza a PERSIST_FACTS con `claims_materially_relevant OR
+            # textual_result_available`, y el segundo nunca se apagaba. Se
+            # aplica la misma señal a ambos: un candidato de repliegue sin
+            # relación temática no aporta evidencia suficiente por ninguna
+            # de las dos vías.
             evidence_draft = getattr(execution, "evidence_draft", None)
             dataset_name = getattr(evidence_draft, "dataset_name", None)
-            if (
-                claims_materially_relevant
-                and current is not None
-                and current > 0
-                and dataset_name is not None
-                and not dataset_topic_overlaps_intent(
-                    dataset_name, requested_tokens=requested_tokens
-                )
+            if not fallback_dataset_topically_relevant(
+                dataset_name,
+                requested_tokens=requested_tokens,
+                accepted_candidate_index=current,
             ):
                 claims_materially_relevant = False
+                textual_result_available = False
         snapshot = SupervisorSnapshot(
             candidates=tuple(candidates),
             current_candidate_index=current,
@@ -560,8 +576,7 @@ async def run_deterministic_agent(
             # un rechazo textual puro disfrazara de "hecho pertinente" la
             # persistencia de un claim cuantitativo irrelevante. `textual_
             # rejected` (abajo) es la señal independiente para rechazos.
-            textual_result_available=execution is not None
-            and bool(getattr(execution, "textual_facts", ())),
+            textual_result_available=textual_result_available,
             textual_rejected=execution is not None
             and bool(getattr(execution, "textual_rejections", ())),
             synthesis_deferred=defer_synthesis_until_persisted,

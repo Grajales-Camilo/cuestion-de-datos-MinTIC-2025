@@ -1421,6 +1421,60 @@ async def test_runtime_accepts_fallback_candidate_whose_dataset_name_matches_top
 
 
 @pytest.mark.asyncio
+async def test_runtime_rejects_fallback_candidate_textual_facts_from_unrelated_dataset() -> None:
+    """T-617B-C13-D9 (golden-v2, pilot-018-transporte-ferreo): un candidato de
+    repliegue (`current > 0`) cuyos claims cuantitativos ya se descartan por
+    pertinencia (`claims_materially_relevant=False`) no debía poder colarse
+    de todos modos vía `textual_result_available`, que antes se calculaba sin
+    ningún chequeo de tema -- `decide_next_transition` avanza a
+    PERSIST_FACTS con `claims_materially_relevant OR textual_result_available`,
+    así que un hecho textual de un dataset sin relación temática bastaba para
+    completar la síntesis con evidencia ajena a la pregunta. Ahora la misma
+    señal de solapamiento de tema apaga ambas banderas a la vez."""
+
+    intent = IntentExtraction(topic="concesiones y operadores", operation=QueryOperation.LOOKUP)
+    result = await run_deterministic_agent(
+        "¿Qué concesiones y operadores movilizaron carga férrea el 13 de octubre de 2023?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(
+                ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),
+                ClaimsBuildResult(claims=(_irrelevant_claim("2"),), rejected=()),
+            ),
+            textual_facts_by_candidate=((), ("GRANEL LIQUIDO",)),
+            dataset_names_by_candidate=(None, "Tráfico Portuario Marítimo en Colombia"),
+        ),
+        defer_synthesis_until_persisted=True,
+    )
+
+    assert result.status == "abstained"
+    assert result.stop_reason is StopReason.CLAIMS_NOT_AVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_runtime_accepts_fallback_textual_facts_when_dataset_matches_topic() -> None:
+    """Control: el mismo hecho textual de repliegue completa normalmente
+    cuando su dataset publicado sí comparte tema con la intención."""
+
+    intent = IntentExtraction(topic="concesiones y operadores", operation=QueryOperation.LOOKUP)
+    result = await run_deterministic_agent(
+        "¿Qué concesiones y operadores movilizaron carga férrea el 13 de octubre de 2023?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(
+                ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),
+                ClaimsBuildResult(claims=(_irrelevant_claim("2"),), rejected=()),
+            ),
+            textual_facts_by_candidate=((), ("FENOCO",)),
+            dataset_names_by_candidate=(None, "Concesiones y operadores de carga férrea"),
+        ),
+        defer_synthesis_until_persisted=True,
+    )
+
+    assert result.status == "ready_for_synthesis"
+
+
+@pytest.mark.asyncio
 async def test_runtime_does_not_apply_dataset_name_check_to_top_ranked_candidate() -> None:
     """El chequeo de nombre de dataset es exclusivo de candidatos de
     repliegue (`current > 0`); el candidato mejor rankeado (`current == 0`)

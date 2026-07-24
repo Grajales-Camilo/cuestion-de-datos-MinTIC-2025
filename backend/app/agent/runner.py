@@ -47,6 +47,7 @@ from app.agent.deterministic_pipeline import (
 from app.agent.deterministic_runtime import (
     DeterministicRunCancelled,
     DeterministicToolInfrastructureError,
+    RuntimeTraceEntry,
     SynthesisIntegrityError,
     run_deterministic_agent,
 )
@@ -78,7 +79,11 @@ from app.llm.factory import (
     LLMStructuredOutputError,
     get_structured_chat_model,
 )
-from app.quality.claim_labels import build_presentation_warnings, intent_relevance_tokens
+from app.quality.claim_labels import (
+    build_presentation_warnings,
+    fallback_dataset_topically_relevant,
+    intent_relevance_tokens,
+)
 from app.quality.grounded_facts import QuantitativeFactKind
 from app.quality.grounded_synthesis import (
     GroundedSynthesisValidationError,
@@ -347,6 +352,18 @@ def _usage_totals(state: dict) -> tuple[int, int, float]:
     )
 
 
+def _accepted_candidate_index(trace: tuple[RuntimeTraceEntry, ...]) -> int | None:
+    """Último `candidate_index` no nulo de la traza: identifica el rango del
+    candidato cuya ejecución terminó siendo la evidencia final (aceptada o
+    abstenida), para aplicar `fallback_dataset_topically_relevant` sin
+    depender de un campo dedicado en `DeterministicRuntimeResult`."""
+
+    for entry in reversed(trace):
+        if entry.candidate_index is not None:
+            return entry.candidate_index
+    return None
+
+
 async def execute_deterministic_agent_run_async(
     settings: Settings,
     run_id: uuid.UUID,
@@ -594,10 +611,36 @@ async def execute_deterministic_agent_run_async(
         claims: list[dict] = []
         presentation_warnings: list[dict] = []
         persisted = None
-        has_internal_textual_result = result.execution is not None and bool(
+        # T-617B-C13-D9 (golden-v2, pilot-018-transporte-ferreo): este chequeo
+        # decidía únicamente por presencia de `textual_facts`/`textual_rejections`,
+        # sin consultar tema -- un candidato de repliegue sin relación temática
+        # (`5r3g-zv5z`, "Tráfico Portuario Marítimo") completaba igual la
+        # persistencia y síntesis citando un hecho textual de esa misma
+        # columna sin relación (`tipo_carga`: "GRANEL LÍQUIDO") para una
+        # pregunta de concesiones ferroviarias, porque `deterministic_runtime.py`
+        # ya no era consultado en este punto (el resultado ya había vuelto).
+        # Se aplica la MISMA señal de repliegue-sin-relación-temática que
+        # `claims_materially_relevant`/`textual_result_available` ya usan
+        # internamente, vía el mismo helper compartido -- nunca por
+        # `case_id`/`dataset_id` ni un candidato concreto. Las rechazos
+        # (`textual_rejections`) nunca se filtran por tema: son auditoría de
+        # un intento fallido, no una respuesta entregada.
+        textual_facts_present = result.execution is not None and bool(
             getattr(result.execution, "textual_facts", ())
-            or getattr(result.execution, "textual_rejections", ())
         )
+        textual_rejections_present = result.execution is not None and bool(
+            getattr(result.execution, "textual_rejections", ())
+        )
+        if textual_facts_present:
+            evidence_draft = getattr(result.execution, "evidence_draft", None)
+            textual_facts_present = fallback_dataset_topically_relevant(
+                getattr(evidence_draft, "dataset_name", None),
+                requested_tokens=intent_relevance_tokens(
+                    result.intent.topic, result.intent.administrative_terms
+                ),
+                accepted_candidate_index=_accepted_candidate_index(result.trace),
+            )
+        has_internal_textual_result = textual_facts_present or textual_rejections_present
         if result.status in {"completed", "ready_for_synthesis"} or has_internal_textual_result:
             assert result.execution is not None
             if result.status == "completed" and not settings.deterministic_textual_facts_enabled:

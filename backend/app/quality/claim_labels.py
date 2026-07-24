@@ -257,6 +257,35 @@ def dataset_topic_overlaps_intent(
     )
 
 
+def fallback_dataset_topically_relevant(
+    dataset_name: str | None,
+    *,
+    requested_tokens: frozenset[str],
+    accepted_candidate_index: int | None,
+) -> bool:
+    """Envoltorio de `dataset_topic_overlaps_intent` que solo se activa para
+    un candidato de repliegue (`accepted_candidate_index > 0`); el rank-1
+    nunca se penaliza por esta señal (ver `dataset_topic_overlaps_intent`).
+
+    T-617B-C13-D9 (golden-v2, pilot-018-transporte-ferreo): esta misma
+    comprobación debe aplicarse tanto a los claims cuantitativos
+    (`deterministic_runtime.py`) como a los HECHOS TEXTUALES ya persistidos
+    que consulta `runner.py` (`has_internal_textual_result`) -- son dos
+    consumidores distintos de la misma señal de repliegue-sin-relación-
+    temática, no dos heurísticas separadas. Sin este helper compartido, un
+    candidato de repliegue con claims cuantitativos correctamente
+    descartados por tema (`5r3g-zv5z`, "Tráfico Portuario Marítimo") aun así
+    completaba la síntesis citando un hecho textual de esa misma columna sin
+    relación (`tipo_carga`: "GRANEL LÍQUIDO"/"CONTENEDORES") para una
+    pregunta de concesiones ferroviarias, porque `runner.py` nunca consultaba
+    esta señal en absoluto.
+    """
+
+    if dataset_name is None or accepted_candidate_index is None or accepted_candidate_index == 0:
+        return True
+    return dataset_topic_overlaps_intent(dataset_name, requested_tokens=requested_tokens)
+
+
 def claim_is_relevant_to_narrative(
     source_columns: tuple[str, ...],
     *,

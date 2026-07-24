@@ -13,6 +13,7 @@ from app.quality.claim_labels import (
     column_is_explicitly_requested,
     dataset_topic_overlaps_intent,
     derive_claim_label,
+    fallback_dataset_topically_relevant,
     humanize_field_name,
     intent_relevance_tokens,
     is_identifier_field_name,
@@ -175,6 +176,53 @@ def test_dataset_topic_overlaps_intent_ignores_shared_stopwords() -> None:
         "Operación de pasajeros y despacho de vehículos en la modalidad de "
         "transporte de pasajeros por carretera",
         requested_tokens=tokens,
+    )
+
+
+def test_fallback_dataset_topically_relevant_ignores_rank_1() -> None:
+    """El rank-1 nunca se penaliza por esta señal, igual que
+    `dataset_topic_overlaps_intent` no se aplicaba antes de T-617B-C13-D9 --
+    solo se activa cuando el candidato aceptado es un repliegue."""
+
+    tokens = intent_relevance_tokens("concesiones y operadores", ("carga férrea",))
+    assert fallback_dataset_topically_relevant(
+        "Tráfico Portuario Marítimo en Colombia",
+        requested_tokens=tokens,
+        accepted_candidate_index=0,
+    )
+
+
+def test_fallback_dataset_topically_relevant_ignores_none_index_or_name() -> None:
+    tokens = intent_relevance_tokens("concesiones y operadores", ("carga férrea",))
+    assert fallback_dataset_topically_relevant(
+        None, requested_tokens=tokens, accepted_candidate_index=2
+    )
+    assert fallback_dataset_topically_relevant(
+        "Tráfico Portuario Marítimo en Colombia",
+        requested_tokens=tokens,
+        accepted_candidate_index=None,
+    )
+
+
+def test_fallback_dataset_topically_relevant_rejects_unrelated_fallback() -> None:
+    """T-617B-C13-D9 (golden-v2, pilot-018-transporte-ferreo): reproduce el
+    candidato de repliegue real `5r3g-zv5z` ("Tráfico Portuario Marítimo"),
+    sin relación temática con "concesiones y operadores"/"carga férrea"."""
+
+    tokens = intent_relevance_tokens("concesiones y operadores", ("carga férrea",))
+    assert not fallback_dataset_topically_relevant(
+        "Tráfico Portuario Marítimo en Colombia",
+        requested_tokens=tokens,
+        accepted_candidate_index=2,
+    )
+
+
+def test_fallback_dataset_topically_relevant_accepts_related_fallback() -> None:
+    tokens = intent_relevance_tokens("concesiones y operadores", ("carga férrea",))
+    assert fallback_dataset_topically_relevant(
+        "Concesiones y operadores de carga férrea",
+        requested_tokens=tokens,
+        accepted_candidate_index=2,
     )
 
 
