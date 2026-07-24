@@ -157,6 +157,11 @@ def test_lookup_of_low_risk_column_is_not_blocked_by_unrelated_dataset_medium_ri
     )
 
     assert validated.dimensions[0].field_name == "municipio"
+    # T-617B-C13-D7 continuación: `soql_renderer` nunca agrega `group by`
+    # para LOOKUP -- si `include_group_count` quedara en True aquí, el SoQL
+    # renderizado mezclaría `count(*)` sin agrupar (SQL inválido, hallazgo
+    # real contra Socrata: `query.soql.column-not-in-group-bys`).
+    assert validated.include_group_count is False
 
 
 def test_lookup_of_medium_risk_column_itself_still_requires_aggregation() -> None:

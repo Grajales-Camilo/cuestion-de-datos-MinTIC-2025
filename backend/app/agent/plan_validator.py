@@ -454,6 +454,15 @@ def validate_query_plan(
         ),
         textual_requests=_validated_textual_requests(plan, schema),
         limit=plan.limit,
-        include_group_count=medium_pii,
+        # Hallazgo real (T-617B-C13-D7 continuación, pilot-025/pilot-026):
+        # un LOOKUP que llega aquí con `medium_pii=True` solo puede deberse al
+        # riesgo del DATASET (una columna seleccionada `medium` ya abortó
+        # arriba) -- el renderizador (`soql_renderer.py`) nunca agrega
+        # `group by` para `LOOKUP`, así que añadir `count(*) as group_count`
+        # sin agrupar produce SoQL inválido
+        # (`query.soql.column-not-in-group-bys`). Ninguna columna medium se
+        # expone en este caso, así que la red de seguridad de agregación no
+        # aplica ni es necesaria; se mantiene para SUM/AVG/COUNT/MAX/MIN.
+        include_group_count=medium_pii and plan.operation is not QueryOperation.LOOKUP,
         purpose=plan.purpose,
     )
