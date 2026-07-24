@@ -10,13 +10,18 @@ from app.agent.plan_validator import (
 )
 from app.agent.query_plan import (
     ColumnDataType,
+    ColumnReference,
+    DimensionSelection,
     EligibilityStatus,
+    FilterOperator,
+    FilterSelection,
     PiiRiskLevel,
     QueryOperation,
+    QueryPlan,
     ScalarType,
     ScalarValue,
 )
-from tests.test_query_plan import context, sum_plan
+from tests.test_query_plan import context, provenance, sum_plan
 
 
 def schema(
@@ -67,9 +72,7 @@ def test_rejects_schema_for_a_different_dataset() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "status", [EligibilityStatus.DIAGNOSTIC_ONLY, EligibilityStatus.BLOCKED]
-)
+@pytest.mark.parametrize("status", [EligibilityStatus.DIAGNOSTIC_ONLY, EligibilityStatus.BLOCKED])
 def test_rejects_dataset_that_is_not_eligible(status: EligibilityStatus) -> None:
     assert_code(
         PlanValidationCode.DATASET_NOT_ELIGIBLE,
@@ -113,9 +116,7 @@ def test_sum_and_avg_reject_text_columns(operation: QueryOperation) -> None:
 def test_rejects_high_and_unknown_pii_before_rendering(risk: PiiRiskLevel) -> None:
     assert_code(
         PlanValidationCode.PII_BLOCKED,
-        lambda: validate_query_plan(
-            sum_plan(), context=context(), schema=schema(value_pii=risk)
-        ),
+        lambda: validate_query_plan(sum_plan(), context=context(), schema=schema(value_pii=risk)),
     )
 
 
@@ -124,6 +125,59 @@ def test_medium_pii_aggregate_requires_group_count() -> None:
         sum_plan(), context=context(), schema=schema(value_pii=PiiRiskLevel.MEDIUM)
     )
     assert validated.include_group_count is True
+
+
+def test_lookup_of_low_risk_column_is_not_blocked_by_unrelated_dataset_medium_risk() -> None:
+    """T-617B-C13-D7 (pilot-025/pilot-026, golden-v2, datasets nudc-7mev/
+    f5ai-gvqt): `schema.pii_risk_level` ya es el PEOR CASO de todas las
+    columnas del dataset (`classify_dataset`), incluidas columnas que el
+    plan nunca selecciona. Un LOOKUP que solo toca `municipio` (`low`) no
+    debe bloquearse solo porque el dataset contenga OTRA columna (`valor`)
+    clasificada `medium` que esta consulta no usa en absoluto."""
+
+    lookup_plan = QueryPlan(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimensions=(
+            DimensionSelection(column=ColumnReference(column_index=0), provenance=provenance()),
+        ),
+        filters=(
+            FilterSelection(
+                column=ColumnReference(column_index=0),
+                operator=FilterOperator.EQ,
+                values=(ScalarValue(type=ScalarType.TEXT, value="Pasto"),),
+                provenance=provenance(),
+            ),
+        ),
+        purpose="Consultar municipio",
+    )
+
+    validated = validate_query_plan(
+        lookup_plan, context=context(), schema=schema(value_pii=PiiRiskLevel.MEDIUM)
+    )
+
+    assert validated.dimensions[0].field_name == "municipio"
+
+
+def test_lookup_of_medium_risk_column_itself_still_requires_aggregation() -> None:
+    """El acotamiento nunca deja pasar una columna MEDIUM que sí se
+    selecciona -- solo deja de bloquear por columnas ajenas no consultadas."""
+
+    lookup_plan = QueryPlan(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimensions=(
+            DimensionSelection(column=ColumnReference(column_index=1), provenance=provenance()),
+        ),
+        purpose="Consultar valor",
+    )
+
+    assert_code(
+        PlanValidationCode.PII_REQUIRES_AGGREGATION,
+        lambda: validate_query_plan(
+            lookup_plan, context=context(), schema=schema(value_pii=PiiRiskLevel.MEDIUM)
+        ),
+    )
 
 
 def test_validated_plan_is_a_distinct_frozen_type() -> None:
@@ -136,12 +190,15 @@ def test_rejects_invalid_typed_literal_before_renderer() -> None:
     date_context = context().model_copy(
         update={
             "candidates": (
-                context().candidates[0].model_copy(
+                context()
+                .candidates[0]
+                .model_copy(
                     update={
                         "columns": (
-                            context().candidates[0].columns[0].model_copy(
-                                update={"data_type": ColumnDataType.DATE}
-                            ),
+                            context()
+                            .candidates[0]
+                            .columns[0]
+                            .model_copy(update={"data_type": ColumnDataType.DATE}),
                             context().candidates[0].columns[1],
                         )
                     }
@@ -160,11 +217,9 @@ def test_rejects_invalid_typed_literal_before_renderer() -> None:
     invalid_plan = sum_plan().model_copy(
         update={
             "filters": (
-                sum_plan().filters[0].model_copy(
-                    update={
-                        "values": (ScalarValue(type=ScalarType.DATE, value="2025"),)
-                    }
-                ),
+                sum_plan()
+                .filters[0]
+                .model_copy(update={"values": (ScalarValue(type=ScalarType.DATE, value="2025"),)}),
             )
         }
     )

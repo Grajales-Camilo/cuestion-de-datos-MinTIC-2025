@@ -400,11 +400,38 @@ def validate_query_plan(
             )
         )
 
-    risks = {schema.pii_risk_level, *(column.pii_risk_level for column in selected_columns)}
-    if risks & {PiiRiskLevel.HIGH, PiiRiskLevel.UNKNOWN}:
+    # Hallazgo real (T-617B-C13-D7, pilot-025/pilot-026, golden-v2, datasets
+    # nudc-7mev/f5ai-gvqt): `classify_dataset` (pii_classifier.py) ya asigna
+    # `schema.pii_risk_level` como el PEOR CASO de TODAS las columnas del
+    # dataset, incluidas las que ningún plan selecciona jamás (aquí,
+    # indicadores de cobertura/paridad de género). Mezclar ese nivel ya
+    # agregado con el de las columnas realmente seleccionadas bloqueaba un
+    # LOOKUP de un simple código administrativo (`c_digo_municipio`,
+    # `c_digodepartamento`, ambos `low`) solo porque el dataset contenía OTRAS
+    # columnas `medium` no consultadas. El contrato
+    # (`validacion-calidad.md` §3.1, línea 81) exige "dataset O columna
+    # seleccionada" explícitamente solo para `unknown`; para `medium` no
+    # repite ese calificador, así que `HIGH`/`UNKNOWN` conservan el criterio
+    # más conservador (dataset completo) y el RECHAZO de `MEDIUM`+`LOOKUP` se
+    # acota a lo que el plan realmente selecciona, filtra u ordena.
+    #
+    # `include_group_count` es distinto: no rechaza nada, solo agrega
+    # `count(*)` al SoQL renderizado como red de seguridad adicional para que
+    # T6 pueda verificar `aggregation_min_count`. Ensancharlo de más no niega
+    # una respuesta -- solo instrumenta más, así que conserva el criterio
+    # amplio (dataset completo), igual que antes de este cambio
+    # (`test_h5c_medium_pii_with_sufficient_aggregation_is_permitted`: PII
+    # medium a nivel de esquema con columnas seleccionadas `low` debe seguir
+    # activando el conteo de grupo en un agregado).
+    dataset_and_selected_risks = {
+        schema.pii_risk_level,
+        *(column.pii_risk_level for column in selected_columns),
+    }
+    if dataset_and_selected_risks & {PiiRiskLevel.HIGH, PiiRiskLevel.UNKNOWN}:
         _raise(PlanValidationCode.PII_BLOCKED, "el plan usa columnas PII high o unknown")
-    medium_pii = PiiRiskLevel.MEDIUM in risks
-    if medium_pii and plan.operation is QueryOperation.LOOKUP:
+    selected_column_risks = {column.pii_risk_level for column in selected_columns}
+    medium_pii = PiiRiskLevel.MEDIUM in dataset_and_selected_risks
+    if PiiRiskLevel.MEDIUM in selected_column_risks and plan.operation is QueryOperation.LOOKUP:
         _raise(
             PlanValidationCode.PII_REQUIRES_AGGREGATION,
             "las columnas PII medium requieren agregación y tamaño de grupo",
