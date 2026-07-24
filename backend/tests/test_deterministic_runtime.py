@@ -1092,6 +1092,7 @@ def _relevance_dependencies(
     textual_facts_by_candidate: tuple[tuple[str, ...], ...] | None = None,
     textual_rejections_by_candidate: tuple[tuple[object, ...], ...] | None = None,
     dataset_names_by_candidate: tuple[str | None, ...] | None = None,
+    explored_values_by_candidate: tuple[tuple[str, ...], ...] | None = None,
 ) -> DeterministicRuntimeDependencies:
     """Doble local sin red ni LLM real: cada candidato recuperado, en orden,
     devuelve el `ClaimsBuildResult` correspondiente en `claims_by_candidate`,
@@ -1106,6 +1107,7 @@ def _relevance_dependencies(
         () for _ in claims_by_candidate
     )
     dataset_names_source = dataset_names_by_candidate or tuple(None for _ in claims_by_candidate)
+    explored_values_source = explored_values_by_candidate or tuple(() for _ in claims_by_candidate)
 
     async def extract(question: str) -> IntentExtraction:
         assert question
@@ -1123,12 +1125,26 @@ def _relevance_dependencies(
         return _profile(dataset_id)
 
     async def plan(intent, context, explored, error):
-        del intent, context, explored, error
+        del intent, context, error
+        if explored_values_by_candidate:
+            candidate_values = explored_values_source[calls]
+            proposed = candidate_values[0] if candidate_values else "buscar"
+            filters = (
+                FilterChoice(
+                    column_index=1,
+                    operator=FilterOperator.EQ,
+                    value_type=ScalarType.TEXT,
+                    values=(proposed,),
+                ),
+            )
+        else:
+            filters = ()
         return EnumeratedPlanSelection(
             dataset_index=0,
             operation=QueryOperation.SUM,
             metrics=(MetricChoice(operation=QueryOperation.SUM, column_index=0),),
-            filters=(),
+            filters=filters,
+            needs_value_exploration=bool(explored_values_by_candidate),
         )
 
     calls = 0
@@ -1153,7 +1169,10 @@ def _relevance_dependencies(
         )
 
     async def explore(profile, selection, explored, max_tool_calls) -> ExploredColumnValues:
-        raise AssertionError("este doble no requiere exploración de valores")
+        if not explored_values_by_candidate:
+            raise AssertionError("este doble no requiere exploración de valores")
+        values = explored_values_source[calls]
+        return ExploredColumnValues(column_index=1, search_term="buscar", values=values)
 
     async def synthesize(intent, claims) -> GroundedSynthesis:
         del intent
@@ -1472,6 +1491,74 @@ async def test_runtime_accepts_fallback_textual_facts_when_dataset_matches_topic
     )
 
     assert result.status == "ready_for_synthesis"
+
+
+@pytest.mark.asyncio
+async def test_runtime_accepts_fallback_when_exploration_confirms_intent_entity() -> None:
+    """T-617B-C13-D11 (golden-v2, pilot-042-disposicion-final): un LOOKUP
+    anclado en una entidad nombrada larga y específica ("SOCIEDAD DE
+    ACUEDUCTO...") produce tokens de tema dominados por ese nombre propio,
+    que nunca aparece en el título genérico de NINGÚN dataset -- ni siquiera
+    el correcto (`84tn-nnhf`, "Superservicios - Registro de Sitios de
+    Disposición Final"). Cuando la exploración de esta MISMA corrida ya
+    confirmó la entidad exacta (`intent.entity`) en el candidato de
+    repliegue, esa señal de terreno debe bastar para no descartarlo por la
+    compuerta de tema."""
+
+    intent = IntentExtraction(
+        topic="concesiones y operadores",
+        operation=QueryOperation.LOOKUP,
+        entity="SOCIEDAD DE ACUEDUCTO",
+    )
+    result = await run_deterministic_agent(
+        "¿Cuál es el total observado para la empresa SOCIEDAD DE ACUEDUCTO?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(
+                ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),
+                ClaimsBuildResult(claims=(_relevant_claim(),), rejected=()),
+            ),
+            dataset_names_by_candidate=(
+                None,
+                "Superservicios - Registro de Sitios de Disposición Final",
+            ),
+            explored_values_by_candidate=(("Otro valor",), ("SOCIEDAD DE ACUEDUCTO",)),
+        ),
+    )
+
+    assert result.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_runtime_still_rejects_fallback_when_exploration_finds_a_generic_value() -> None:
+    """Contraejemplo real verificado (golden-v2, pilot-027-paridad-etnica,
+    candidato de repliegue `ji8i-4anb`, "deserción escolar"): su exploración
+    también tuvo éxito, pero el valor encontrado fue "Antioquia" -- un
+    nombre departamental genérico, sin relación con el tema real. La
+    exploración exitosa por sí sola NO debe bastar para saltar la compuerta
+    de tema; solo la coincidencia exacta con `intent.entity` lo hace (prueba
+    anterior). Sin `intent.entity`, cualquier valor explorado, por más
+    exitoso que sea, deja la compuerta de tema intacta."""
+
+    intent = IntentExtraction(
+        topic="paridad étnica en cargos directivos",
+        operation=QueryOperation.LOOKUP,
+    )
+    result = await run_deterministic_agent(
+        "¿Cuál es la paridad étnica en cargos directivos de Antioquia?",
+        dependencies=_relevance_dependencies(
+            intent=intent,
+            claims_by_candidate=(
+                ClaimsBuildResult(claims=(_irrelevant_claim(),), rejected=()),
+                ClaimsBuildResult(claims=(_relevant_claim(),), rejected=()),
+            ),
+            dataset_names_by_candidate=(None, "Deserción escolar por departamento"),
+            explored_values_by_candidate=(("Antioquia",), ("Antioquia",)),
+        ),
+    )
+
+    assert result.status == "abstained"
+    assert result.stop_reason is StopReason.CLAIMS_NOT_AVAILABLE
 
 
 @pytest.mark.asyncio

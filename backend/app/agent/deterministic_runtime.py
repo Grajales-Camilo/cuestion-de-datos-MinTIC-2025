@@ -286,6 +286,40 @@ def _fold_text(value: str) -> str:
     )
 
 
+def _entity_confirmed_in_dataset(
+    intent_entity: str | None,
+    explored: tuple[ExploredColumnValues, ...],
+) -> bool:
+    """T-617B-C13-D11 (golden-v2, pilot-042-disposicion-final): la compuerta
+    de tema de repliegue (`fallback_dataset_topically_relevant`) compara el
+    título del dataset contra los tokens de la pregunta completa
+    (`ground_intent_topic_in_question`) -- para un LOOKUP anclado en una
+    entidad nombrada larga y específica ("SOCIEDAD DE ACUEDUCTO,
+    ALCANTARILLADO Y ASEO DE BARRANQUILLA S.A. E.S.P."), esos tokens quedan
+    dominados por el nombre propio, que casi nunca aparece en el título
+    genérico de NINGÚN dataset, correcto o no. `84tn-nnhf` ("Superservicios
+    - Registro de Sitios de Disposición Final") es el dataset correcto —
+    `explore_value` ya confirmó la entidad exacta en `nombre_empresa` — pero
+    la compuerta de tema lo rechazaba igual.
+
+    Contraejemplo real verificado antes de este cambio (golden-v2,
+    pilot-027-paridad-etnica, candidato de repliegue `ji8i-4anb`,
+    "deserción escolar"): su exploración también tuvo éxito, pero el valor
+    encontrado fue "Antioquia" -- un nombre departamental genérico que
+    aparece en casi cualquier dataset territorial colombiano, sin ninguna
+    relación con el tema real de la pregunta. Por eso esta señal exige
+    coincidencia EXACTA con `intent.entity` (el término institucional ya
+    anclado por `_grounded_institutional_term`, que solo se fija para
+    términos de al menos dos tokens con cabeza institucional -- "Antioquia"
+    nunca calificaría) en vez de aceptar cualquier exploración categórica
+    exitosa, que sí habría reabierto ese defecto original."""
+
+    if not intent_entity:
+        return False
+    folded_entity = _fold_text(intent_entity)
+    return any(_fold_text(value) == folded_entity for item in explored for value in item.values)
+
+
 def _render_claim_clause(claim: BuiltClaim) -> str:
     """Redacta una cláusula etiquetada sin inventar la etiqueta ausente
     (RF-212). `label_status="ambiguous"` se señala explícitamente en vez de
@@ -554,7 +588,7 @@ async def run_deterministic_agent(
                 dataset_name,
                 requested_tokens=requested_tokens,
                 accepted_candidate_index=current,
-            ):
+            ) and not _entity_confirmed_in_dataset(intent.entity, explored):
                 claims_materially_relevant = False
                 textual_result_available = False
             # T-617B-C13-D10 (golden-v2, pilot-042-disposicion-final):
