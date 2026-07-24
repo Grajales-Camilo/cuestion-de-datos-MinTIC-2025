@@ -57,6 +57,7 @@ from app.agent.plan_validator import (
     PlanValidationError,
     ValidatedQueryPlan,
     validate_query_plan,
+    validate_requested_output_semantics,
 )
 from app.agent.query_plan import (
     DatasetOption,
@@ -556,6 +557,22 @@ async def run_deterministic_agent(
             ):
                 claims_materially_relevant = False
                 textual_result_available = False
+            # T-617B-C13-D10 (golden-v2, pilot-042-disposicion-final):
+            # segunda validación, redundante por diseño, justo antes de
+            # persistir/sintetizar -- `validate_requested_output_semantics`
+            # ya se exigió en BUILD_PLAN sobre el mismo `validated`, pero se
+            # reafirma aquí para que ningún cambio futuro entre la
+            # validación del plan y la persistencia pueda dejar pasar
+            # evidencia que no responde al sistema de código nombrado sin
+            # que este chequeo lo note.
+            if validated is not None:
+                try:
+                    validate_requested_output_semantics(
+                        validated, context=profile.context, question=question
+                    )
+                except PlanValidationError:
+                    claims_materially_relevant = False
+                    textual_result_available = False
         snapshot = SupervisorSnapshot(
             candidates=tuple(candidates),
             current_candidate_index=current,
@@ -771,6 +788,11 @@ async def run_deterministic_agent(
                     context=profile.context,
                     schema=profile.schema,
                 )
+                validate_requested_output_semantics(
+                    validated,
+                    context=profile.context,
+                    question=question,
+                )
                 validation_error = None
                 assert current is not None
                 _replace_status(candidates, current, CandidateStatus.PLANNED)
@@ -780,6 +802,7 @@ async def run_deterministic_agent(
                     PlanValidationCode.DATASET_NOT_ELIGIBLE,
                     PlanValidationCode.PII_BLOCKED,
                     PlanValidationCode.PII_REQUIRES_AGGREGATION,
+                    PlanValidationCode.REQUESTED_OUTPUT_SEMANTICS_MISMATCH,
                 }:
                     assert current is not None
                     _replace_status(

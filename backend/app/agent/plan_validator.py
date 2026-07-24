@@ -6,6 +6,8 @@ de resolver sus referencias y aplicar tipos, elegibilidad y privacidad.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -55,6 +57,7 @@ class PlanValidationCode(StrEnum):
     PII_BLOCKED = "PII_BLOCKED"
     PII_REQUIRES_AGGREGATION = "PII_REQUIRES_AGGREGATION"
     TEXTUAL_REQUEST_INVALID = "TEXTUAL_REQUEST_INVALID"
+    REQUESTED_OUTPUT_SEMANTICS_MISMATCH = "REQUESTED_OUTPUT_SEMANTICS_MISMATCH"
 
 
 class PlanValidationError(ValueError):
@@ -155,6 +158,79 @@ def _column(schema: ObservedDatasetSchema, index: int) -> ObservedColumn:
         return schema.columns[index]
     except IndexError:
         _raise(PlanValidationCode.UNKNOWN_REFERENCE, f"column_index inexistente: {index}")
+
+
+# T-617B-C13-D10 (golden-v2, pilot-042-disposicion-final): un LOOKUP puede
+# seleccionar una columna estructuralmente válida (elegible, tipo correcto,
+# no PII) que aun así no responde lo que la pregunta nombra explícitamente --
+# "código NUSD" no se satisface con "nuap" (otro código administrativo de la
+# misma familia) ni con una columna de fecha; ambos son "un código" en
+# sentido genérico, pero ninguno ES el sistema nombrado. Genérico: no se
+# activa salvo que la pregunta nombre un sistema específico con el patrón
+# léxico "código/códigos <ACRÓNIMO EN MAYÚSCULAS>" -- nunca por
+# `case_id`/`dataset_id`/la cifra o el acrónimo literal de un caso concreto.
+_NAMED_OUTPUT_SYSTEM_PATTERN = re.compile(r"\bc[oó]digos?\b\s+([A-ZÁÉÍÓÚÑ]{2,8})\b")
+_DIVIPOLA_SYSTEM = "divipola"
+_CODE_MARKER_TOKENS = frozenset({"cod", "codigo"})
+#: DIVIPOLA es el único sistema territorial que este código ya modela de
+#: forma dedicada (`divipola_entries`, `catalog_tipologias`) -- no es una
+#: lista de excepciones por acrónimo que vaya a crecer caso a caso. Un
+#: dataset que publica el código departamental/municipal casi nunca
+#: deletrea la palabra "divipola" en su columna (p. ej. `cod_mpio`/
+#: "Código Municipio"): eso NO es un esquema incapaz de responder, es la
+#: convención real del catálogo. Las abreviaturas ("dep", "mun") son formas
+#: reales observadas en el catálogo (`2pnw-mmge`: `c_d_dep`/`c_d_mun`), no
+#: una lista abierta.
+_TERRITORIAL_CODE_TOKENS = frozenset(
+    {"dpto", "depto", "dep", "departamento", "mpio", "mun", "municipio"}
+)
+
+
+def _fold_ascii(value: str) -> str:
+    return unicodedata.normalize("NFKD", value.casefold()).encode("ascii", "ignore").decode()
+
+
+def _name_tokens(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", _fold_ascii(value)))
+
+
+def named_output_system(question: str) -> str | None:
+    """Extrae el sistema de código nombrado explícitamente en la pregunta
+    cruda (p. ej. "código NUSD", "código DIVIPOLA") -- únicamente cuando el
+    token que sigue a "código"/"códigos" está escrito enteramente en
+    mayúsculas (2-8 letras): la señal léxica que distingue nombrar un
+    sistema específico de una pregunta genérica sobre cualquier código
+    ("código tiene", "código de municipio", "códigos postales", donde la
+    palabra siguiente no está en mayúsculas). `None` si la pregunta no usa
+    este patrón."""
+
+    match = _NAMED_OUTPUT_SYSTEM_PATTERN.search(question)
+    return match.group(1) if match is not None else None
+
+
+def _is_territorial_code_column(field_name: str, display_name: str | None) -> bool:
+    tokens = _name_tokens(field_name) | _name_tokens(display_name or "")
+    return bool(tokens & _CODE_MARKER_TOKENS) and bool(tokens & _TERRITORIAL_CODE_TOKENS)
+
+
+def column_satisfies_named_output_system(
+    named_system: str,
+    *,
+    field_name: str,
+    display_name: str | None,
+) -> bool:
+    """¿La columna nombrada satisface el sistema de código que la pregunta
+    pide explícitamente? DIVIPOLA admite evidencia estructural (columna de
+    código departamental/municipal); cualquier otro sistema nombrado exige
+    respaldo léxico explícito del propio acrónimo en `field_name` o
+    `display_name` -- otro código de la misma familia administrativa
+    (`nuap` para una pregunta de `NUSD`) no basta."""
+
+    if _fold_ascii(named_system) == _DIVIPOLA_SYSTEM:
+        return _is_territorial_code_column(field_name, display_name)
+    token = _fold_ascii(named_system)
+    tokens = _name_tokens(field_name) | _name_tokens(display_name or "")
+    return token in tokens
 
 
 def _validate_metric_type(operation: QueryOperation, column: ObservedColumn | None) -> None:
@@ -465,4 +541,42 @@ def validate_query_plan(
         # aplica ni es necesaria; se mantiene para SUM/AVG/COUNT/MAX/MIN.
         include_group_count=medium_pii and plan.operation is not QueryOperation.LOOKUP,
         purpose=plan.purpose,
+    )
+
+
+def validate_requested_output_semantics(
+    plan: ValidatedQueryPlan,
+    *,
+    context: EnumeratedPlanningContext,
+    question: str,
+) -> None:
+    """Rechaza un plan cuya(s) columna(s) de salida no respaldan un sistema
+    de código que la pregunta nombra explícitamente (T-617B-C13-D10).
+
+    Se ejecuta después de `validate_query_plan` (el plan ya está resuelto
+    estructuralmente) y antes de ejecutar la consulta. No se activa salvo
+    que `named_output_system` detecte el patrón léxico "código
+    <ACRÓNIMO>"; en ese caso, al menos una dimensión seleccionada del plan
+    debe satisfacer `column_satisfies_named_output_system`. Nunca por
+    `case_id`/`dataset_id`/el acrónimo literal de un caso concreto -- la
+    misma regla se aplicaría a cualquier pregunta con este patrón léxico.
+    """
+
+    named_system = named_output_system(question)
+    if named_system is None or not plan.dimensions:
+        return
+    candidate = context.candidates[0]
+    display_names = {column.field_name: column.display_name for column in candidate.columns}
+    if any(
+        column_satisfies_named_output_system(
+            named_system,
+            field_name=dimension.field_name,
+            display_name=display_names.get(dimension.field_name),
+        )
+        for dimension in plan.dimensions
+    ):
+        return
+    _raise(
+        PlanValidationCode.REQUESTED_OUTPUT_SEMANTICS_MISMATCH,
+        f"ninguna columna seleccionada respalda el sistema de código nombrado {named_system!r}",
     )
