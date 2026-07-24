@@ -657,7 +657,28 @@ async def run_deterministic_agent(
         if transition.node is SupervisorNode.PROFILE_DATASET:
             assert current is not None
             dataset_id = retrieval.candidates[current].item.dataset_id
-            profile = await dependencies.profile(dataset_id)
+            try:
+                profile = await dependencies.profile(dataset_id)
+            except DeterministicToolInfrastructureError:
+                raise
+            except (LookupError, ValueError):
+                # Un esquema no perfilable (sin columnas observadas, o un
+                # esquema ancho que excede MAX_COLUMNS_PER_CANDIDATE) es un
+                # rechazo controlado de ESTE candidato, no un fallo terminal
+                # de la corrida: el supervisor debe intentar el siguiente
+                # candidato en vez de propagar la excepción sin clasificar
+                # (que el arnés de evaluación termina registrando como un
+                # `INTERNAL` opaco).
+                _replace_status(
+                    candidates, current, CandidateStatus.REJECTED, reason="PROFILING_ERROR"
+                )
+                pending_rejection_reason = "PROFILING_ERROR"
+                current = None
+                profile = selection = validated = execution = None
+                explored = ()
+                validation_error = None
+                repairs = 0
+                continue
             intent = normalize_intent_for_observed_schema(
                 intent,
                 question=question,

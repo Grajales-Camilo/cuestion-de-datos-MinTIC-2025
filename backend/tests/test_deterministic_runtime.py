@@ -140,11 +140,13 @@ def _dependencies(
     synthesis_provider_error: bool = False,
     text_filter: bool = False,
     fail_first_exploration: bool = False,
+    fail_first_profile: bool = False,
 ):
     executions = 0
     plans = 0
     syntheses = 0
     explorations = 0
+    profiles = 0
 
     async def extract(question: str) -> IntentExtraction:
         assert question
@@ -159,6 +161,10 @@ def _dependencies(
         )
 
     async def profile(dataset_id: str) -> ProfiledCandidate:
+        nonlocal profiles
+        profiles += 1
+        if fail_first_profile and profiles == 1:
+            raise LookupError("dataset excede el máximo de columnas soportado")
         return _profile(dataset_id)
 
     async def plan(intent, context, explored, error):
@@ -242,6 +248,35 @@ async def test_runtime_rejects_candidate_when_value_exploration_is_incompatible(
 
     assert result.status == "completed"
     assert result.trace[-1].candidate_index == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_rejects_candidate_when_profiling_fails() -> None:
+    """Un esquema no perfilable (p. ej. un dataset con más columnas que
+    MAX_COLUMNS_PER_CANDIDATE) debe rechazar ÚNICAMENTE ese candidato y
+    seguir con el siguiente, no propagar la excepción sin clasificar y
+    tumbar la corrida entera (golden-v2 pilot-016-codigos-postales:
+    `kg4b-vx7j` con 317 columnas producía un `ValidationError` no capturado
+    que el arnés registraba como `terminal_error_code=INTERNAL`)."""
+
+    result = await run_deterministic_agent(
+        "¿Cuál es el total en Pasto?",
+        dependencies=_dependencies(
+            candidates=2,
+            fail_first_profile=True,
+        ),
+    )
+
+    assert result.status == "completed"
+    select_candidate_entries = [
+        entry for entry in result.trace if entry.node is SupervisorNode.SELECT_CANDIDATE
+    ]
+    assert len(select_candidate_entries) == 2
+    assert select_candidate_entries[1].diagnostic_code == "PROFILING_ERROR"
+    profile_dataset_entries = [
+        entry for entry in result.trace if entry.node is SupervisorNode.PROFILE_DATASET
+    ]
+    assert [entry.candidate_index for entry in profile_dataset_entries] == [0, 1]
 
 
 @pytest.mark.asyncio

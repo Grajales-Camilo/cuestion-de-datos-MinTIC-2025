@@ -36,6 +36,7 @@ from app.agent.multiquery_retrieval import retrieve_candidates_multiquery
 from app.agent.persistence import load_dataset_evidence_metadata
 from app.agent.plan_validator import ObservedColumn, ObservedDatasetSchema
 from app.agent.query_plan import (
+    MAX_COLUMNS_PER_CANDIDATE,
     ColumnDataType,
     ColumnOption,
     DatasetOption,
@@ -283,6 +284,11 @@ def build_real_runtime_dependencies(
         rows = await fetch_columns_catalog(engine, dataset_id)
         if not rows:
             raise LookupError(f"dataset {dataset_id} no tiene columnas observadas")
+        if len(rows) > MAX_COLUMNS_PER_CANDIDATE:
+            raise LookupError(
+                f"dataset {dataset_id} tiene {len(rows)} columnas observadas, "
+                f"por encima del máximo soportado ({MAX_COLUMNS_PER_CANDIDATE})"
+            )
         ordered_rows = sorted(rows, key=lambda row: row.field_name)
         columns = tuple(
             ColumnOption(

@@ -19,13 +19,16 @@ from app.agent.llm_contracts import (
     IntentExtraction,
     QuantitativePlanSelection,
 )
+from app.agent.persistence import DatasetEvidenceMetadata
 from app.agent.query_plan import (
+    MAX_COLUMNS_PER_CANDIDATE,
     ColumnDataType,
     FilterOperator,
     QueryOperation,
     ScalarType,
 )
 from app.quality.grounded_facts import GroundedSynthesisPlan
+from app.tools.catalog_lookup import ColumnCatalogRow
 from tests.test_settings import settings
 
 
@@ -125,6 +128,112 @@ async def test_real_explorer_never_exceeds_remaining_tool_call_budget(monkeypatc
 
     assert explored.tool_calls == 1
     assert calls == ["Ministerio de Relaciones Exteriores"]
+
+
+def _fake_metadata(dataset_id: str) -> DatasetEvidenceMetadata:
+    return DatasetEvidenceMetadata(
+        dataset_id=dataset_id,
+        name="Dataset ancho",
+        publisher="Entidad",
+        official_publisher_id=None,
+        pii_risk_level="low",
+        eligibility_status="eligible",
+        eligibility_reasons=(),
+        data_updated_at=None,
+        column_pii={},
+        column_types={},
+    )
+
+
+def _fake_columns(count: int) -> tuple[ColumnCatalogRow, ...]:
+    return tuple(
+        ColumnCatalogRow(
+            field_name=f"columna_{index}",
+            data_type="text",
+            pii_risk_level="low",
+            eligibility_status="eligible",
+            display_name=None,
+        )
+        for index in range(count)
+    )
+
+
+@pytest.mark.asyncio
+async def test_profile_rejects_a_schema_wider_than_the_supported_maximum(monkeypatch) -> None:
+    """golden-v2 pilot-016-codigos-postales: `kg4b-vx7j` publica 317 columnas,
+    por encima de `MAX_COLUMNS_PER_CANDIDATE` (250, el máximo que admite
+    `DatasetOption.columns`). Antes de este fix, `profile()` construía las
+    317 `ColumnOption` igual y dejaba que `DatasetOption(...)` lanzara un
+    `pydantic.ValidationError` sin clasificar -- el runtime lo propagaba sin
+    capturar y el arnés de evaluación lo registraba como
+    `terminal_error_code=INTERNAL`. Ahora `profile()` rechaza el esquema con
+    un `LookupError` explícito, que el runtime traduce en un rechazo
+    controlado de candidato (`PROFILING_ERROR`)."""
+
+    async def fake_load_metadata(_engine, dataset_id):
+        return _fake_metadata(dataset_id)
+
+    async def fake_fetch_columns(_engine, _dataset_id):
+        return _fake_columns(MAX_COLUMNS_PER_CANDIDATE + 1)
+
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.load_dataset_evidence_metadata",
+        fake_load_metadata,
+    )
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.fetch_columns_catalog",
+        fake_fetch_columns,
+    )
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies._model",
+        lambda _settings, _schema, *, thinking_budget=None: object(),
+    )
+    dependencies = build_real_runtime_dependencies(
+        settings=settings(),
+        engine=object(),  # type: ignore[arg-type]
+        http_client=object(),  # type: ignore[arg-type]
+        embedding_client=object(),  # type: ignore[arg-type]
+        usage=RuntimeLLMUsage(),
+    )
+
+    with pytest.raises(LookupError):
+        await dependencies.profile("kg4b-vx7j")
+
+
+@pytest.mark.asyncio
+async def test_profile_accepts_a_schema_at_the_supported_maximum(monkeypatch) -> None:
+    """Frontera exacta: MAX_COLUMNS_PER_CANDIDATE columnas siguen siendo
+    perfilables; el rechazo solo aplica por encima del máximo."""
+
+    async def fake_load_metadata(_engine, dataset_id):
+        return _fake_metadata(dataset_id)
+
+    async def fake_fetch_columns(_engine, _dataset_id):
+        return _fake_columns(MAX_COLUMNS_PER_CANDIDATE)
+
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.load_dataset_evidence_metadata",
+        fake_load_metadata,
+    )
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.fetch_columns_catalog",
+        fake_fetch_columns,
+    )
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies._model",
+        lambda _settings, _schema, *, thinking_budget=None: object(),
+    )
+    dependencies = build_real_runtime_dependencies(
+        settings=settings(),
+        engine=object(),  # type: ignore[arg-type]
+        http_client=object(),  # type: ignore[arg-type]
+        embedding_client=object(),  # type: ignore[arg-type]
+        usage=RuntimeLLMUsage(),
+    )
+
+    profiled = await dependencies.profile("wide-dat0")
+
+    assert len(profiled.option.columns) == MAX_COLUMNS_PER_CANDIDATE
 
 
 @pytest.mark.parametrize(
