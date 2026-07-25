@@ -315,7 +315,14 @@ def build_stage_diagnostics(
             stage, code = EvalStage.RETRIEVAL, FailureCode.EXPECTED_DATASET_NOT_RETRIEVED
         elif case.case_type == "positive" and expected and not expected.intersection(attempted):
             stage, code = EvalStage.CANDIDATE_SELECTION, FailureCode.EXPECTED_DATASET_NOT_ATTEMPTED
-        elif plan_errors:
+        elif plan_errors and not evidence:
+            # `plan_errors` acumula errores de TODOS los candidatos
+            # observados, incluidos los abandonados que el runtime superó
+            # exitosamente al recuperar con otro candidato (T-617B-C6). Si
+            # la corrida sí obtuvo evidencia (un candidato posterior validó
+            # su plan y ejecutó T5), el motivo real del fallo está en las
+            # ramas siguientes (dataset equivocado, cifra fuera de
+            # tolerancia, etc.), no en un plan que ya fue reparado.
             stage, code = EvalStage.PLAN_VALIDATION, FailureCode.PLAN_INVALID
         elif EvalStage.QUERY_EXECUTION in stages and not any(
             isinstance(item, dict) and item.get("rows") for item in evidence

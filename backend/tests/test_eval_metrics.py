@@ -113,6 +113,65 @@ def test_expected_fact_mismatch_does_not_blame_golden_without_audit() -> None:
     assert diagnostics["failure_owner"] == "undetermined"
 
 
+def test_plan_errors_from_an_abandoned_candidate_do_not_override_a_completed_run() -> None:
+    """Regresión real (T-617, golden-v2 pilot-002/pilot-031-style): el primer
+    candidato falla `plan_validation` y el runtime recupera con un segundo
+    candidato hasta completar con evidencia del dataset esperado. Los
+    errores de un candidato ABANDONADO (que el runtime ya superó) no deben
+    disfrazar de `plan_invalid` una corrida que sí produjo evidencia; el
+    motivo real del fallo (tolerancia excedida) debe seguir siendo
+    `expected_fact_not_found`."""
+
+    case = _positive_case(
+        expected_facts=(
+            {
+                "description": "x",
+                "expected_value": {"municipio": "Zona Bananera", "tasa": "2.44"},
+                "tolerance": 0.001,
+            },
+        )
+    )
+    final = {
+        "status": "completed",
+        "evidence": [
+            {
+                "dataset_id": "abcd-1234",
+                "rows": [{"municipio": "Zona Bananera", "tasa": "9.99"}],
+            }
+        ],
+        "claims": [{"display_value": "9.99"}],
+        "usage": {},
+    }
+
+    diagnostics = build_stage_diagnostics(
+        case,
+        final,
+        assess_case(case, final),
+        [
+            StageObservation(
+                "build_plan",
+                {
+                    "retrieved_dataset_ids": ["abcd-1234", "other-9999"],
+                    "attempted_dataset_ids": ["other-9999"],
+                    "plan_validation_errors": ["DATASET_NOT_ELIGIBLE"],
+                },
+                {},
+            ),
+            StageObservation(
+                "synthesize",
+                {
+                    "retrieved_dataset_ids": ["abcd-1234", "other-9999"],
+                    "attempted_dataset_ids": ["abcd-1234", "other-9999"],
+                },
+                {},
+            ),
+        ],
+    )
+
+    assert diagnostics["failure_code"] == "expected_fact_not_found"
+    assert diagnostics["failure_owner"] == "undetermined"
+
+
 _RABIES_EVENT = "AGRESIONES POR ANIMALES POTENCIALMENTE TRANSMISORES DE RABIA"
 
 
