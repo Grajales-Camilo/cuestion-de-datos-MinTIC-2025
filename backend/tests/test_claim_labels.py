@@ -6,6 +6,8 @@ Fixtures genéricos: ningún caso usa `case_id`, `dataset_id` ni valores de
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.quality.claim_labels import (
     build_presentation_warnings,
     claim_is_relevant_to_narrative,
@@ -378,3 +380,43 @@ def test_build_presentation_warnings_ignores_historical_claims_without_status() 
 
     claims = [{"claim_id": "c1"}]
     assert build_presentation_warnings(claims) == []
+
+
+def test_build_presentation_warnings_never_references_a_claim_id_outside_the_input() -> None:
+    """RF-212/T-617C §4.6: `presentation_warnings[].claim_id` siempre debe
+    referenciar un `claim_id` presente en `claims[]` de la misma respuesta
+    (sin huérfanos de advertencia)."""
+
+    claims = [
+        {"claim_id": "c1", "label_status": "ambiguous"},
+        {"claim_id": "c2", "label_status": "verified"},
+        {"claim_id": "c3", "label_status": "ambiguous"},
+    ]
+    warnings = build_presentation_warnings(claims)
+    known_claim_ids = {claim["claim_id"] for claim in claims}
+    assert warnings
+    assert all(warning["claim_id"] in known_claim_ids for warning in warnings)
+
+
+# --- Generalidad (T-617C §4.6): sin literales de caso concreto ---------------
+
+
+def test_no_production_code_conditions_on_the_triggering_case_literals() -> None:
+    """Ningún código de producción de etiquetado/relevancia referencia
+    `pilot-005` ni "Cancillería"/"Ministerio de Relaciones Exteriores" como
+    condición de selección (T-617C §4.6, criterio de generalidad). Los
+    valores numéricos 764/719 quedan fuera de esta auditoría automatizada
+    porque el propio módulo los cita, dentro de un docstring explicado como
+    ejemplo del caso disparador original (permitido explícitamente por la
+    matriz: "fuera de comentarios ... marcados como ejemplo"), sin que
+    ningún camino de código compare contra ellos."""
+
+    forbidden = (
+        "pilot-005",
+        "Cancillería",
+        "Ministerio de Relaciones Exteriores",
+    )
+    module_root = Path(__file__).resolve().parents[1]
+    content = (module_root / "app" / "quality" / "claim_labels.py").read_text(encoding="utf-8")
+    for literal in forbidden:
+        assert literal not in content, f"claim_labels.py contiene el literal prohibido {literal!r}"
