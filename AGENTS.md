@@ -14,6 +14,21 @@ Antes de escribir o modificar código, leer en este orden:
 10. `specs/001-cuestion-de-datos-v2/quickstart.md`
 11. `specs/001-cuestion-de-datos-v2/checklists/requirements.md`, si existe
 
+Si la tarea crea, modifica o revisa archivos bajo `frontend/`, después de la
+lectura anterior se debe continuar con este orden:
+
+1. `frontend/AGENTS.md`
+2. `docs/frontend-v2/README.md`
+3. `frontend/README.md`
+4. Las secciones de `docs/frontend-v2/implementation-plan.md` que correspondan
+   a la fase activa
+5. Los capítulos aplicables de
+   `docs/frontend-v2/architecture-principles.md`, según la tabla de enrutamiento
+   de `docs/frontend-v2/README.md`
+
+Los documentos de `docs/frontend-v2/` son guías ejecutables o fuentes de
+consulta no normativas. No alteran la jerarquía definida a continuación.
+
 Este archivo refleja instrucciones operativas del repositorio. No altera la
 jerarquía normativa definida por `specs/constitution.md`.
 
