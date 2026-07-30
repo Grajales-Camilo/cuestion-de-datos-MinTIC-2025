@@ -38,12 +38,22 @@ Excluir no significa borrar. Estos archivos permanecen intactos en el disco y
 pueden seguir apareciendo como `untracked` cuando deliberadamente pertenecen a
 otro trabajo.
 
-## Commits previstos
+## Commits creados
 
-1. `chore(frontend): establish v2 tooling and agent guidance`
+1. `chore(frontend): establish agent tooling and project guidance`
 2. `feat(frontend): implement deterministic evidence workspace`
 3. `docs(frontend): record rc1 validation and technical debt`
+4. `docs(frontend): record publication constraints`
 
-La validación final se ejecuta sobre el árbol completo después de crear los
-commits. A continuación se reindexa el proyecto canónico y solo entonces se
-publica la rama y se abre el PR en estado borrador.
+La validación final se ejecutó sobre el árbol completo después de los tres
+commits iniciales. El cuarto commit registra los hallazgos de publicación y no
+modifica producto ni pruebas.
+
+## Alcance remoto observado
+
+El PR borrador apunta a `v2` porque el workflow de CI solo escucha esa rama.
+El commit base local `5853251` no está contenido en ninguna otra rama remota;
+por eso el diff remoto muestra 147 commits y 706 archivos frente a `v2`, no
+solo los commits anteriores. Esta diferencia no se ocultó ni se resolvió con
+rebase o force-push: queda registrada como D-CI-02 y debe resolverse antes del
+merge.

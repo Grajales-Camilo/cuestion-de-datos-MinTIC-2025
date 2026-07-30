@@ -19,11 +19,13 @@ la fabricación de evidencia y una prueba esencial no reproducible.
 | D-UI-02 | Producto/visual | P2 | Abierta | El badge de aporte manual puede no pintar su texto en el primer render. |
 | D-SEC-01 | Dependencias | P1 | Abierta y monitorizada | `npm audit` no tiene críticas, pero mantiene vulnerabilidades altas y moderadas. |
 | D-CI-01 | Release | P1 | Pendiente | T-505 requiere una ejecución real y verde de GitHub Actions. |
+| D-CI-02 | Versionado | P1 | Abierta | El PR hacia `v2` incluye historia acumulada anterior al frontend y requiere revisión de alcance antes de merge. |
 | D-ENV-01 | Windows/Playwright | P3 | Mitigada | El Chromium embebido falla por SideBySide en el equipo revisor. |
 | D-ENV-02 | Tooling | P3 | Abierta | Browserslist y datos de compatibilidad emiten avisos de actualización. |
 | D-ENV-03 | Pruebas DOM | P3 | Abierta | jsdom no implementa por completo canvas, navegación y algunas APIs de Blob. |
 | D-ENV-04 | Git local | P3 | Abierta | El archivo global de exclusiones y `.pytest_cache` generan avisos de permisos. |
 | D-ENV-05 | Navegador MCP | P3 | Abierta | El panel MCP no siempre compone capturas; Playwright es el respaldo reproducible. |
+| D-ENV-06 | Grafo de código | P3 | Abierta | La reindexación MCP conserva una instantánea parcial y omite símbolos F7/F8 ya versionados. |
 | D-PERF-01 | Arnés E2E | P3 | Mitigada | RNF-008 puede ser inestable bajo paralelismo alto; tiene suite aislada de 1 worker. |
 | D-DOC-01 | Decisión de producto | P2 | Pendiente humana | D-6: contenido de la plantilla de plan de desarrollo no está aprobado. |
 
@@ -116,6 +118,31 @@ cuando se actualiza la base de avisos de npm.
   `docs/frontend-v2/design/`.
 - **Cierre:** verificar una actualización del MCP que capture las mismas
   superficies de forma estable; Playwright sigue siendo la evidencia primaria.
+
+### D-ENV-06 — Índice parcial de codebase-memory-mcp
+
+- **Evidencia:** dos reindexaciones del proyecto canónico, una completa y otra
+  moderada, devolvieron 11.865 nodos y 41.604 aristas. El grafo encuentra
+  `useAgentRun`, pero no `normalizeExternalSources`, `buildManualEntryAttrs`,
+  `exportDocumentToDocx` ni `useDocumentAutosave`, aunque Git confirma que esos
+  archivos están rastreados en el commit del candidato.
+- **Impacto:** el descubrimiento de código reciente mediante MCP puede ser
+  incompleto; la lectura directa focalizada del worktree sigue siendo necesaria.
+- **Cierre:** forzar una reconstrucción real del proyecto canónico y comprobar
+  por búsqueda de símbolos que los módulos F7/F8 aparecen en el grafo.
+
+### D-CI-02 — Alcance acumulado del PR
+
+- **Evidencia:** la rama partió de `5853251`, que no existe en otra rama remota.
+  Frente a `v2`, el PR contiene 147 commits y 706 archivos; los tres commits
+  creados en este saneamiento sí están acotados al frontend, sus instrucciones
+  y su documentación.
+- **Impacto:** el PR borrador sirve para CI y conserva la historia, pero no debe
+  presentarse como un diff aislado de tres commits ni fusionarse sin revisar la
+  historia preexistente acumulada.
+- **Cierre:** acordar y ejecutar una estrategia de integración: revisar la serie
+  completa, integrar primero su rama base o construir una serie apilada sin
+  reescrituras destructivas del trabajo actual.
 
 ### D-PERF-01 — Contención de RNF-008 bajo paralelismo
 
