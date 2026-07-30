@@ -1,0 +1,32 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "single-font",
+        "value": "*",
+        "files": [
+          "docs/frontend-v2/design/design-01/variant-a-ruta-central.html"
+        ],
+        "createdAt": "2026-07-27T23:02:56.892Z"
+      },
+      {
+        "rule": "single-font",
+        "value": "*",
+        "files": [
+          "docs/frontend-v2/design/design-01/variant-b-franja-seguimiento.html"
+        ],
+        "createdAt": "2026-07-27T23:02:56.989Z"
+      },
+      {
+        "rule": "single-font",
+        "value": "*",
+        "files": [
+          "docs/frontend-v2/design/design-01/variant-c-trayectoria-lateral.html"
+        ],
+        "createdAt": "2026-07-27T23:02:57.094Z"
+      }
+    ]
+  }
+}

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pulso por lo Público — Variante B: Franja de seguimiento</title>
+<style>
+  :root {
+    --blue-900:#0C2D57; --blue-700:#1D4E89; --blue-500:#2E7CD6;
+    --blue-100:#DBEAFE; --blue-50:#EFF6FF; --white:#FFFFFF;
+    --slate-900:#0F172A; --slate-600:#475569; --slate-400:#94A3B8;
+    --success:#15803D; --warning:#B45309; --error:#B91C1C;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: var(--font); color: var(--slate-900); background: var(--white); }
+  a { color: var(--blue-700); }
+  .skip-link { position:absolute; left:-9999px; top:0; background:var(--blue-900); color:#fff; padding:8px 16px; }
+  .skip-link:focus { left: 8px; top: 8px; z-index: 100; }
+
+  header.topbar {
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 12px 24px; border-bottom: 1px solid var(--blue-100); background: var(--white);
+  }
+  .wordmark { font-weight:700; font-size:15px; color: var(--blue-900); letter-spacing: 0.01em; }
+  .breadcrumb { font-size:13px; color: var(--slate-600); }
+  .breadcrumb strong { color: var(--slate-900); font-weight:600; }
+
+  .shell { display:grid; grid-template-columns: 1fr 400px; min-height: calc(100vh - 49px); }
+  @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } }
+
+  main.lienzo { padding: 40px 56px; max-width: 720px; }
+  main.lienzo h1 { font-size: 26px; color: var(--blue-900); margin: 0 0 4px; font-weight:700; }
+  main.lienzo .doc-meta { font-size:13px; color: var(--slate-400); margin-bottom: 32px; }
+  main.lienzo h2 { font-size: 17px; color: var(--slate-900); font-weight:600; margin: 0 0 12px; }
+  main.lienzo p { font-size:15px; line-height:1.7; color: var(--slate-900); margin: 0 0 16px; max-width: 62ch; }
+  .cita-insertada {
+    background: var(--blue-50);
+    padding: 2px 8px; border-radius: 4px; font-size: 14px; white-space: nowrap;
+  }
+  .cita-insertada a { text-decoration: underline; text-decoration-color: var(--blue-500); font-weight:600; }
+
+  aside.copiloto {
+    border-left: 1px solid var(--blue-100); background: var(--blue-50);
+    display:flex; flex-direction:column; height: calc(100vh - 49px); overflow-y:auto;
+  }
+  .copiloto-titulo { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color: var(--slate-600); padding: 20px 20px 0; margin:0 0 12px; }
+
+  /* Franja de seguimiento: barra compacta, horizontal, glanceable — desacoplada del detalle */
+  .franja-wrap { padding: 0 20px 16px; }
+  .franja { display:flex; gap:3px; margin-bottom:10px; }
+  .segmento { flex:1; height:6px; border-radius:3px; background: var(--success); position:relative; }
+  .franja-etiquetas { display:flex; justify-content:space-between; font-size:9.5px; color: var(--slate-400); text-transform:uppercase; letter-spacing:0.03em; }
+  .franja-resumen { font-size:12px; color: var(--success); font-weight:600; display:flex; align-items:center; gap:6px; margin-top:10px; }
+  .franja-resumen .status-dot { width:8px; height:8px; border-radius:50%; background: var(--success); }
+
+  .pregunta-card {
+    margin: 0 20px 16px; background: var(--white); border:1px solid var(--blue-100); border-radius:6px; padding:12px 14px;
+  }
+  .pregunta-card p { margin:0; font-size:13.5px; font-weight:600; color: var(--slate-900); line-height:1.4; }
+
+  /* Bitácora de pasos: lista compacta y plana, texto secundario — no protagonista */
+  .bitacora-titulo { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color: var(--slate-400); padding: 0 20px; margin: 0 0 8px; }
+  ul.bitacora { list-style:none; margin:0 0 20px; padding: 0 20px; display:flex; flex-direction:column; gap:2px; }
+  ul.bitacora li { display:flex; align-items:baseline; gap:8px; font-size:12px; color: var(--slate-600); padding:4px 0; border-bottom:1px solid rgba(219,234,254,0.6); }
+  ul.bitacora li .paso-check { color: var(--success); flex-shrink:0; font-size:12px; }
+  ul.bitacora li .paso-tiempo { margin-left:auto; color: var(--slate-400); font-size:10.5px; flex-shrink:0; }
+
+  /* Bloque de evidencia: independiente de la franja, no fusionado a la ruta */
+  .evidencia { margin: 0 20px 20px; background: var(--white); border:1px solid var(--blue-100); border-radius: 8px; overflow:hidden; }
+  .evidencia-cabecera { background: var(--blue-900); color:#fff; padding:12px 16px; display:flex; align-items:center; gap:8px; }
+  .evidencia-cabecera svg { width:16px; height:16px; stroke:#fff; flex-shrink:0; }
+  .evidencia-cabecera span { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
+  .evidencia-cuerpo { padding:16px; }
+  .claim-valor { font-size: clamp(17px, 5.5vw, 22px); font-weight:700; color: var(--blue-900); margin:0 0 2px; overflow-wrap: anywhere; }
+  .claim-label { font-size:12.5px; color: var(--slate-600); margin:0 0 14px; }
+  .badge-row { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+  .badge { font-size:11px; font-weight:600; padding:3px 8px; border-radius:99px; }
+  .badge-ok { background:#DCFCE7; color: var(--success); }
+  .badge-info { background: var(--blue-100); color: var(--blue-700); }
+  table.tabla-evidencia { width:100%; border-collapse:collapse; font-size:12.5px; margin-bottom:14px; }
+  table.tabla-evidencia caption { text-align:left; font-size:11.5px; color: var(--slate-600); margin-bottom:6px; }
+  table.tabla-evidencia th, table.tabla-evidencia td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--blue-50); }
+  table.tabla-evidencia th { color: var(--slate-600); font-weight:600; background: var(--blue-50); }
+  .cita-tecnica { font-size:11.5px; color: var(--slate-600); line-height:1.6; border-top:1px dashed var(--blue-100); padding-top:10px; }
+  .cita-tecnica dt { font-weight:600; color: var(--slate-900); display:inline; }
+  .cita-tecnica dd { margin:0 0 4px; display:block; word-break: break-word; }
+  details.tecnico { margin-top:10px; }
+  details.tecnico summary { font-size:12px; color: var(--blue-700); cursor:pointer; font-weight:600; }
+  details.tecnico summary:focus-visible, a:focus-visible, button:focus-visible {
+    outline: 2px solid var(--blue-500); outline-offset: 2px;
+  }
+  .acciones { display:flex; gap:8px; padding: 0 16px 16px; }
+  .btn-primario {
+    background: var(--blue-700); color:#fff; border:none; border-radius:6px;
+    padding:9px 14px; font-size:13px; font-weight:600; cursor:pointer; font-family: var(--font);
+  }
+  .btn-primario:hover { background: var(--blue-900); }
+  .btn-secundario {
+    background: transparent; color: var(--blue-700); border:1px solid var(--blue-100);
+    border-radius:6px; padding:9px 14px; font-size:13px; font-weight:600; cursor:pointer; font-family: var(--font);
+  }
+  .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#lienzo-principal">Saltar al contenido del documento</a>
+<header class="topbar">
+  <span class="wordmark">Cuestión de Datos</span>
+  <nav class="breadcrumb" aria-label="Ubicación del documento">
+    Plan de Desarrollo Municipal 2026–2029 · <strong>3. Diagnóstico — Educación</strong>
+  </nav>
+</header>
+
+<div class="shell">
+  <main class="lienzo" id="lienzo-principal">
+    <h1>Plan de Desarrollo Municipal 2026–2029</h1>
+    <p class="doc-meta">Autoguardado hace 4 segundos</p>
+    <h2>3. Diagnóstico — Educación</h2>
+    <p>
+      La deserción escolar es uno de los indicadores centrales para priorizar la
+      inversión en el sector educativo del cuatrienio. Según la evidencia
+      consultada, el promedio de deserción escolar en el departamento de
+      Antioquia entre 2018 y 2022 fue
+      <span class="cita-insertada">
+        <a href="#evidencia-desercion">3,9660000000000000<sup>[1]</sup></a>
+      </span>,
+      cifra que respalda la meta de reducción propuesta en el capítulo 4.
+    </p>
+    <p>
+      Esta sección continúa desarrollándose a medida que el equipo técnico
+      investiga indicadores adicionales del sector.
+    </p>
+  </main>
+
+  <aside class="copiloto" aria-label="Copiloto de investigación">
+    <p class="copiloto-titulo">Copiloto</p>
+
+    <div class="pregunta-card">
+      <p>¿Cuál fue el promedio de deserción escolar en el departamento de Antioquia entre 2018 y 2022?</p>
+    </div>
+
+    <div class="franja-wrap">
+      <div class="franja" role="img" aria-label="Investigación completada: 9 de 9 pasos finalizados">
+        <span class="segmento"></span><span class="segmento"></span><span class="segmento"></span>
+        <span class="segmento"></span><span class="segmento"></span><span class="segmento"></span>
+        <span class="segmento"></span><span class="segmento"></span><span class="segmento"></span>
+      </div>
+      <div class="franja-etiquetas">
+        <span>Búsqueda</span><span>Consulta</span><span>Redacción</span>
+      </div>
+      <p class="franja-resumen"><span class="status-dot" aria-hidden="true"></span> Investigación completada · 12,1 s</p>
+    </div>
+
+    <p class="bitacora-titulo">Bitácora de la investigación</p>
+    <ul class="bitacora">
+      <li><span class="paso-check" aria-hidden="true">✓</span> Preparando la investigación</li>
+      <li><span class="paso-check" aria-hidden="true">✓</span> Eligiendo el dataset candidato <span class="paso-tiempo">3,3 s</span></li>
+      <li><span class="paso-check" aria-hidden="true">✓</span> Revisando la estructura del dataset <span class="paso-tiempo">3,3 s</span></li>
+      <li><span class="paso-check" aria-hidden="true">✓</span> Preparando la consulta <span class="paso-tiempo">3,4 s</span></li>
+      <li><span class="paso-check" aria-hidden="true">✓</span> Verificando valores posibles en los datos <span class="paso-tiempo">6,4 s</span></li>
+      <li><span class="paso-check" aria-hidden="true">✓</span> Preparando la consulta (2.º intento) <span class="paso-tiempo">7,4 s</span></li>
+      <li><span class="paso-check" aria-hidden="true">✓</span> Consultando datos.gov.co <span class="paso-tiempo">9,3 s</span></li>
+      <li><span class="paso-check" aria-hidden="true">✓</span> Redactando la respuesta <span class="paso-tiempo">9,5 s</span></li>
+      <li><span class="paso-check" aria-hidden="true">✓</span> Investigación completada <span class="paso-tiempo">11,7 s</span></li>
+    </ul>
+
+    <div class="evidencia" id="evidencia-desercion">
+      <div class="evidencia-cabecera">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span>Evidencia verificada</span>
+      </div>
+      <div class="evidencia-cuerpo">
+        <p class="claim-valor">3,9660000000000000</p>
+        <p class="claim-label">Deserción escolar — promedio 2018–2022, Antioquia</p>
+        <div class="badge-row">
+          <span class="badge badge-ok">Calidad alta · 100/100</span>
+          <span class="badge badge-info">Elegible</span>
+        </div>
+        <table class="tabla-evidencia">
+          <caption>1 fila devuelta por datos.gov.co</caption>
+          <thead><tr><th scope="col">metric_avg_1</th></tr></thead>
+          <tbody><tr><td>3.9660000000000000</td></tr></tbody>
+        </table>
+        <details class="tecnico">
+          <summary>Ver detalle técnico de la consulta</summary>
+          <dl class="cita-tecnica">
+            <dt>Fuente:</dt><dd>Ministerio de Educación Nacional</dd>
+            <dt>Dataset:</dt><dd>ji8i-4anb — MEN_ESTADISTICAS_EN_EDUCACION_EN_PREESCOLAR, BÁSICA Y MEDIA_POR_DEPARTAMENTO</dd>
+            <dt>Consulta SoQL:</dt><dd>SELECT avg(desercion) AS metric_avg_1 WHERE departamento = 'Antioquia' AND (ano &gt;= 2018 AND ano &lt;= 2022) LIMIT 100 OFFSET 0</dd>
+            <dt>Corte de datos:</dt><dd>2025-11-13</dd>
+          </dl>
+        </details>
+      </div>
+      <div class="acciones">
+        <button class="btn-primario" type="button">Insertar en el documento</button>
+        <button class="btn-secundario" type="button">Ver evidencia completa</button>
+      </div>
+    </div>
+    <div class="sr-only" role="status" aria-live="polite">Investigación completada. Evidencia verificada disponible para insertar.</div>
+  </aside>
+</div>
+</body>
+</html>
