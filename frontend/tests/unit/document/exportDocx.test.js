@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Editor } from "@tiptap/core";
 import JSZip from "jszip";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   EXPORT_DOCX_ERROR_CODES,
   exportDocumentToDocx,
@@ -12,6 +12,9 @@ import {
   DOCUMENT_MODEL_VERSION,
   FREE_TEMPLATE_ID,
   createFreeTemplateDocument,
+  createMgaTemplateDocument,
+  createPlanDeDesarrolloTemplateDocument,
+  createTemplateDocument,
 } from "../../../lib/document/documentModel.js";
 import { createDocumentEditorExtensions } from "../../../lib/document/schema.js";
 
@@ -237,20 +240,142 @@ describe("exportDocumentToDocx — contrato de validación (F6-02A, RF-102/RF-10
     expect(result.blob).toBeUndefined();
   });
 
-  it("rechaza un templateId no aprobado incluso si tuviera forma válida", async () => {
-    // No existe hoy ninguna plantilla distinta de "libre" (D-6 PENDIENTE):
-    // se fuerza el campo para probar la segunda barrera, independiente del
-    // validador de documentModel.js.
+  it("rechaza un templateId no aprobado con INVALID_DOCUMENT (primera barrera: validateDocumentModel, no la segunda barrera de exportación)", async () => {
+    // RF-101-01: documentModel.js ya acepta "libre", "mga" y
+    // "plan-de-desarrollo". Se fuerza un ID FUERA de esos tres (ej. un
+    // extra legacy nunca migrado a v2). Esta prueba, tal como está escrita,
+    // ejercita EXCLUSIVAMENTE la primera barrera (validateDocumentModel,
+    // llamada primero por exportDocumentToDocx): un templateId no aprobado
+    // ya es INVALID_DOCUMENT antes de que el código llegue a evaluar
+    // SUPPORTED_EXPORT_TEMPLATE_IDS. No demuestra que esa segunda barrera
+    // exista ni funcione — eso se prueba por separado con aislamiento real
+    // (ver "segunda barrera aislada" más abajo).
     const doc = createFreeTemplateDocument();
-    doc.templateId = "plan-de-desarrollo";
+    doc.templateId = "conpes";
 
     const result = await exportDocumentToDocx(doc);
 
-    // documentModel.js YA rechaza cualquier templateId distinto de "libre",
-    // así que esto llega como INVALID_DOCUMENT, no como UNSUPPORTED_TEMPLATE
-    // — ambas rutas cumplen el mismo contrato: rechazo completo.
-    expect(result.ok).toBe(false);
+    expect(result).toEqual({ ok: false, code: EXPORT_DOCX_ERROR_CODES.INVALID_DOCUMENT });
     expect(result.blob).toBeUndefined();
+  });
+});
+
+describe("exportDocumentToDocx — RF-101-01: las tres plantillas aprobadas", () => {
+  it.each([
+    ["libre", createFreeTemplateDocument],
+    ["mga", createMgaTemplateDocument],
+    ["plan-de-desarrollo", createPlanDeDesarrolloTemplateDocument],
+  ])("un documento recién creado de la plantilla '%s' exporta un DOCX (Blob no vacío)", async (templateId, factory) => {
+    const doc = factory();
+    expect(doc.templateId).toBe(templateId);
+
+    const result = await exportDocumentToDocx(doc);
+
+    expect(result.ok).toBe(true);
+    expect(result.blob).toBeInstanceOf(Blob);
+    expect(result.blob.size).toBeGreaterThan(0);
+    expect(result.filename).toMatch(/\.docx$/);
+  });
+
+  it("las tres plantillas aprobadas también exportan cuando se crean vía createTemplateDocument (registro)", async () => {
+    for (const templateId of ["libre", "mga", "plan-de-desarrollo"]) {
+      const doc = createTemplateDocument(templateId);
+      const result = await exportDocumentToDocx(doc);
+      expect(result.ok).toBe(true);
+      expect(result.blob.size).toBeGreaterThan(0);
+    }
+  });
+
+  it("las 7 secciones de MGA (título Y descripción de cada una, completas) llegan íntegras al OOXML", async () => {
+    const doc = createMgaTemplateDocument();
+    // Recorre las secciones REALMENTE creadas por la factoría (no una copia
+    // manual de ADR-0005 en la prueba): si la factoría cambiara alguna
+    // sección, esta prueba seguiría verificando exactamente lo que produce
+    // hoy, sección por sección, título y descripción por separado.
+    expect(doc.sections).toHaveLength(7);
+
+    const result = await exportDocumentToDocx(doc);
+    expect(result.ok).toBe(true);
+
+    const zip = await unzipBlob(result.blob);
+    const documentXml = await xmlPart(zip, "word/document.xml");
+
+    for (const section of doc.sections) {
+      expect(documentXml, `falta el título de la sección "${section.sectionId}"`).toContain(section.title);
+      expect(documentXml, `falta la descripción de la sección "${section.sectionId}"`).toContain(section.description);
+    }
+  });
+
+  it("las 5 secciones de plan de desarrollo (título Y descripción de cada una, completas) llegan íntegras al OOXML", async () => {
+    const doc = createPlanDeDesarrolloTemplateDocument();
+    expect(doc.sections).toHaveLength(5);
+
+    const result = await exportDocumentToDocx(doc);
+    expect(result.ok).toBe(true);
+
+    const zip = await unzipBlob(result.blob);
+    const documentXml = await xmlPart(zip, "word/document.xml");
+
+    for (const section of doc.sections) {
+      expect(documentXml, `falta el título de la sección "${section.sectionId}"`).toContain(section.title);
+      expect(documentXml, `falta la descripción de la sección "${section.sectionId}"`).toContain(section.description);
+    }
+  });
+});
+
+describe("exportDocumentToDocx — segunda barrera aislada: SUPPORTED_EXPORT_TEMPLATE_IDS / UNSUPPORTED_TEMPLATE", () => {
+  afterEach(() => {
+    vi.doUnmock("../../../lib/document/documentModel.js");
+    vi.resetModules();
+  });
+
+  it("un templateId no soportado que SÍ pasa validateDocumentModel (mockeado) es rechazado por la segunda barrera con UNSUPPORTED_TEMPLATE", async () => {
+    // Aislamiento real: se mockea validateDocumentModel para que SIEMPRE
+    // devuelva {ok:true}, sin importar el templateId. Así se fuerza a que
+    // la ejecución pase de largo la primera barrera y llegue de verdad a
+    // `SUPPORTED_EXPORT_TEMPLATE_IDS.has(...)` dentro de exportDocx.js —
+    // la única forma de probar esa rama en aislamiento, porque en
+    // producción validateDocumentModel siempre rechaza antes cualquier
+    // templateId que no esté en APPROVED_TEMPLATE_IDS.
+    vi.resetModules();
+    vi.doMock("../../../lib/document/documentModel.js", async () => {
+      const actual = await vi.importActual("../../../lib/document/documentModel.js");
+      return { ...actual, validateDocumentModel: () => ({ ok: true }) };
+    });
+
+    const isolated = await import("../../../lib/document/exportDocx.js");
+    const doc = {
+      version: DOCUMENT_MODEL_VERSION,
+      templateId: "plantilla-nunca-soportada",
+      title: "Documento con templateId inexistente",
+      sections: [],
+    };
+
+    const result = await isolated.exportDocumentToDocx(doc);
+
+    expect(result).toEqual({ ok: false, code: isolated.EXPORT_DOCX_ERROR_CODES.UNSUPPORTED_TEMPLATE });
+    expect(result.blob).toBeUndefined();
+  });
+
+  it("control: con el mismo mock, un templateId SÍ soportado exporta con éxito (confirma que el mock deja pasar la primera barrera de verdad)", async () => {
+    vi.resetModules();
+    vi.doMock("../../../lib/document/documentModel.js", async () => {
+      const actual = await vi.importActual("../../../lib/document/documentModel.js");
+      return { ...actual, validateDocumentModel: () => ({ ok: true }) };
+    });
+
+    const isolated = await import("../../../lib/document/exportDocx.js");
+    const doc = {
+      version: DOCUMENT_MODEL_VERSION,
+      templateId: "libre",
+      title: "Documento de control",
+      sections: [{ sectionId: "s1", title: "Sección 1", content: RICH_CONTENT_DOC }],
+    };
+
+    const result = await isolated.exportDocumentToDocx(doc);
+
+    expect(result.ok).toBe(true);
+    expect(result.blob).toBeInstanceOf(Blob);
   });
 });
 

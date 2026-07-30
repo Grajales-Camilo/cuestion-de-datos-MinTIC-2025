@@ -38,12 +38,15 @@ import { EXPORT_DOCX_ERROR_CODES } from "./exportDocxErrorCodes.js";
 
 export { EXPORT_DOCX_ERROR_CODES };
 
-// Lista de exportación deliberadamente independiente de `FREE_TEMPLATE_ID`
-// en `documentModel.js`: si ese archivo llegara a aceptar una plantilla
-// nueva (MGA/plan de desarrollo, D-6) sin que este módulo se actualice para
-// soportarla, la exportación debe seguir rechazando esa plantilla en vez de
-// intentar generar un DOCX para un mapeo que no existe todavía.
-const SUPPORTED_EXPORT_TEMPLATE_IDS = new Set(["libre"]);
+// Lista de exportación deliberadamente independiente de `APPROVED_TEMPLATE_IDS`
+// en `documentModel.js` (RF-101-01: "libre", "mga", "plan-de-desarrollo"):
+// si ese archivo llegara a aceptar una CUARTA plantilla sin que este módulo
+// se actualice para soportarla explícitamente, la exportación debe seguir
+// rechazando esa plantilla en vez de intentar generar un DOCX para un
+// mapeo que no existe todavía. No se introduce lógica de contenido
+// distinta por plantilla: las tres se exportan con el mismo recorrido
+// genérico de secciones (`exportDocxTree.js`).
+const SUPPORTED_EXPORT_TEMPLATE_IDS = new Set(["libre", "mga", "plan-de-desarrollo"]);
 
 const FALLBACK_FILENAME = "documento-cuestion-de-datos.docx";
 const EXTENSION = ".docx";

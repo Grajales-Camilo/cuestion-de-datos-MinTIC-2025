@@ -18,6 +18,8 @@ import {
   DOCUMENT_MODEL_VERSION,
   FREE_TEMPLATE_ID,
   createFreeTemplateDocument,
+  createMgaTemplateDocument,
+  createPlanDeDesarrolloTemplateDocument,
 } from "../../../lib/document/documentModel.js";
 import { EMPTY_DOCUMENT_JSON } from "../../../lib/document/documentSchema.js";
 import { createDocumentEditorExtensions } from "../../../lib/document/schema.js";
@@ -234,6 +236,66 @@ describe("saveStoredDocument / loadStoredDocument — round-trip (F6-01, RF-102/
     const result = loadStoredDocument(storage);
     expect(result.status).toBe(DOCUMENT_STORAGE_STATUS.INVALID);
     expect(result.document).toBeNull();
+  });
+});
+
+describe("saveStoredDocument / loadStoredDocument — RF-101-01: round-trip de las tres plantillas aprobadas", () => {
+  it.each([
+    ["libre", createFreeTemplateDocument],
+    ["mga", createMgaTemplateDocument],
+    ["plan-de-desarrollo", createPlanDeDesarrolloTemplateDocument],
+  ])("guarda y carga un documento recién creado de la plantilla '%s' sin pérdida, con el sobre actual", (templateId, factory) => {
+    const storage = makeMemoryStorage();
+    const doc = factory();
+    expect(doc.templateId).toBe(templateId);
+
+    expect(saveStoredDocument(storage, doc, { now: () => 1000 })).toMatchObject({ ok: true });
+
+    const result = loadStoredDocument(storage, { now: () => 2000 });
+    expect(result.status).toBe(DOCUMENT_STORAGE_STATUS.OK);
+    expect(result.document).toEqual(doc);
+    expect(result.envelope.schemaVersion).toBe(DOCUMENT_STORAGE_SCHEMA_VERSION);
+  });
+
+  it("un documento libre YA PERSISTIDO antes de RF-101-01 (escrito directamente en la clave real, sin pasar por saveStoredDocument) sigue cargando sin migración ni pérdida, y NUNCA se aísla como corrupto", () => {
+    const storage = makeMemoryStorage();
+    const preExistingDoc = createFreeTemplateDocument();
+    preExistingDoc.sections[0].content = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "Documento libre ya existente." }] }],
+    };
+    // Simula un sobre persistido por una sesión ANTERIOR a este incremento:
+    // se escribe directamente en `cdd.doc.v1`, sin pasar por
+    // `saveStoredDocument` (que ya corre el validador actualizado de RF-101-01).
+    const preExistingEnvelope = {
+      schemaVersion: DOCUMENT_STORAGE_SCHEMA_VERSION,
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      document: preExistingDoc,
+    };
+    // Serializado UNA SOLA VEZ: el mismo string se escribe en storage y se
+    // usa después como referencia de comparación. Comparar contra un SEGUNDO
+    // `JSON.stringify(...)` del mismo objeto no probaría nada (dos llamadas
+    // a `JSON.stringify` con las mismas claves ya producen el mismo string
+    // por construcción) — lo que hay que demostrar es que `storage` sigue
+    // devolviendo ESTE string exacto, no uno reescrito.
+    const preExistingRaw = JSON.stringify(preExistingEnvelope);
+    storage.setItem(DOCUMENT_STORAGE_KEY, preExistingRaw);
+
+    const result = loadStoredDocument(storage, { now: () => 3000 });
+
+    expect(result.status).toBe(DOCUMENT_STORAGE_STATUS.OK);
+    expect(result.document).toEqual(preExistingDoc);
+    // Ninguna clave de diagnóstico/corrupción se creó: no se aisló nada.
+    expect(result.diagnosticKey).toBeNull();
+    expect(storage.getItem(`${DOCUMENT_STORAGE_KEY}.corrupt.3000`)).toBeNull();
+    // Evidencia byte-idéntica real: el string almacenado tras la carga es
+    // EXACTAMENTE (`toBe`, identidad de string) el mismo que se escribió
+    // antes de llamar a `loadStoredDocument` — no una reconstrucción
+    // estructuralmente equivalente vía `JSON.parse(...).toEqual(...)`, que
+    // no distinguiría un reordenamiento de claves ni una reescritura que
+    // por casualidad serializara igual.
+    expect(storage.getItem(DOCUMENT_STORAGE_KEY)).toBe(preExistingRaw);
   });
 });
 
