@@ -536,3 +536,13 @@ no bloqueantes:
 READY** (cero críticas, gate bloqueante real en CI, axe completo). Esta
 sesión **no fabricó** revisión manual, **T-505 sigue abierto**, **RNF-007 y
 RNF-012 siguen requiriendo revisión humana**, y **F8-02 no comenzó**.
+
+## 15. Adenda de cierre posterior — 2026-07-30
+
+F8-02 produjo y aprobó las actas manuales WCAG 2.2 AA y RNF-012 para
+`v2.0.0-rc1`. Después de publicar el candidato, GitHub Actions CI #64 ejecutó
+el commit `de4b999fd1d12f54ce6001c9a0c78c8f5acddcfd`: los jobs Backend y
+Frontend terminaron en `success`, incluido el E2E funcional, RNF-008 aislado
+y E2E de producción. Con esta evidencia remota y las dos actas, **T-505 queda
+cerrada**. Esta adenda no reescribe el estado histórico que tenía F8-01-R1 al
+momento de emitirse.

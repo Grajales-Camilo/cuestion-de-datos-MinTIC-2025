@@ -2,7 +2,7 @@
 
 **Fecha de corte:** 2026-07-30
 **Rama:** `feat/frontend-v2`
-**Estado del candidato:** `READY_FOR_CI`, no liberado
+**Estado del candidato:** `CI_VERIFIED`, no liberado
 **Fuente de cierre:** F8-01, F8-01-R1, F8-02 y F8-02-R1
 
 Este documento mantiene en un solo lugar las deudas aceptadas que no impiden
@@ -18,7 +18,7 @@ la fabricación de evidencia y una prueba esencial no reproducible.
 | D-UI-01 | Producto/accesibilidad | P2 | Abierta | NVDA repite parte del modal de consentimiento. |
 | D-UI-02 | Producto/visual | P2 | Abierta | El badge de aporte manual puede no pintar su texto en el primer render. |
 | D-SEC-01 | Dependencias | P1 | Abierta y monitorizada | `npm audit` no tiene críticas, pero mantiene vulnerabilidades altas y moderadas. |
-| D-CI-01 | Release | P1 | Pendiente | T-505 requiere una ejecución real y verde de GitHub Actions. |
+| D-CI-01 | Release | P1 | Cerrada | T-505 se verificó en GitHub Actions CI #64. |
 | D-CI-02 | Versionado | P1 | Abierta | El PR hacia `v2` incluye historia acumulada anterior al frontend y requiere revisión de alcance antes de merge. |
 | D-ENV-01 | Windows/Playwright | P3 | Mitigada | El Chromium embebido falla por SideBySide en el equipo revisor. |
 | D-ENV-02 | Tooling | P3 | Abierta | Browserslist y datos de compatibilidad emiten avisos de actualización. |
@@ -68,14 +68,16 @@ cuando se actualiza la base de avisos de npm.
   pruebas focalizadas, suite completa, build y auditoría posterior. No aplicar
   correcciones mayores automáticas ni retirar dependencias sin verificar uso.
 
-### D-CI-01 — T-505 pendiente de GitHub Actions real
+### D-CI-01 — T-505 verificada en GitHub Actions real
 
 - **Evidencia local:** lint, 899 unitarias, 91 E2E, build, auditor de bundle y
   gates críticos verdes en F8-02-R1.
-- **Pendiente:** el workflow `.github/workflows/ci.yml` debe ejecutarse sobre el
-  commit publicado; la evidencia local no sustituye esa corrida.
-- **Cierre:** workflow real verde y registro de URL, commit SHA y resultado en
-  el PR. Solo entonces se puede cerrar T-505.
+- **Evidencia remota:** GitHub Actions CI #64, commit
+  `de4b999fd1d12f54ce6001c9a0c78c8f5acddcfd`, con jobs Backend y Frontend en
+  `success`. El frontend completó lint, unitarias, build, RNF-011, auditorías
+  críticas, E2E funcional, RNF-008 aislado y E2E de producción.
+- **Estado:** cerrada el 2026-07-30. El alcance acumulado del PR sigue separado
+  en D-CI-02 y no invalida el resultado del workflow.
 
 ### D-ENV-01 — Chromium embebido de Playwright en Windows
 
