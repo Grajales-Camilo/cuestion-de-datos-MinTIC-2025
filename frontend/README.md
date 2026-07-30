@@ -241,6 +241,8 @@ capturas, cachés y estado por desarrollador son efímeros. Ningún artefacto en
 | [`../docs/frontend-v2/implementation-plan.md`](../docs/frontend-v2/implementation-plan.md) | Plan ejecutable no normativo |
 | [`../docs/frontend-v2/architecture-principles.md`](../docs/frontend-v2/architecture-principles.md) | Capítulos arquitectónicos seleccionados |
 | [`../specs/README.md`](../specs/README.md) | Entrada al paquete normativo SDD |
+| [`../docs/frontend-v2/release/f9-01-dependencies-and-bundle.md`](../docs/frontend-v2/release/f9-01-dependencies-and-bundle.md) | F9-01: limpieza de dependencias y comparación de bundle |
+| [`../docs/frontend-v2/release/t-702-vercel-deployment-checklist.md`](../docs/frontend-v2/release/t-702-vercel-deployment-checklist.md) | Checklist de despliegue en Vercel (preparación, T-702 aún bloqueada) |
 
 ## Disciplina de cambios
 
