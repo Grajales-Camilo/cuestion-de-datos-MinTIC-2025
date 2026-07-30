@@ -89,6 +89,14 @@ jobs:
     name: Frontend
     runs-on: ubuntu-latest
 
+    env:
+      # Valor de pruebas explícito, nunca localhost: la app nunca hace
+      # fallback silencioso (lib/config/backendUrl.js) y todos los E2E
+      # interceptan `**/v2/agent/*` con `page.route`, así que ningún test
+      # depende de que este host resuelva de verdad. `.invalid` es el TLD
+      # reservado por RFC 2606 para dominios garantizados como no-reales.
+      NEXT_PUBLIC_BACKEND_URL: https://backend.ci.cuestiondedatos.invalid
+
     defaults:
       run:
         working-directory: frontend
@@ -107,5 +115,52 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Lint frontend
+        run: npm run lint
+
+      - name: Test frontend
+        run: npm run test
+
       - name: Build frontend
         run: npm run build
+
+      - name: Audit client bundle (RNF-011)
+        run: npm run audit:bundle
+
+      # Puerta de seguridad BLOQUEANTE (F8-01-R1): cualquier vulnerabilidad
+      # `critical` en cualquiera de los dos árboles hace fallar el job — sin
+      # `continue-on-error`, sin `|| true`, sin excluir ningún paquete
+      # (incluido Vitest) a mano. `npm audit --audit-level=critical` sale
+      # con código distinto de cero en cuanto encuentra una crítica; alto y
+      # moderado quedan documentados pero no bloquean este incremento.
+      - name: Auditoría de seguridad — árbol de producción (bloqueante en crítico)
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Auditoría de seguridad — árbol completo, incluido tooling (bloqueante en crítico)
+        run: npm audit --audit-level=critical
+
+      # channel "chrome" (usado en playwright.config.js/.perf/.prod para
+      # Windows local) no aplica en Ubuntu: ahí no existe el fallo de
+      # resolución WinSxS que lo motivó, así que en CI ($CI=true) esas
+      # configs caen a `channel: undefined` → Chromium embebido normal.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E funcional
+        run: npm run test:e2e:functional
+
+      - name: E2E RNF-008 dedicado (1 worker, aislado de la suite paralela)
+        run: npm run test:e2e:perf
+
+      - name: E2E verificación de producción
+        run: npm run test:e2e:prod
+
+      - name: Subir evidencia de Playwright (solo si falló algo)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

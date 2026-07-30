@@ -1,0 +1,166 @@
+{
+  "run_id": "8c915e85-6d7f-4d1d-9eeb-b1f175308936",
+  "status": "interrupted",
+  "answer": {
+    "textual_facts": [],
+    "partial_textual_facts": []
+  },
+  "textual_facts": [],
+  "partial_textual_facts": [],
+  "steps": [
+    {
+      "step_number": 1,
+      "node": "select_candidate",
+      "display_message": "hay candidato no intentado",
+      "detail": null
+    },
+    {
+      "step_number": 2,
+      "node": "profile_dataset",
+      "display_message": "falta esquema observado",
+      "detail": {}
+    },
+    {
+      "step_number": 3,
+      "node": "build_plan",
+      "display_message": "falta plan tipado",
+      "detail": null
+    }
+  ],
+  "events": [
+    {
+      "seq": 1,
+      "event": "step",
+      "data": {
+        "node": "start",
+        "detail": {},
+        "step_number": 0,
+        "display_message": "Preparando la investigación."
+      }
+    },
+    {
+      "seq": 2,
+      "event": "step",
+      "data": {
+        "node": "select_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 1,
+            "candidates": 0,
+            "elapsed_ms": 4429,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": null,
+          "candidate_index": null,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "ji8i-4anb",
+            "nudc-7mev",
+            "sras-4t5p",
+            "c4qb-ek68",
+            "db67-sbus",
+            "dv2d-ud46",
+            "tgsp-kujm",
+            "n87c-3ncf",
+            "ngw5-c5nw",
+            "8z4r-uue4"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 1,
+        "display_message": "hay candidato no intentado"
+      }
+    },
+    {
+      "seq": 3,
+      "event": "step",
+      "data": {
+        "node": "profile_dataset",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 1,
+            "candidates": 1,
+            "elapsed_ms": 4452,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "ji8i-4anb",
+          "candidate_index": 0,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "ji8i-4anb",
+            "nudc-7mev",
+            "sras-4t5p",
+            "c4qb-ek68",
+            "db67-sbus",
+            "dv2d-ud46",
+            "tgsp-kujm",
+            "n87c-3ncf",
+            "ngw5-c5nw",
+            "8z4r-uue4"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 2,
+        "display_message": "falta esquema observado"
+      }
+    },
+    {
+      "seq": 4,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 1,
+            "candidates": 1,
+            "elapsed_ms": 4491,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "ji8i-4anb",
+          "candidate_index": 0,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "ji8i-4anb",
+            "nudc-7mev",
+            "sras-4t5p",
+            "c4qb-ek68",
+            "db67-sbus",
+            "dv2d-ud46",
+            "tgsp-kujm",
+            "n87c-3ncf",
+            "ngw5-c5nw",
+            "8z4r-uue4"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 3,
+        "display_message": "falta plan tipado"
+      }
+    },
+    {
+      "seq": 5,
+      "event": "error",
+      "data": {
+        "error": {
+          "code": "RUN_INTERRUPTED",
+          "status": "interrupted",
+          "retryable": true,
+          "message_dev": "Arranque idempotente: lease de la instancia duena vencida.",
+          "message_user": "El servicio se reinicio mientras esta investigacion estaba en curso. Puedes volver a ejecutarla."
+        },
+        "textual_facts": [],
+        "partial_textual_facts": []
+      }
+    }
+  ],
+  "last_event_seq": 5
+}

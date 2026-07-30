@@ -1,0 +1,78 @@
+/**
+ * Fuente única de verdad de los tokens visuales de Frontend v2
+ * ("Pulso por lo Público", ver /DESIGN.md). Todo color, tipografía,
+ * espaciado, radio, foco y movimiento de un componente nuevo de v2 se lee
+ * de estas variables — nunca se repite un hexadecimal o un valor suelto en
+ * un componente. `tailwind.config.js` expone estos mismos valores como
+ * utilidades con prefijo `cdt-` (p. ej. `bg-cdt-blue-700`) para no chocar
+ * con la paleta por defecto de Tailwind que sigue usando el frontend
+ * legacy (`bg-blue-700`, `text-slate-600`, etc. con OTROS valores).
+ *
+ * Estos tokens son normativos (constitution.md Art. V, plan.md §7); no se
+ * inventan aquí, se transcriben.
+ */
+:root {
+  /* Color — paleta azul monocromática + neutros + semánticos */
+  --cdt-blue-900: #0c2d57;
+  --cdt-blue-700: #1d4e89;
+  --cdt-blue-500: #2e7cd6;
+  --cdt-blue-100: #dbeafe;
+  --cdt-blue-50: #eff6ff;
+  --cdt-white: #ffffff;
+  --cdt-slate-900: #0f172a;
+  --cdt-slate-600: #475569;
+  --cdt-slate-400: #94a3b8;
+  --cdt-success: #15803d;
+  --cdt-warning: #b45309;
+  --cdt-error: #b91c1c;
+
+  /* Tipografía — una sola familia, escala fija, exactamente dos pesos */
+  --cdt-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", Ubuntu,
+    Cantarell, "Helvetica Neue", Arial, sans-serif;
+  --cdt-weight-normal: 400;
+  --cdt-weight-bold: 700;
+  --cdt-text-xs: 12px;
+  --cdt-text-sm: 13px;
+  --cdt-text-base: 15px;
+  --cdt-text-lg: 17px;
+  --cdt-text-xl: 20px;
+  --cdt-text-2xl: 26px;
+  --cdt-leading-tight: 1.25;
+  --cdt-leading-normal: 1.5;
+  --cdt-leading-relaxed: 1.7;
+
+  /* Espaciado — escala 4/8 px */
+  --cdt-space-1: 4px;
+  --cdt-space-2: 8px;
+  --cdt-space-3: 12px;
+  --cdt-space-4: 16px;
+  --cdt-space-5: 20px;
+  --cdt-space-6: 24px;
+  --cdt-space-8: 32px;
+  --cdt-space-10: 40px;
+  --cdt-space-12: 48px;
+  --cdt-space-16: 64px;
+
+  /* Radios — pequeños y coherentes (constitución: "sin sombras duras") */
+  --cdt-radius-sm: 4px;
+  --cdt-radius-md: 6px;
+  --cdt-radius-lg: 10px;
+  --cdt-radius-full: 9999px;
+
+  /* Bordes */
+  --cdt-border-width: 1px;
+  --cdt-border-color: var(--cdt-blue-100);
+
+  /* Foco visible — cumple RNF WCAG 2.2 AA, nunca depende solo del color */
+  --cdt-focus-ring-color: var(--cdt-blue-500);
+  --cdt-focus-ring-width: 2px;
+  --cdt-focus-ring-offset: 2px;
+
+  /* Tamaño táctil mínimo (WCAG 2.5.8 AA) */
+  --cdt-tap-min: 44px;
+
+  /* Movimiento — duración corta, curva estándar; ver prefers-reduced-motion en globals.css */
+  --cdt-duration-fast: 120ms;
+  --cdt-duration-base: 200ms;
+  --cdt-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}

@@ -1,0 +1,18 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "react/no-danger": "error"
+  },
+  "overrides": [
+    {
+      "files": [
+        "components/common/OnboardingTour.js",
+        "components/wizard/ApiStep.js",
+        "components/wizard/DatabaseStep.js"
+      ],
+      "rules": {
+        "react/no-unescaped-entities": "warn"
+      }
+    }
+  ]
+}

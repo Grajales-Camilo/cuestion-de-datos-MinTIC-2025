@@ -1,8 +1,54 @@
+@import "./tokens.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Estilos personalizados para la sección de recursos */
+/* ============================================================
+ * SISTEMA VISUAL V2 — "Pulso por lo Público" (ver /DESIGN.md)
+ * Todo lo de este bloque está deliberadamente ACOTADO a `.cdt-v2` para no
+ * alterar el aspecto del frontend legacy (reglas :focus, gradientes,
+ * animaciones y utilidades Tailwind por defecto más abajo en este archivo,
+ * que siguen intactas para las páginas legacy). Los componentes nuevos de
+ * v2 (frontend/components/ui/*, frontend/pages/_dev/ui.js) deben rendirse
+ * dentro de un contenedor con la clase `cdt-v2`.
+ * ============================================================ */
+.cdt-v2 {
+  font-family: var(--cdt-font-sans);
+  color: var(--cdt-slate-900);
+  -webkit-font-smoothing: antialiased;
+}
+
+.cdt-v2 ::selection {
+  background: var(--cdt-blue-100);
+  color: var(--cdt-blue-900);
+}
+
+/* Foco visible obligatorio (WCAG 2.4.7 / 2.4.11): nunca se depende solo
+ * del color — el anillo tiene además desplazamiento (offset) propio, así
+ * que también es perceptible en escala de grises o con filtros de daltonismo. */
+.cdt-v2 :focus-visible {
+  outline: var(--cdt-focus-ring-width) solid var(--cdt-focus-ring-color);
+  outline-offset: var(--cdt-focus-ring-offset);
+}
+
+/* prefers-reduced-motion dentro del alcance v2: ninguna transición o
+ * animación de un componente nuevo debe superar 0.01ms para quien lo pida.
+ * No se toca la regla global de arriba (ya cubre .float* legacy); esta
+ * capa adicional cubre las transiciones cortas de los componentes de v2
+ * (botones, disclosure, modal) declaradas con `duration-cdt-*`. */
+@media (prefers-reduced-motion: reduce) {
+  .cdt-v2 * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+/* ============================================================
+ * FIN SISTEMA VISUAL V2
+ * ============================================================ */
+
+/* Estilos personalizados para la sección de recursos (LEGACY — usados por
+ * pages/index.js y componentes legacy; no se retiran ni se tocan en F1). */
 .shadow-glow {
   box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
   transition: box-shadow 0.3s ease-in-out;

@@ -1,0 +1,1109 @@
+{
+  "run_id": "0c63affd-8e8c-4f9c-b56f-0a83696d1e74",
+  "status": "no_evidence",
+  "answer": {
+    "usage": {
+      "latency_ms": 21402,
+      "steps_used": 24,
+      "input_tokens": 14555,
+      "output_tokens": 3204,
+      "estimated_cost_usd": 0.012377,
+      "termination_reason": "LLM_BUDGET_EXCEEDED"
+    },
+    "claims": [],
+    "run_id": "0c63affd-8e8c-4f9c-b56f-0a83696d1e74",
+    "status": "no_evidence",
+    "summary": "No encontré evidencia elegible suficiente para responder.",
+    "evidence": [],
+    "intention": {
+      "topic": "¿Cuál es el precio promedio de vivienda en Marte para 2026?",
+      "entity": null,
+      "period": "2026",
+      "operation": "avg",
+      "territory": "Marte",
+      "administrative_terms": []
+    },
+    "narrative": null,
+    "textual_facts": [],
+    "no_evidence_report": {
+      "reason": "LLM_BUDGET_EXCEEDED",
+      "suggestions": [
+        "Reformular la pregunta con tema, territorio o periodo explícitos."
+      ],
+      "external_sources": [],
+      "datasets_reviewed": []
+    },
+    "partial_textual_facts": [],
+    "presentation_warnings": []
+  },
+  "textual_facts": [],
+  "partial_textual_facts": [],
+  "steps": [
+    {
+      "step_number": 1,
+      "node": "select_candidate",
+      "display_message": "hay candidato no intentado",
+      "detail": null
+    },
+    {
+      "step_number": 2,
+      "node": "profile_dataset",
+      "display_message": "falta esquema observado",
+      "detail": {}
+    },
+    {
+      "step_number": 3,
+      "node": "build_plan",
+      "display_message": "falta plan tipado",
+      "detail": {}
+    },
+    {
+      "step_number": 4,
+      "node": "build_plan",
+      "display_message": "reparar plan inválido: UNKNOWN_REFERENCE: 1 validation error for QueryPlan\n  Value error, un plan agregado requiere al menos una métrica [type=value_error, input_value={'dataset_index': 0, 'ope...da en Marte para 2026?'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error",
+      "detail": {}
+    },
+    {
+      "step_number": 5,
+      "node": "next_candidate",
+      "display_message": "plan incompatible con esquema",
+      "detail": null
+    },
+    {
+      "step_number": 6,
+      "node": "select_candidate",
+      "display_message": "hay candidato no intentado",
+      "detail": null
+    },
+    {
+      "step_number": 7,
+      "node": "profile_dataset",
+      "display_message": "falta esquema observado",
+      "detail": {}
+    },
+    {
+      "step_number": 8,
+      "node": "build_plan",
+      "display_message": "falta plan tipado",
+      "detail": {}
+    },
+    {
+      "step_number": 9,
+      "node": "build_plan",
+      "display_message": "reparar plan inválido: UNKNOWN_REFERENCE: 1 validation error for QueryPlan\n  Value error, un plan agregado requiere al menos una métrica [type=value_error, input_value={'dataset_index': 0, 'ope...da en Marte para 2026?'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error",
+      "detail": {}
+    },
+    {
+      "step_number": 10,
+      "node": "next_candidate",
+      "display_message": "plan incompatible con esquema",
+      "detail": null
+    },
+    {
+      "step_number": 11,
+      "node": "select_candidate",
+      "display_message": "hay candidato no intentado",
+      "detail": null
+    },
+    {
+      "step_number": 12,
+      "node": "profile_dataset",
+      "display_message": "falta esquema observado",
+      "detail": {}
+    },
+    {
+      "step_number": 13,
+      "node": "build_plan",
+      "display_message": "falta plan tipado",
+      "detail": {}
+    },
+    {
+      "step_number": 14,
+      "node": "build_plan",
+      "display_message": "reparar plan inválido: UNKNOWN_REFERENCE: operation del plan debe coincidir con la intención: count != avg",
+      "detail": {}
+    },
+    {
+      "step_number": 15,
+      "node": "next_candidate",
+      "display_message": "plan incompatible con esquema",
+      "detail": null
+    },
+    {
+      "step_number": 16,
+      "node": "select_candidate",
+      "display_message": "hay candidato no intentado",
+      "detail": null
+    },
+    {
+      "step_number": 17,
+      "node": "profile_dataset",
+      "display_message": "falta esquema observado",
+      "detail": {}
+    },
+    {
+      "step_number": 18,
+      "node": "build_plan",
+      "display_message": "falta plan tipado",
+      "detail": {}
+    },
+    {
+      "step_number": 19,
+      "node": "build_plan",
+      "display_message": "reparar plan inválido: UNKNOWN_REFERENCE: 1 validation error for QueryPlan\n  Value error, un plan agregado requiere al menos una métrica [type=value_error, input_value={'dataset_index': 0, 'ope...da en Marte para 2026?'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error",
+      "detail": {}
+    },
+    {
+      "step_number": 20,
+      "node": "next_candidate",
+      "display_message": "plan incompatible con esquema",
+      "detail": null
+    },
+    {
+      "step_number": 21,
+      "node": "select_candidate",
+      "display_message": "hay candidato no intentado",
+      "detail": null
+    },
+    {
+      "step_number": 22,
+      "node": "profile_dataset",
+      "display_message": "falta esquema observado",
+      "detail": {}
+    },
+    {
+      "step_number": 23,
+      "node": "build_plan",
+      "display_message": "falta plan tipado",
+      "detail": {}
+    },
+    {
+      "step_number": 24,
+      "node": "abstain",
+      "display_message": "LLM_BUDGET_EXCEEDED",
+      "detail": null
+    }
+  ],
+  "events": [
+    {
+      "seq": 1,
+      "event": "step",
+      "data": {
+        "node": "select_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 1,
+            "candidates": 0,
+            "elapsed_ms": 2464,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": null,
+          "candidate_index": null,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 1,
+        "display_message": "hay candidato no intentado"
+      }
+    },
+    {
+      "seq": 2,
+      "event": "step",
+      "data": {
+        "node": "profile_dataset",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 1,
+            "candidates": 1,
+            "elapsed_ms": 2487,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "49da-69ff",
+          "candidate_index": 0,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 2,
+        "display_message": "falta esquema observado"
+      }
+    },
+    {
+      "seq": 3,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 1,
+            "candidates": 1,
+            "elapsed_ms": 2524,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "49da-69ff",
+          "candidate_index": 0,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 3,
+        "display_message": "falta plan tipado"
+      }
+    },
+    {
+      "seq": 4,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 2,
+            "candidates": 1,
+            "elapsed_ms": 4688,
+            "explorations": 0,
+            "plan_repairs": 1
+          },
+          "runtime": "deterministic",
+          "dataset_id": "49da-69ff",
+          "candidate_index": 0,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": [
+            "UNKNOWN_REFERENCE"
+          ]
+        },
+        "step_number": 4,
+        "display_message": "reparar plan inválido: UNKNOWN_REFERENCE: 1 validation error for QueryPlan\n  Value error, un plan agregado requiere al menos una métrica [type=value_error, input_value={'dataset_index': 0, 'ope...da en Marte para 2026?'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+      }
+    },
+    {
+      "seq": 5,
+      "event": "step",
+      "data": {
+        "node": "next_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 3,
+            "candidates": 1,
+            "elapsed_ms": 7601,
+            "explorations": 0,
+            "plan_repairs": 2
+          },
+          "runtime": "deterministic",
+          "dataset_id": "49da-69ff",
+          "candidate_index": 0,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 5,
+        "display_message": "plan incompatible con esquema"
+      }
+    },
+    {
+      "seq": 6,
+      "event": "step",
+      "data": {
+        "node": "select_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 3,
+            "candidates": 1,
+            "elapsed_ms": 7622,
+            "explorations": 0,
+            "plan_repairs": 2
+          },
+          "runtime": "deterministic",
+          "dataset_id": null,
+          "candidate_index": null,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": [
+            "plan incompatible con esquema"
+          ]
+        },
+        "step_number": 6,
+        "display_message": "hay candidato no intentado"
+      }
+    },
+    {
+      "seq": 7,
+      "event": "step",
+      "data": {
+        "node": "profile_dataset",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 3,
+            "candidates": 2,
+            "elapsed_ms": 7638,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "3rqn-95jx",
+          "candidate_index": 1,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 7,
+        "display_message": "falta esquema observado"
+      }
+    },
+    {
+      "seq": 8,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 3,
+            "candidates": 2,
+            "elapsed_ms": 7667,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "3rqn-95jx",
+          "candidate_index": 1,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 8,
+        "display_message": "falta plan tipado"
+      }
+    },
+    {
+      "seq": 9,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 4,
+            "candidates": 2,
+            "elapsed_ms": 9764,
+            "explorations": 0,
+            "plan_repairs": 1
+          },
+          "runtime": "deterministic",
+          "dataset_id": "3rqn-95jx",
+          "candidate_index": 1,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": [
+            "UNKNOWN_REFERENCE"
+          ]
+        },
+        "step_number": 9,
+        "display_message": "reparar plan inválido: UNKNOWN_REFERENCE: 1 validation error for QueryPlan\n  Value error, un plan agregado requiere al menos una métrica [type=value_error, input_value={'dataset_index': 0, 'ope...da en Marte para 2026?'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+      }
+    },
+    {
+      "seq": 10,
+      "event": "step",
+      "data": {
+        "node": "next_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 5,
+            "candidates": 2,
+            "elapsed_ms": 12352,
+            "explorations": 0,
+            "plan_repairs": 2
+          },
+          "runtime": "deterministic",
+          "dataset_id": "3rqn-95jx",
+          "candidate_index": 1,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 10,
+        "display_message": "plan incompatible con esquema"
+      }
+    },
+    {
+      "seq": 11,
+      "event": "step",
+      "data": {
+        "node": "select_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 5,
+            "candidates": 2,
+            "elapsed_ms": 12375,
+            "explorations": 0,
+            "plan_repairs": 2
+          },
+          "runtime": "deterministic",
+          "dataset_id": null,
+          "candidate_index": null,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": [
+            "plan incompatible con esquema"
+          ]
+        },
+        "step_number": 11,
+        "display_message": "hay candidato no intentado"
+      }
+    },
+    {
+      "seq": 12,
+      "event": "step",
+      "data": {
+        "node": "profile_dataset",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 5,
+            "candidates": 3,
+            "elapsed_ms": 12394,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "4yuj-ta6d",
+          "candidate_index": 2,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 12,
+        "display_message": "falta esquema observado"
+      }
+    },
+    {
+      "seq": 13,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 5,
+            "candidates": 3,
+            "elapsed_ms": 12439,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "4yuj-ta6d",
+          "candidate_index": 2,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 13,
+        "display_message": "falta plan tipado"
+      }
+    },
+    {
+      "seq": 14,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 6,
+            "candidates": 3,
+            "elapsed_ms": 14598,
+            "explorations": 0,
+            "plan_repairs": 1
+          },
+          "runtime": "deterministic",
+          "dataset_id": "4yuj-ta6d",
+          "candidate_index": 2,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": [
+            "UNKNOWN_REFERENCE"
+          ]
+        },
+        "step_number": 14,
+        "display_message": "reparar plan inválido: UNKNOWN_REFERENCE: operation del plan debe coincidir con la intención: count != avg"
+      }
+    },
+    {
+      "seq": 15,
+      "event": "step",
+      "data": {
+        "node": "next_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 7,
+            "candidates": 3,
+            "elapsed_ms": 16669,
+            "explorations": 0,
+            "plan_repairs": 2
+          },
+          "runtime": "deterministic",
+          "dataset_id": "4yuj-ta6d",
+          "candidate_index": 2,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 15,
+        "display_message": "plan incompatible con esquema"
+      }
+    },
+    {
+      "seq": 16,
+      "event": "step",
+      "data": {
+        "node": "select_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 7,
+            "candidates": 3,
+            "elapsed_ms": 16683,
+            "explorations": 0,
+            "plan_repairs": 2
+          },
+          "runtime": "deterministic",
+          "dataset_id": null,
+          "candidate_index": null,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": [
+            "plan incompatible con esquema"
+          ]
+        },
+        "step_number": 16,
+        "display_message": "hay candidato no intentado"
+      }
+    },
+    {
+      "seq": 17,
+      "event": "step",
+      "data": {
+        "node": "profile_dataset",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 7,
+            "candidates": 4,
+            "elapsed_ms": 16696,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "he3q-86dn",
+          "candidate_index": 3,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 17,
+        "display_message": "falta esquema observado"
+      }
+    },
+    {
+      "seq": 18,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 7,
+            "candidates": 4,
+            "elapsed_ms": 16722,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "he3q-86dn",
+          "candidate_index": 3,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 18,
+        "display_message": "falta plan tipado"
+      }
+    },
+    {
+      "seq": 19,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 8,
+            "candidates": 4,
+            "elapsed_ms": 18036,
+            "explorations": 0,
+            "plan_repairs": 1
+          },
+          "runtime": "deterministic",
+          "dataset_id": "he3q-86dn",
+          "candidate_index": 3,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": [
+            "UNKNOWN_REFERENCE"
+          ]
+        },
+        "step_number": 19,
+        "display_message": "reparar plan inválido: UNKNOWN_REFERENCE: 1 validation error for QueryPlan\n  Value error, un plan agregado requiere al menos una métrica [type=value_error, input_value={'dataset_index': 0, 'ope...da en Marte para 2026?'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+      }
+    },
+    {
+      "seq": 20,
+      "event": "step",
+      "data": {
+        "node": "next_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 9,
+            "candidates": 4,
+            "elapsed_ms": 19673,
+            "explorations": 0,
+            "plan_repairs": 2
+          },
+          "runtime": "deterministic",
+          "dataset_id": "he3q-86dn",
+          "candidate_index": 3,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 20,
+        "display_message": "plan incompatible con esquema"
+      }
+    },
+    {
+      "seq": 21,
+      "event": "step",
+      "data": {
+        "node": "select_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 9,
+            "candidates": 4,
+            "elapsed_ms": 19689,
+            "explorations": 0,
+            "plan_repairs": 2
+          },
+          "runtime": "deterministic",
+          "dataset_id": null,
+          "candidate_index": null,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": [
+            "plan incompatible con esquema"
+          ]
+        },
+        "step_number": 21,
+        "display_message": "hay candidato no intentado"
+      }
+    },
+    {
+      "seq": 22,
+      "event": "step",
+      "data": {
+        "node": "profile_dataset",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 9,
+            "candidates": 5,
+            "elapsed_ms": 19704,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "nauz-qkjw",
+          "candidate_index": 4,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 22,
+        "display_message": "falta esquema observado"
+      }
+    },
+    {
+      "seq": 23,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 9,
+            "candidates": 5,
+            "elapsed_ms": 19730,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "nauz-qkjw",
+          "candidate_index": 4,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 23,
+        "display_message": "falta plan tipado"
+      }
+    },
+    {
+      "seq": 24,
+      "event": "step",
+      "data": {
+        "node": "abstain",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 10,
+            "candidates": 5,
+            "elapsed_ms": 21060,
+            "explorations": 0,
+            "plan_repairs": 1
+          },
+          "runtime": "deterministic",
+          "dataset_id": "nauz-qkjw",
+          "candidate_index": 4,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "49da-69ff",
+            "3rqn-95jx",
+            "4yuj-ta6d",
+            "he3q-86dn",
+            "nauz-qkjw",
+            "ni93-8mm5",
+            "e839-6uct",
+            "np3s-diww",
+            "haar-ritp",
+            "h2yr-zfb2"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 24,
+        "display_message": "LLM_BUDGET_EXCEEDED"
+      }
+    },
+    {
+      "seq": 25,
+      "event": "answer",
+      "data": {
+        "usage": {
+          "latency_ms": 21402,
+          "steps_used": 24,
+          "input_tokens": 14555,
+          "output_tokens": 3204,
+          "estimated_cost_usd": 0.012377,
+          "termination_reason": "LLM_BUDGET_EXCEEDED"
+        },
+        "claims": [],
+        "run_id": "0c63affd-8e8c-4f9c-b56f-0a83696d1e74",
+        "status": "no_evidence",
+        "summary": "No encontré evidencia elegible suficiente para responder.",
+        "evidence": [],
+        "intention": {
+          "topic": "¿Cuál es el precio promedio de vivienda en Marte para 2026?",
+          "entity": null,
+          "period": "2026",
+          "operation": "avg",
+          "territory": "Marte",
+          "administrative_terms": []
+        },
+        "narrative": null,
+        "textual_facts": [],
+        "no_evidence_report": {
+          "reason": "LLM_BUDGET_EXCEEDED",
+          "suggestions": [
+            "Reformular la pregunta con tema, territorio o periodo explícitos."
+          ],
+          "external_sources": [],
+          "datasets_reviewed": []
+        },
+        "partial_textual_facts": [],
+        "presentation_warnings": []
+      }
+    }
+  ],
+  "last_event_seq": 25
+}
