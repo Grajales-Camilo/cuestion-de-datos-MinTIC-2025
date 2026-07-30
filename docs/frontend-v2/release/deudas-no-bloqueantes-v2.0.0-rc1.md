@@ -17,9 +17,9 @@ la fabricación de evidencia y una prueba esencial no reproducible.
 |---|---|---:|---|---|
 | D-UI-01 | Producto/accesibilidad | P2 | Abierta | NVDA repite parte del modal de consentimiento. |
 | D-UI-02 | Producto/visual | P2 | Abierta | El badge de aporte manual puede no pintar su texto en el primer render. |
-| D-SEC-01 | Dependencias | P1 | Abierta y monitorizada | `npm audit` no tiene críticas, pero mantiene vulnerabilidades altas y moderadas. |
-| D-CI-01 | Release | P1 | Cerrada | T-505 se verificó en GitHub Actions CI #64. |
-| D-CI-02 | Versionado | P1 | Abierta | El PR hacia `v2` incluye historia acumulada anterior al frontend y requiere revisión de alcance antes de merge. |
+| D-SEC-01 | Dependencias | P1 | Abierta y monitorizada | `npm audit` no tiene críticas; el árbol vigente mantiene 4 altas y 1 moderada en producción, y 18 altas y 1 moderada en total. |
+| D-CI-01 | Release | P1 | Cerrada | T-505 se verificó nuevamente en GitHub Actions CI `30545873307` sobre el HEAD actual. |
+| D-CI-02 | Versionado | P1 | **Cerrada 2026-07-30** | PR #29 integró primero el backend; contra el nuevo `origin/v2`, PR #28 contiene 14 commits y 518 archivos, sin `backend/`, y su merge limpio produce exactamente el árbol frontend. |
 | D-ENV-01 | Windows/Playwright | P3 | Mitigada | El Chromium embebido falla por SideBySide en el equipo revisor. |
 | D-ENV-02 | Tooling | P3 | Abierta | Browserslist y datos de compatibilidad emiten avisos de actualización. |
 | D-ENV-03 | Pruebas DOM | P3 | Abierta | jsdom no implementa por completo canvas, navegación y algunas APIs de Blob. |
@@ -50,18 +50,21 @@ la fabricación de evidencia y una prueba esencial no reproducible.
 
 ### D-SEC-01 — Vulnerabilidades altas y moderadas
 
-Captura de `npm audit` del 2026-07-30, sin ejecutar `audit fix` ni `--force`:
+Captura de `npm audit --json` del 2026-07-30 sobre el árbol post-F9, sin
+ejecutar `audit fix` ni `--force`; las mismas cifras aparecen en CI
+`30545873307` sobre `1945648f`:
 
 | Árbol | Críticas | Altas | Moderadas | Total |
 |---|---:|---:|---:|---:|
-| Producción (`--omit=dev`) | 0 | 9 | 43 | 52 |
-| Completo | 0 | 30 | 48 | 78 |
+| Producción (`--omit=dev`) | 0 | 4 | 1 | 5 |
+| Completo | 0 | 18 | 1 | 19 |
 
-Dependencias directas señaladas en producción: `next` (alta), Tiptap,
-Tailwind y `react-globe.gl` (moderadas). El árbol completo añade principalmente
-la cadena de ESLint/Vite y tooling. El gate vigente bloquea cualquier crítica,
-pero estas deudas deben revisarse periódicamente; los números pueden cambiar
-cuando se actualiza la base de avisos de npm.
+La única dependencia directa señalada en producción es `next`; el árbol
+completo añade como directas `eslint` y `eslint-config-next`, además de sus
+cadenas transitivas de tooling. Las dependencias retiradas en F9 no se
+atribuyen a esta deuda. El gate vigente bloquea cualquier crítica, pero estos
+hallazgos altos y moderados deben revisarse periódicamente; los números pueden
+cambiar cuando se actualiza la base de avisos de npm.
 
 - **Cierre:** preparar incrementos separados con actualización compatible,
   pruebas focalizadas, suite completa, build y auditoría posterior. No aplicar
@@ -69,10 +72,10 @@ cuando se actualiza la base de avisos de npm.
 
 ### D-CI-01 — T-505 verificada en GitHub Actions real
 
-- **Evidencia local:** lint, 899 unitarias, 91 E2E, build, auditor de bundle y
-  gates críticos verdes en F8-02-R1.
-- **Evidencia remota:** GitHub Actions CI #64, commit
-  `de4b999fd1d12f54ce6001c9a0c78c8f5acddcfd`, con jobs Backend y Frontend en
+- **Evidencia local/archivada:** lint, 930 unitarias, 95 E2E, build, auditor
+  de bundle y gates críticos verdes.
+- **Evidencia remota vigente:** GitHub Actions CI `30545873307`, commit
+  `1945648f011570e87676140be604aab477c70a7d`, con jobs Backend y Frontend en
   `success`. El frontend completó lint, unitarias, build, RNF-011, auditorías
   críticas, E2E funcional, RNF-008 aislado y E2E de producción.
 - **Estado:** cerrada el 2026-07-30. El alcance acumulado del PR sigue separado
@@ -122,17 +125,21 @@ cuando se actualiza la base de avisos de npm.
 
 ### D-CI-02 — Alcance acumulado del PR
 
-- **Evidencia:** la rama partió de `5853251`, que no existe en otra rama remota.
-  Frente a `v2`, el PR contiene una historia acumulada de más de 149 commits y
-  706 archivos; los commits
-  creados en este saneamiento sí están acotados al frontend, sus instrucciones
-  y su documentación.
-- **Impacto:** el PR borrador sirve para CI y conserva la historia, pero no debe
-  presentarse como un diff aislado de tres commits ni fusionarse sin revisar la
-  historia preexistente acumulada.
-- **Cierre:** acordar y ejecutar una estrategia de integración: revisar la serie
-  completa, integrar primero su rama base o construir una serie apilada sin
-  reescrituras destructivas del trabajo actual.
+- **Estado:** cerrada técnicamente el 2026-07-30. PR #29 integró primero el
+  backend determinista en `v2`; su merge commit es
+  `5b138a74d91eac98ec7cf3bed943364f1940fd2d`.
+- **Evidencia Git autoritativa:** HEAD de `feat/frontend-v2`
+  `1945648f011570e87676140be604aab477c70a7d`; base `origin/v2`
+  `5b138a74d91eac98ec7cf3bed943364f1940fd2d`; merge-base
+  `fa08ee5bc2ab2ac728cab4173a9430e1fc8497e5`; diferencia de 14 commits y
+  518 archivos, ninguno bajo `backend/`.
+- **Prueba de integración:** `git merge-tree --write-tree origin/v2
+  origin/feat/frontend-v2` terminó sin conflicto y produjo el árbol
+  `acc638e708a77aea84ad5ec520aa125c2299fa0a`, exactamente igual al árbol de
+  `origin/feat/frontend-v2`.
+- **Resultado:** desapareció la historia acumulada que motivaba la deuda; el
+  alcance restante de PR #28 es frontend, documentación e instrucciones
+  asociadas. El PR permanece borrador por decisión de proceso, no por D-CI-02.
 
 ### D-PERF-01 — Contención de RNF-008 bajo paralelismo
 
@@ -165,6 +172,9 @@ cuando se actualiza la base de avisos de npm.
 - D-DOC-01 se cerró al implementar y verificar las plantillas libre, MGA y
   plan de desarrollo exigidas por RF-101 (`1ddc25f`, `199fa1e`, CI
   `30543431200`).
+- D-CI-02 se cerró después de que PR #29 integrara primero el backend: 14
+  commits, 518 archivos, cero `backend/` y árbol de merge idéntico al de
+  `feat/frontend-v2`.
 - La vulnerabilidad crítica de Next 14.1.3 se cerró al actualizar dentro de la
   línea 14.x.
 - La vulnerabilidad crítica de Vitest 2 se cerró con Vitest 4.1.10 y Vite 6.4.3.
