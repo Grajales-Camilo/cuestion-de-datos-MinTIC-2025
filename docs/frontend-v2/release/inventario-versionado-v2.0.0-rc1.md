@@ -53,7 +53,7 @@ modifica producto ni pruebas.
 
 El PR borrador apunta a `v2` porque el workflow de CI solo escucha esa rama.
 El commit base local `5853251` no está contenido en ninguna otra rama remota;
-por eso el diff remoto muestra 147 commits y 706 archivos frente a `v2`, no
-solo los commits anteriores. Esta diferencia no se ocultó ni se resolvió con
+por eso el diff remoto muestra una historia acumulada de más de 149 commits y
+706 archivos frente a `v2`, no solo los commits anteriores. Esta diferencia no se ocultó ni se resolvió con
 rebase o force-push: queda registrada como D-CI-02 y debe resolverse antes del
 merge.

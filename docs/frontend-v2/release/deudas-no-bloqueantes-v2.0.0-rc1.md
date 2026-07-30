@@ -25,7 +25,6 @@ la fabricación de evidencia y una prueba esencial no reproducible.
 | D-ENV-03 | Pruebas DOM | P3 | Abierta | jsdom no implementa por completo canvas, navegación y algunas APIs de Blob. |
 | D-ENV-04 | Git local | P3 | Abierta | El archivo global de exclusiones y `.pytest_cache` generan avisos de permisos. |
 | D-ENV-05 | Navegador MCP | P3 | Abierta | El panel MCP no siempre compone capturas; Playwright es el respaldo reproducible. |
-| D-ENV-06 | Grafo de código | P3 | Abierta | La reindexación MCP conserva una instantánea parcial y omite símbolos F7/F8 ya versionados. |
 | D-PERF-01 | Arnés E2E | P3 | Mitigada | RNF-008 puede ser inestable bajo paralelismo alto; tiene suite aislada de 1 worker. |
 | D-DOC-01 | Decisión de producto | P2 | Pendiente humana | D-6: contenido de la plantilla de plan de desarrollo no está aprobado. |
 
@@ -121,22 +120,11 @@ cuando se actualiza la base de avisos de npm.
 - **Cierre:** verificar una actualización del MCP que capture las mismas
   superficies de forma estable; Playwright sigue siendo la evidencia primaria.
 
-### D-ENV-06 — Índice parcial de codebase-memory-mcp
-
-- **Evidencia:** dos reindexaciones del proyecto canónico, una completa y otra
-  moderada, devolvieron 11.865 nodos y 41.604 aristas. El grafo encuentra
-  `useAgentRun`, pero no `normalizeExternalSources`, `buildManualEntryAttrs`,
-  `exportDocumentToDocx` ni `useDocumentAutosave`, aunque Git confirma que esos
-  archivos están rastreados en el commit del candidato.
-- **Impacto:** el descubrimiento de código reciente mediante MCP puede ser
-  incompleto; la lectura directa focalizada del worktree sigue siendo necesaria.
-- **Cierre:** forzar una reconstrucción real del proyecto canónico y comprobar
-  por búsqueda de símbolos que los módulos F7/F8 aparecen en el grafo.
-
 ### D-CI-02 — Alcance acumulado del PR
 
 - **Evidencia:** la rama partió de `5853251`, que no existe en otra rama remota.
-  Frente a `v2`, el PR contiene 147 commits y 706 archivos; los tres commits
+  Frente a `v2`, el PR contiene una historia acumulada de más de 149 commits y
+  706 archivos; los commits
   creados en este saneamiento sí están acotados al frontend, sus instrucciones
   y su documentación.
 - **Impacto:** el PR borrador sirve para CI y conserva la historia, pero no debe
@@ -172,6 +160,8 @@ cuando se actualiza la base de avisos de npm.
   `trailingNode` y cuatro regresiones conductuales de F8-02-R1.
 - El flake histórico de RNF-008 ya no comparte el arnés funcional paralelo;
   permanece en seguimiento como D-PERF-01, no como fallo abierto del producto.
+- D-ENV-06 se cerró al eliminar los dos índices duplicados y reconstruir uno
+  solo desde cero: 12.646 nodos, 43.590 aristas y símbolos F7/F8 verificables.
 
 ## Regla de mantenimiento
 
