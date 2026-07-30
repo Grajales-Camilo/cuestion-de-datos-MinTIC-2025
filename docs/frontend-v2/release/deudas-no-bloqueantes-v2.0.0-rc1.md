@@ -26,7 +26,7 @@ la fabricación de evidencia y una prueba esencial no reproducible.
 | D-ENV-04 | Git local | P3 | Abierta | El archivo global de exclusiones y `.pytest_cache` generan avisos de permisos. |
 | D-ENV-05 | Navegador MCP | P3 | Abierta | El panel MCP no siempre compone capturas; Playwright es el respaldo reproducible. |
 | D-PERF-01 | Arnés E2E | P3 | Mitigada | RNF-008 puede ser inestable bajo paralelismo alto; tiene suite aislada de 1 worker. |
-| D-DOC-01 | Decisión de producto | P2 | Estructuras aprobadas 2026-07-30; implementación pendiente | D-6: estructuras de las plantillas plan de desarrollo (ADR-0004) y MGA (ADR-0005) aprobadas; código aún no escrito, y RF-101 sigue sin cumplirse hasta que libre, MGA y plan de desarrollo estén implementadas y verificadas. |
+| D-DOC-01 | Decisión de producto | P2 | **Cerrada 2026-07-30** | Las estructuras aprobadas en ADR-0004/ADR-0005 fueron implementadas y verificadas; RF-101 queda cumplido. |
 
 ## Detalle y condición de cierre
 
@@ -145,30 +145,26 @@ cuando se actualiza la base de avisos de npm.
 
 ### D-DOC-01 — Plantillas MGA y plan de desarrollo (RF-101)
 
-- **Estado:** estructura de contenido aprobada por Juan Camilo Grajales B. el
-  2026-07-30 y registrada en
-  `docs/frontend-v2/adr/ADR-0004-plantilla-plan-de-desarrollo.md` (cinco
-  secciones: Diagnóstico, Visión y articulación estratégica, Programas
-  indicadores y metas, PPI, Seguimiento y evaluación). **No se ha escrito
-  ningún código todavía** — la condición de cierre exigía aprobación humana
-  explícita + registro mediante ADR *antes* de implementar, y eso ya ocurrió;
-  lo pendiente ahora es el incremento de implementación, no la decisión.
-- **Impacto:** bloqueaba únicamente esta plantilla, no el documento libre ni
-  las funciones cerradas hasta F8. Sigue bloqueando que RF-101 se declare
-  cumplido: RF-101 exige libre + MGA + plan de desarrollo, y ninguna de las
-  dos últimas está implementada ni verificada todavía. La estructura de la
-  plantilla MGA para v2 también fue auditada y aprobada por separado
-  (`docs/frontend-v2/adr/ADR-0005-plantilla-mga.md`, siete secciones); la
-  plantilla legacy de MGA cubría solo contenidos del módulo de
-  Identificación, así que no se reutilizó automáticamente.
-- **Cierre definitivo de esta entrada de deuda:** implementar y verificar
-  (pruebas + revisión visual) las tres plantillas de RF-101 — libre (ya
-  existe), MGA (estructura aprobada, ADR-0005; implementación pendiente) y
-  plan de desarrollo (estructura aprobada, ADR-0004; implementación
-  pendiente).
+- **Estado:** **cerrada el 2026-07-30**. Las estructuras aprobadas por Juan
+  Camilo Grajales B. en ADR-0004 (plan de desarrollo, cinco secciones) y
+  ADR-0005 (MGA, siete secciones) se implementaron junto con la plantilla
+  libre en `frontend/lib/document/documentModel.js`; la selección accesible
+  para documentos nuevos quedó integrada mediante `TemplatePicker.jsx`.
+- **Evidencia de cierre:** núcleo, validación, persistencia y exportación en
+  commit `1ddc25f`; selector visual, restauración no destructiva y regresiones
+  E2E en `199fa1e`; 930 pruebas unitarias y 95 E2E funcionales verdes; build,
+  auditoría de bundle y CI remoto `30543431200` en verde para Backend y
+  Frontend.
+- **Resultado:** RF-101 queda **implementado y verificado**. Un documento
+  restaurado se abre intacto y no ofrece cambio de plantilla. El futuro flujo
+  “Nuevo documento” con respaldo y confirmación no forma parte de RF-101 ni
+  reabre D-DOC-01.
 
 ## Deudas cerradas o absorbidas por el diseño vigente
 
+- D-DOC-01 se cerró al implementar y verificar las plantillas libre, MGA y
+  plan de desarrollo exigidas por RF-101 (`1ddc25f`, `199fa1e`, CI
+  `30543431200`).
 - La vulnerabilidad crítica de Next 14.1.3 se cerró al actualizar dentro de la
   línea 14.x.
 - La vulnerabilidad crítica de Vitest 2 se cerró con Vitest 4.1.10 y Vite 6.4.3.

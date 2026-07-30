@@ -7,19 +7,18 @@ related_targets: []
 
 ## Alcance y modo
 
-Ruta objetivo: `frontend/pages/v2/index.js` — el lienzo de políticas con
-copiloto lateral, **aún no implementado como aplicación funcional**. Modo:
-**Operate**. Este brief cubre la superficie completa lienzo+copiloto;
+Ruta objetivo: `frontend/pages/app.js`, publicada localmente como `/app` —
+el lienzo de políticas con copiloto lateral ya implementado como aplicación
+funcional. Modo: **Operate**. Este brief cubre la superficie completa lienzo+copiloto;
 DESIGN.md fija el mundo visual (Pulso por lo Público), este documento fija
 cómo se estructura *esta* superficie dentro de ese mundo.
 
-F1-01 (2026-07-27) implementó el sistema de tokens, los fundamentos
-globales accesibles y la biblioteca de primitivas
-(`frontend/components/ui/`) que este documento y DESIGN.md ya describen
-como código real. F1-01 **no** implementó `frontend/pages/v2/index.js`, el
-lienzo, el copiloto funcional, `CopilotPanel`, `RunTimeline`,
-`EvidenceCard`, ni ninguna conexión a SSE/REST/reducer — eso pertenece a un
-incremento funcional posterior, todavía sin autorizar.
+F1-01 (2026-07-27) inició el sistema de tokens, los fundamentos accesibles y
+la biblioteca de primitivas. Los incrementos F2–F8 implementaron después el
+lienzo, `CopilotPanel`, `RunTimeline`, `EvidenceCard` y las conexiones
+REST/SSE/reducer en `/app`. RF-101 quedó completo el 2026-07-30 con las
+plantillas libre, MGA y plan de desarrollo, incluido el selector accesible
+para documentos nuevos (`1ddc25f`, `199fa1e`, CI `30543431200`).
 
 ## Audiencia, tarea, acción, prueba
 
@@ -68,19 +67,17 @@ Aprobada explícitamente por Juan Camilo Grajales B. (2026-07-27) entre las
 (`docs/frontend-v2/design/design-01/variant-a-ruta-central.html`,
 capturas en `docs/frontend-v2/design/design-01/screenshots/`).
 
-**Patrón estructural a llevar a la implementación funcional de
-`RunTimeline`** (incremento posterior, no F1-01): los pasos de la
+**Patrón estructural vigente en la implementación funcional de
+`RunTimeline`:** los pasos de la
 investigación forman una ruta vertical continua con línea conectora dentro
 del copiloto; cada paso es un punto de esa ruta (icono de verificación +
 mensaje en español claro + tiempo transcurrido); la tarjeta de evidencia
 final se funde como el último punto de la ruta — el destino, no un bloque
 aparte. La ruta y la evidencia comparten un solo eje visual continuo de
-arriba a abajo. F1-01 ya construyó las primitivas visuales que ese
-componente usará (`Card`, `Badge`, tokens de espaciado/color), pero
-`RunTimeline` en sí — con estado, datos en vivo y conexión al agente — no
-existe todavía.
+arriba a abajo. La implementación usa las primitivas `Card`, `Badge` y los
+tokens de espaciado/color construidos desde F1-01.
 
-**Qué NO debe literalizarse del comp estático al construir `RunTimeline`:**
+**Reglas que la implementación debe preservar frente al comp estático:**
 - El contenido (pregunta, 8 pasos concretos, cifra `3,9660000000000000`,
   dataset `ji8i-4anb`) es de una sola corrida real capturada, usada para
   probar la composición — no es un guion de copy fijo. El componente real
@@ -92,11 +89,9 @@ existe todavía.
   en la implementación funcional deben derivarse en vivo de los eventos
   SSE reales (no hay reloj fabricado). F1-01 no deriva ningún tiempo en
   vivo — solo muestra los valores `elapsed_ms` reales y fijos del fixture.
-- El estado mostrado es el terminal `completed`; la implementación
-  funcional debe definir cómo se ve la ruta en pasos intermedios (paso
-  activo/pulsante) y en los otros estados terminales (`no_evidence`,
-  `interrupted`, `failed`, `detached`) — el patrón de "punto por paso" debe
-  extenderse a esos casos, no se decidió aún cómo.
+- El comp original mostraba solo `completed`; la aplicación implementada
+  cubre también pasos intermedios y estados `no_evidence`, `interrupted`,
+  `failed` y `detached`, conservando el patrón de ruta verificable.
 - El borde de acento lateral (`border-left`) de la cita insertada en el
   lienzo fue retirado tras revisión del hook de diseño de Impeccable
   (patrón "side-tab", tell reconocible de UI genérica de IA); la versión
@@ -106,8 +101,9 @@ existe todavía.
   F1-01 (ver DESIGN.md, sección Typography/Shapes/Layout) — no siguen
   pendientes.
 
-## Decisiones sin resolver (para un incremento funcional posterior)
+## Decisiones sin resolver
 
-- Tratamiento de la ruta en estados no terminales/no-completados (ver
-  arriba) — no cubierto por DESIGN-01 ni por F1-01, queda para el
-  incremento funcional que implemente `RunTimeline` con datos en vivo.
+No queda una decisión visual abierta en este brief para RF-101. El futuro
+flujo “Nuevo documento” con respaldo y confirmación de reemplazo es una
+decisión de producto separada y no forma parte del selector inicial ya
+implementado.

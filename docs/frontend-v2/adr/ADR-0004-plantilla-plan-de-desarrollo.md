@@ -2,8 +2,9 @@
 
 ## Estado
 
-Aceptado (decisión de **estructura de contenido**). **Implementación pendiente** —
-este ADR no autoriza por sí solo ningún cambio de código.
+Aceptado e implementado. Este ADR autorizó únicamente la **estructura de
+contenido**; la implementación se realizó después mediante incrementos
+separados y auditados.
 
 ## Contexto y fuerzas en tensión
 
@@ -135,15 +136,24 @@ sin contenido fabricado) para la decisión abierta D-6 registrada en
 > Seguimiento y evaluación" — con los cinco puntos de decisión reproducidos
 > en la sección "Decisión" de este ADR.
 
-**Implementación:** ninguna todavía. No se ha tocado
-`frontend/lib/document/documentModel.js` ni ningún otro archivo de código
-como parte de esta decisión. El incremento de código que declare
-`templateId` para esta plantilla, cablee las cinco secciones y añada las
-pruebas correspondientes queda pendiente de un encargo separado, posterior
-a la auditoría de la plantilla MGA.
+## Estado de implementación y verificación
+
+La decisión se implementó posteriormente, sin modificar el contenido
+aprobado en este ADR:
+
+- `1ddc25f`: `templateId` `plan-de-desarrollo`, factoría con las cinco
+  secciones literales, validación fail-closed, persistencia y exportación
+  DOCX.
+- `199fa1e`: selector accesible para crear documentos, restauración intacta
+  de documentos existentes y cobertura E2E del flujo visual.
+- CI `30543431200`: Backend y Frontend verdes, incluidas 930 pruebas
+  unitarias, build, auditoría de bundle y 95 E2E funcionales.
+
+Con esta evidencia, la condición de implementación y verificación de esta
+plantilla queda satisfecha como parte del cierre de RF-101.
 
 ## Sucesor
 
-Pendiente: la auditoría y propuesta de estructura de la plantilla MGA para
-v2 (documento aparte) precede al incremento de código que implemente las
-tres plantillas de RF-101 (libre, MGA, plan de desarrollo) juntas.
+ADR-0005 resolvió la estructura MGA. Los incrementos `1ddc25f` y `199fa1e`
+implementaron y verificaron conjuntamente las tres plantillas mínimas de
+RF-101; no queda sucesor pendiente para esta decisión.

@@ -74,9 +74,11 @@ en `specs/constitution.md` Art. I y `spec.md` RF-205/RF-208.
 - El backend determinista (FastAPI) es el único modelo funcional y de
   aceptación; el frontend legacy (Next.js Pages Router actual) es solo
   andamiaje e inventario, nunca base de aceptación ni *fallback* funcional.
-- **Indeciso / abierto:** el contenido exacto de la plantilla "plan de
-  desarrollo" (RF-101) requiere criterio de politólogo y está pendiente de
-  redacción humana (`docs/frontend-v2/implementation-plan.md` D-6).
+- **Decisión cerrada e implementada:** las estructuras de las plantillas
+  "plan de desarrollo" y MGA fueron aprobadas con criterio humano en
+  ADR-0004/ADR-0005 e implementadas junto con la plantilla libre. RF-101 está
+  verificado mediante los commits `1ddc25f`/`199fa1e` y el CI
+  `30543431200`.
 
 ## Brand Commitments
 

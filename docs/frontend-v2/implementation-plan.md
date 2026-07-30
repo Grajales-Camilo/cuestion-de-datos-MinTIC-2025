@@ -110,14 +110,14 @@ Forma real de un claim (RF-212 ya implementado en T-617C): `claim_id, claim, cla
 | `components/canvas/SectionCard.js` | 41 | Tarjeta de sección con botones "Investigar" / "Auditar (Riesgos)" | **Refactor profundo** (colores fuera de paleta: `indigo-600`, `red-600`; sin roles ARIA) |
 | `components/canvas/CanvasLayout.js` | 21 | Layout 2/3 + 1/3 | **Refactor:** el aside es `hidden lg:flex` → **el copiloto no existe bajo 1024 px**. Rompe RNF-007 (reflujo 320 px) y ESC-04 en móvil. |
 | `components/canvas/CanvasHeader.js` | 13 | Encabezado | **Reutilizable con ajustes menores** |
-| `components/canvas/TemplateSelector.js` | 62 | Selector de plantilla | **Refactor** (a11y + paleta) |
+| `components/canvas/TemplateSelector.js` | 62 | Selector de plantilla legacy | **No reutilizado en v2.** RF-101 usa el componente nuevo y accesible `components/document/TemplatePicker.jsx`. |
 | `components/common/OnboardingTour.js` | 151 | Tour con `react-joyride` | **Fuera de alcance v2.0**; retirar dependencia (§15) |
 | `components/wizard/*.js` | 653 | 4 pasos del wizard legacy | **Conservar intacto** hasta T-704 |
-| `data/policyTemplates.js` | 95 | Plantillas MGA / CONPES / Policy Brief | **Reutilizable como datos**, pero **incompleto frente a RF-101**: falta "plan de desarrollo". Se conserva CONPES y Policy Brief como extras. |
+| `data/policyTemplates.js` | 95 | Plantillas MGA / CONPES / Policy Brief legacy | **Conservado intacto hasta T-704; no es fuente de RF-101.** Las tres plantillas v2 viven en `lib/document/documentModel.js`, conforme a ADR-0004/ADR-0005. |
 | `styles/globals.css` | 85 | Estilos globales | **Refactor:** `:focus { outline: 2px solid #9b2c2c }` es **rojo**, fuera de la paleta azul (Art. V.1). Lo bueno: ya respeta `prefers-reduced-motion` y evita zoom iOS. |
 | `tailwind.config.js` | 35 | Config Tailwind | **Reescribir:** no define **ningún** token de plan.md §7. Solo animaciones decorativas. |
 
-**Resumen de reutilización real:** `data/policyTemplates.js` (datos), `CanvasHeader.js`, dos bloques de `globals.css` (reduced-motion, font-size iOS ≥16 px), y el andamiaje del proyecto (Next+Tailwind+PostCSS+Tiptap+Chart.js+PapaParse). Todo lo demás es nuevo.
+**Resumen de reutilización real:** `CanvasHeader.js`, dos bloques de `globals.css` (reduced-motion, font-size iOS ≥16 px), y el andamiaje del proyecto (Next+Tailwind+PostCSS+Tiptap+Chart.js+PapaParse). `data/policyTemplates.js` permanece únicamente como legado hasta T-704; RF-101 no reutilizó sus datos. Todo lo demás es nuevo.
 
 ### 2.3 Pruebas, accesibilidad, persistencia y errores: estado actual
 
@@ -173,7 +173,7 @@ Forma real de un claim (RF-212 ya implementado en T-617C): `claim_id, claim, cla
 
 | Tarea/requisito | Estado actual | Archivo implicado | Brecha | Dependencia | Evidencia necesaria |
 |---|---|---|---|---|---|
-| **RF-101** Lienzo por secciones, plantillas (libre, MGA, plan de desarrollo) + editor enriquecido | Parcial: hay canvas y plantillas MGA/CONPES/Policy Brief | `components/canvas/*`, `data/policyTemplates.js` | Falta plantilla **plan de desarrollo**; falta plantilla **libre** explícita; editor sin extensiones de v2 | F1, F5 | Captura de las 3 plantillas mínimas + prueba de render |
+| **RF-101** Lienzo por secciones, plantillas (libre, MGA, plan de desarrollo) + editor enriquecido | **Implementado y verificado 2026-07-30** | `lib/document/documentModel.js`, `components/document/TemplatePicker.jsx`, `components/document/DocumentSections.jsx`, `components/canvas/editor/DocumentEditor.jsx` | Sin brecha para el mínimo normativo; “Nuevo documento” con reemplazo seguro queda fuera de RF-101 | F1, F5 | Commits `1ddc25f` + `199fa1e`; 930 unitarias y 95 E2E funcionales verdes; CI `30543431200` |
 | **RF-102** Autoguardado ≤5 s + exportación ofimática | **No existe** | ninguno | Autoguardado, esquema versionado, migración, export `.docx` | F6 | Prueba de temporizador ≤5 s; `.docx` abierto en Word |
 | **RF-103** Cita completa preservada + exportada | **No existe** | ninguno | Nodo Tiptap `evidenceCitation` con los 6 campos de Art. I.2 | F5, F6 | Prueba: nodo sin cita → inserción rechazada; `.docx` con nota al pie |
 | **RF-104** Investigar desde una sección con su contexto | Parcial: `handleAskCopilot` arma un prompt gigante | `PolicyCanvasMain.js:63-87` | Debe mapear a `context_hint` ≤1000 chars, no a un prompt | F3 | Prueba unitaria de truncado + payload real |
@@ -642,7 +642,7 @@ La exportación ocurre **100 % en el cliente** (`Packer.toBlob` + descarga por `
 
 ### 9.3 Plantillas (RF-101)
 
-Mínimo normativo: **libre**, **MGA**, **plan de desarrollo**. Se conservan CONPES y Policy Brief del legacy como extras opcionales. La plantilla legacy "MGA" (`frontend/data/policyTemplates.js`) cubre solo contenidos del módulo de Identificación de la Metodología General Ajustada del DNP — **no constituye una plantilla MGA completa y aprobada para v2**; su estructura para v2 ya está aprobada — ver `docs/frontend-v2/adr/ADR-0005-plantilla-mga.md` (implementación pendiente). La plantilla "plan de desarrollo" **no existía** y su estructura ya se decidió: **D-6, cerrada — ver `docs/frontend-v2/adr/ADR-0004-plantilla-plan-de-desarrollo.md`** (implementación aún pendiente).
+Mínimo normativo: **libre**, **MGA**, **plan de desarrollo**. Las tres están implementadas y verificadas en v2 (`documentModel.js` + `TemplatePicker.jsx`), con las estructuras aprobadas en ADR-0004 y ADR-0005. La plantilla legacy "MGA" (`frontend/data/policyTemplates.js`) cubre solo contenidos del módulo de Identificación de la Metodología General Ajustada del DNP y **no** se reutilizó como fuente de RF-101; CONPES y Policy Brief siguen siendo exclusivamente legado hasta T-704 y no se presentan como plantillas v2. Evidencia de cierre: commits `1ddc25f` y `199fa1e`, pruebas locales completas y CI `30543431200` en verde.
 
 ---
 
@@ -1013,7 +1013,7 @@ Se conserva el orden propuesto por el usuario con **dos ajustes derivados de dep
 | **D-3** | **H1 — alias `dim_N`**: ¿parcheo solo en el cliente, o se pide un campo aditivo al backend (`columns: [{alias, field_name, display_name}]`)? | Cambiar el backend exige enmendar `contracts/api-rest.md` §5 y coordinar con T-617 | **Ambas**: cliente ya (no bloquea), y **proponer** la tarea backend para retirar el parseo después | F4 (parcialmente) |
 | **D-4** | **H4 — RF-503 sin `chart_suggestion`**: ¿el cliente deriva la gráfica o se difiere RF-503? | RF-503 es un requisito de spec.md; derivar en cliente roza la frontera de Art. I | Derivar **solo** con 1 dimensión + 1 métrica + ≥3 filas, replicando valores sin calcular nada nuevo; y abrir tarea backend | F4 |
 | **D-5** | **H5 — `datasets_reviewed` y `external_sources` vacíos** en el determinista: ESC-03 queda incompleto y T-506 pierde el prellenado | Es una brecha funcional del backend, no del frontend | Frontend degrada con elegancia y **no inventa**; abrir tarea backend con prioridad, porque ESC-03 es un escenario normativo | F4/F7 (degradado) |
-| **D-6** | **Contenido de la plantilla "plan de desarrollo"** (RF-101) | Requiere criterio de politólogo (mismo caso que T-601) | **Cerrada 2026-07-30 — ver `docs/frontend-v2/adr/ADR-0004-plantilla-plan-de-desarrollo.md`.** Estructura híbrida de 5 secciones aprobada; implementación aún pendiente (requiere además la plantilla MGA para declarar RF-101 cumplido). | F5 |
+| **D-6** | **Contenido de la plantilla "plan de desarrollo"** (RF-101) | Requiere criterio de politólogo (mismo caso que T-601) | **Cerrada 2026-07-30 — ver ADR-0004.** Estructura híbrida de 5 secciones aprobada, implementada y verificada junto con libre y MGA; RF-101 queda cumplido (`1ddc25f`, `199fa1e`, CI `30543431200`). | F5 |
 | **D-7** | **Ruta del app v2**: `/app` nueva vs. reemplazar `/` | Afecta a usuarios actuales de cuestiondedatos.com | `/app` hasta T-704; luego decidir el cambio de landing | F3 |
 | **D-8** | **Alcance del explorador de catálogo (F10)** | No lo exige ningún RF de frontend | Fuera del alcance mínimo de v2.0 | — |
 | **D-9** | **Texto exacto del consentimiento RF-802** | Tiene efectos legales/de privacidad | Borrador del agente, **aprobación literal del humano** | F3 |
