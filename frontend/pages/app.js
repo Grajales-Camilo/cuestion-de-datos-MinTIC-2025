@@ -16,8 +16,13 @@ import {
 import { ConsentDialog } from "../components/consent";
 import { HistoryList } from "../components/history";
 import { LiveRegion } from "../components/ui/LiveRegion";
-import { DocumentSections, DocumentPersistenceStatus, ExportDocumentButton } from "../components/document";
-import { createFreeTemplateDocument } from "../lib/document/documentModel";
+import {
+  DocumentSections,
+  DocumentPersistenceStatus,
+  ExportDocumentButton,
+  TemplatePicker,
+} from "../components/document";
+import { createTemplateDocument } from "../lib/document/documentModel";
 import { useDocumentAutosave } from "../hooks/useDocumentAutosave";
 import { RUN_STATUS } from "../lib/agent/runStates";
 
@@ -54,11 +59,19 @@ function useBackendUrl() {
  *
  * F5-02 integra un documento Tiptap en memoria y la inserción segura de la
  * evidencia de F4 mediante el contrato cerrado por F5-01. F5-03A añade el
- * modelo documental versionado por secciones (única plantilla real: la
- * libre) y "Investigar esta sección", que deriva `context_hint` del texto
- * visible de la sección y lo envía junto a una pregunta escrita por el
- * humano — sin LLM ni pregunta fabricada en este incremento. El contenido
- * de la plantilla "plan de desarrollo" sigue bloqueado por D-6 PENDIENTE.
+ * modelo documental versionado por secciones y "Investigar esta sección",
+ * que deriva `context_hint` del texto visible de la sección y lo envía
+ * junto a una pregunta escrita por el humano — sin LLM ni pregunta
+ * fabricada en este incremento.
+ *
+ * RF-101-01 implementó el modelo/exportación de las tres plantillas
+ * aprobadas por RF-101 (libre, MGA — ADR-0005, plan de desarrollo —
+ * ADR-0004). RF-101-02 añade la capa visual: si al terminar la
+ * restauración (F6-01) no hay documento recuperable, se muestra
+ * `TemplatePicker` para que el usuario elija explícitamente una de las
+ * tres; un documento restaurado nunca pasa por el selector ni se
+ * reemplaza. Cambiar la plantilla de un documento ya abierto y el flujo
+ * "Nuevo documento" quedan fuera de este incremento a propósito.
  */
 export default function AppPage() {
   const { url: baseUrl, error: backendUrlError } = useBackendUrl();
@@ -107,19 +120,40 @@ export default function AppPage() {
   //
   // Arranca en `null` a propósito (F6-01, barrera load-before-save):
   // `DocumentEditor` es no controlado, así que si `DocumentSections` se
-  // montara primero con la plantilla libre por defecto y LUEGO se
-  // reemplazara por un documento restaurado de `cdd.doc.v1`, el editor ya
-  // montado seguiría mostrando el contenido viejo. `documentModel` se
-  // siembra una única vez, cuando `useDocumentAutosave` termina de decidir
-  // si hay algo que restaurar (`autosave.isRestoring` pasa a `false`); hasta
-  // entonces no se renderiza `DocumentSections` (ver JSX más abajo).
+  // montara primero con una plantilla por defecto y LUEGO se reemplazara
+  // por un documento restaurado de `cdd.doc.v1`, el editor ya montado
+  // seguiría mostrando el contenido viejo. `documentModel` se siembra desde
+  // `autosave.restoredDocument` EXACTAMENTE UNA VEZ, cuando
+  // `useDocumentAutosave` termina de decidir si hay algo que restaurar
+  // (`autosave.isRestoring` pasa a `false`) — nunca se recrea, normaliza ni
+  // reemplaza un documento restaurado, y no se llama `createTemplateDocument`
+  // en esa rama.
+  //
+  // RF-101-02: si al terminar la restauración NO hay `restoredDocument`
+  // (`EMPTY`/`CORRUPT`/`INVALID`/`UNAVAILABLE`/`FUTURE_VERSION`/
+  // `MIGRATION_FAILED`), `documentModel` permanece en `null` a propósito —
+  // ya no se crea la plantilla libre automáticamente. El JSX de abajo
+  // muestra `TemplatePicker` en ese estado ("awaiting-template"); solo
+  // `handleCreateDocument` (disparado por la confirmación explícita del
+  // usuario) puede sacar a `documentModel` de `null` en ese caso.
   const [documentModel, setDocumentModel] = useState(null);
   const autosave = useDocumentAutosave();
 
   useEffect(() => {
     if (documentModel !== null || autosave.isRestoring) return;
-    setDocumentModel(autosave.restoredDocument ?? createFreeTemplateDocument());
+    if (autosave.restoredDocument === null) return; // awaiting-template: espera selección del usuario
+    setDocumentModel(autosave.restoredDocument);
   }, [documentModel, autosave.isRestoring, autosave.restoredDocument]);
+
+  // Única forma de crear un documento nuevo en este incremento (RF-101-02):
+  // el usuario elige y confirma una plantilla en TemplatePicker. Nunca se
+  // preselecciona nada ni se llama automáticamente. El autoguardado
+  // existente persiste el resultado mediante el flujo normal
+  // (`notifyChange`, más abajo) — esta función nunca escribe en
+  // `localStorage` directamente.
+  const handleCreateDocument = useCallback((templateId) => {
+    setDocumentModel(createTemplateDocument(templateId));
+  }, []);
 
   useEffect(() => {
     if (documentModel !== null) autosave.notifyChange(documentModel);
@@ -333,18 +367,21 @@ export default function AppPage() {
       <LiveRegion message={liveRegionMessage} />
 
       {backendUrlError ? (
-        <main id="contenido" className="p-cdt-6">
+        <main id="contenido" tabIndex={-1} className="p-cdt-6">
           <p role="alert" className="text-cdt-sm text-cdt-error">
             No se pudo conectar con el servicio: {backendUrlError}
           </p>
         </main>
       ) : documentModel === null ? (
-        // Restauración de F6-01 aún en curso (`autosave.isRestoring`):
-        // `DocumentSections` no se monta todavía — ver el comentario junto a
-        // `useState(null)` más arriba sobre por qué el editor no puede
-        // mostrarse primero con la plantilla libre y "cambiar de idea"
-        // después.
-        <main id="contenido" className="p-cdt-6">
+        // `autosave.isRestoring`: restauración de F6-01 aún en curso —
+        // `DocumentSections` NI `TemplatePicker` se montan todavía (ver el
+        // comentario junto a `useState(null)` más arriba). Una vez termina
+        // la restauración sin `restoredDocument` (RF-101-02:
+        // "awaiting-template"), se añade `TemplatePicker` bajo el mismo
+        // `DocumentPersistenceStatus` que ya muestra el aviso de
+        // corrupción/versión futura/migración fallida que corresponda —
+        // nunca se reemplaza ese aviso, ambos conviven.
+        <main id="contenido" tabIndex={-1} className="p-cdt-6">
           <DocumentPersistenceStatus
             status={autosave.status}
             error={autosave.error}
@@ -353,9 +390,18 @@ export default function AppPage() {
             currentDocument={documentModel}
             onDismissNotice={autosave.dismissNotice}
           />
+          {!autosave.isRestoring ? (
+            <div className="mt-cdt-6">
+              <TemplatePicker onCreateDocument={handleCreateDocument} />
+            </div>
+          ) : null}
         </main>
       ) : (
-        <main id="contenido" className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-cdt-6 p-cdt-4 lg:flex-row lg:items-start">
+        <main
+          id="contenido"
+          tabIndex={-1}
+          className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-cdt-6 p-cdt-4 lg:flex-row lg:items-start"
+        >
           <div className="flex min-w-0 flex-1 flex-col gap-cdt-8">
             <div className="flex flex-wrap items-start justify-between gap-cdt-3">
               <DocumentPersistenceStatus

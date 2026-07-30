@@ -3,6 +3,7 @@ import AxeBuilder from "@axe-core/playwright";
 import JSZip from "jszip";
 import path from "node:path";
 import { readFileSync } from "node:fs";
+import { createFreeDocumentViaPicker } from "./helpers/templatePickerFlow.js";
 
 const APP_URL = "http://localhost:3101/app";
 const DOC_KEY = "cdd.doc.v1";
@@ -122,6 +123,7 @@ test.describe("F7-02B — external_sources a aporte manual", () => {
     page.on("console", (message) => consoleMessages.push(message.text()));
 
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
     await startSectionInvestigation(page);
     await expect(page.getByRole("heading", { name: "Fuentes oficiales sugeridas" })).toBeVisible();
     expect(await page.getByRole("button", { name: "Agregar manualmente" }).count()).toBe(1);
@@ -225,6 +227,7 @@ test.describe("F7-02B — external_sources a aporte manual", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await mockNoEvidenceBackend(page, []);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
     await startSectionInvestigation(page);
     await expect(page.getByRole("heading", { name: "Fuentes oficiales sugeridas" })).not.toBeVisible();
     await expect(page.getByRole("button", { name: "Agregar manualmente" })).not.toBeVisible();

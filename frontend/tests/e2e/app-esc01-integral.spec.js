@@ -3,6 +3,7 @@ import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import JSZip from "jszip";
 import { expect, test } from "@playwright/test";
+import { createFreeDocumentViaPicker } from "./helpers/templatePickerFlow.js";
 
 /**
  * ESC-01 integral (F8-01, Parte 4 del encargo): UNA sola prueba que
@@ -80,6 +81,7 @@ test.describe("/app — ESC-01 integral, fixture real completo (F8-01)", () => {
 
     // 1) Escribir en la Sección 1.
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
     const sectionEditor = page.getByRole("textbox", { name: "Documento de trabajo: Sección 1" });
     await sectionEditor.click();
     await page.keyboard.type(SECTION_TEXT);

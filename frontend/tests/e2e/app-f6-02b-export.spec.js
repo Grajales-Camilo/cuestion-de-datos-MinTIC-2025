@@ -3,6 +3,7 @@ import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import JSZip from "jszip";
 import { expect, test } from "@playwright/test";
+import { createFreeDocumentViaPicker } from "./helpers/templatePickerFlow.js";
 
 /**
  * F6-02B — descarga real de `.docx` desde `/app` (RF-102/RF-103, ESC-08).
@@ -143,6 +144,7 @@ test.describe("/app — F6-02B exportación DOCX real (RF-102/RF-103, ESC-08)", 
   }, testInfo) => {
     await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await typeInvestigateAndInsert(page);
 
@@ -220,6 +222,7 @@ test.describe("/app — F6-02B exportación DOCX real (RF-102/RF-103, ESC-08)", 
   }, testInfo) => {
     await mockBackend(page, { answer: warningVariantAnswer() });
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await typeInvestigateAndInsert(page);
     await expect(page.getByText("Evidencia no recomendada: úsala con cautela.")).toBeVisible();
@@ -243,6 +246,7 @@ test.describe("/app — F6-02B exportación DOCX real (RF-102/RF-103, ESC-08)", 
     await mockBackend(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     const exportButton = page.getByRole("button", { name: "Exportar en Word (.docx)" });
     const persistenceStatus = page.getByText("Guardado");
@@ -284,6 +288,7 @@ test.describe("/app — F6-02B exportación DOCX real (RF-102/RF-103, ESC-08)", 
   }) => {
     await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     const editor = page.getByRole("textbox", { name: "Documento de trabajo: Sección 1" });
     await editor.click();

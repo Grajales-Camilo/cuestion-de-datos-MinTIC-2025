@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { createFreeDocumentViaPicker } from "./helpers/templatePickerFlow.js";
 
 /**
  * F4-03 — RF-503, escenario de gráfica. El único fixture real disponible
@@ -114,6 +115,7 @@ function main(page) {
 async function submitAndWaitForChart(page) {
   await mockBackend(page);
   await page.goto(APP_URL);
+  await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
   await main(page).getByLabel("Pregunta para investigar").fill(QUESTION);
   await main(page).getByRole("button", { name: "Investigar", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Aceptar e investigar" }).click();

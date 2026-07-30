@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { createFreeDocumentViaPicker } from "./helpers/templatePickerFlow.js";
 
 /**
  * F8-02-R1 — regresión E2E dedicada de D-5 (hallazgo de revisión manual
@@ -74,6 +75,7 @@ test.describe("/app — D-5, regresión de pérdida de contenido (F8-02-R1)", ()
   }) => {
     await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     const editor = page.getByRole("textbox", { name: "Documento de trabajo: Sección 1" });
     await editor.click();
@@ -150,6 +152,7 @@ test.describe("/app — D-5, regresión de pérdida de contenido (F8-02-R1)", ()
     page,
   }) => {
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await page.getByRole("button", { name: "Agregar dato manual" }).click();
     await page.getByLabel("Valor (opcional)").fill("17,50 unidades sintéticas D-5");

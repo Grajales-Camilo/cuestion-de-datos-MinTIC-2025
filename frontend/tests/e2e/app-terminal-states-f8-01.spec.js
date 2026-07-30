@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { createFreeDocumentViaPicker } from "./helpers/templatePickerFlow.js";
 
 /**
  * F8-01 — cobertura que faltaba en `/app` (backend real mockeado, no la
@@ -62,6 +63,7 @@ async function mockBackendFromFixture(page, fixture, { token }) {
 
 async function submitFreeQuestion(page, question) {
   await page.goto(APP_URL);
+  await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
   await page.getByLabel("Pregunta para investigar").fill(question);
   await page.getByRole("button", { name: "Investigar", exact: true }).click();
   await page
@@ -341,18 +343,6 @@ test.describe("/app — skip-link (F8-01)", () => {
     await expect(skipLink).toBeFocused();
 
     await page.keyboard.press("Enter");
-    const focusedIsContent = await page.evaluate(() => document.activeElement?.id === "contenido");
-    // El landmark `#contenido` no es tabulable por defecto; algunos
-    // navegadores solo desplazan el scroll sin mover `document.activeElement`
-    // cuando el destino carece de `tabindex`. Se acepta cualquiera de las
-    // dos evidencias válidas de que el salto funcionó: el foco quedó en el
-    // contenido, o el contenido quedó desplazado a la vista.
-    const contentInView = await page.evaluate(() => {
-      const el = document.getElementById("contenido");
-      if (!el) return false;
-      const rect = el.getBoundingClientRect();
-      return rect.top <= 1 && rect.top >= -1;
-    });
-    expect(focusedIsContent || contentInView).toBe(true);
+    await expect(page.locator("#contenido")).toBeFocused();
   });
 });

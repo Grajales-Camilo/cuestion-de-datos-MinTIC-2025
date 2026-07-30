@@ -24,11 +24,16 @@ const ERROR_MESSAGES = {
 const DEFAULT_ERROR_MESSAGE = "No se pudo guardar el documento. Tus cambios siguen en esta pestaña.";
 const DOWNLOAD_HINT = " Descarga una copia para no perderlos.";
 
+// RF-101-02: ya no se abre automáticamente un documento nuevo cuando el
+// guardado anterior está dañado o es inválido — el usuario elige una
+// plantilla explícitamente (ver TemplatePicker en pages/app.js). Los
+// mensajes de "corrupt"/"invalid" ya no afirman que un documento nuevo se
+// abrió: seguiría siendo falso hasta que el usuario complete la elección.
 const NOTICE_MESSAGES = {
   corrupt:
-    "No se pudo leer el documento guardado anteriormente: estaba dañado. Se abrió un documento nuevo y se conservó una copia del original.",
+    "No se pudo leer el documento guardado anteriormente: estaba dañado. Se conservó una copia del original. Elige una plantilla para empezar un documento nuevo.",
   invalid:
-    "El documento guardado anteriormente no es válido. Se abrió un documento nuevo y se conservó una copia del original.",
+    "El documento guardado anteriormente no es válido. Se conservó una copia del original. Elige una plantilla para empezar un documento nuevo.",
   unavailable:
     "No se pudo acceder al almacenamiento local de este navegador. Tus cambios solo estarán disponibles en esta pestaña.",
 };

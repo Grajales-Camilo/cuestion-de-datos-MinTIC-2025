@@ -3,6 +3,7 @@ import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import JSZip from "jszip";
 import { expect, test } from "@playwright/test";
+import { createFreeDocumentViaPicker } from "./helpers/templatePickerFlow.js";
 
 const APP_URL = "/app";
 const DOC_KEY = "cdd.doc.v1";
@@ -116,6 +117,7 @@ test.describe("F7-02A — aporte manual visual, persistencia y DOCX", () => {
     const requests = [];
     page.on("request", (request) => requests.push(request.url()));
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
     await expect(page.getByRole("button", { name: "Agregar dato manual" })).toBeVisible();
 
     await openManualWithKeyboard(page);
@@ -186,6 +188,7 @@ test.describe("F7-02A — aporte manual visual, persistencia y DOCX", () => {
 
   test("fecha real del aporte se conserva mediante el control date", async ({ page }) => {
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
     await page.getByRole("button", { name: "Agregar dato manual" }).click();
     await page.getByLabel("Valor (opcional)").fill(MANUAL.value);
     await page.locator("#manual-entry-source").fill(MANUAL.source);
@@ -203,6 +206,7 @@ test.describe("F7-02A — aporte manual visual, persistencia y DOCX", () => {
 
   test("cancelar y Escape no cambian el documento y restauran el foco", async ({ page }) => {
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
     const trigger = page.getByRole("button", { name: "Agregar dato manual" });
     await trigger.click();
     await expect(page.getByRole("dialog", { name: "Agregar dato manual" })).toBeVisible();
@@ -227,6 +231,7 @@ test.describe("F7-02A — aporte manual visual, persistencia y DOCX", () => {
       if (request.url().includes("/v2/agent")) agentRequests.push(request.url());
     });
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     const editor = page.getByRole("textbox", { name: "Documento de trabajo: Sección 1" });
     await editor.click();
@@ -285,6 +290,7 @@ test.describe("F7-02A — aporte manual visual, persistencia y DOCX", () => {
     const requests = [];
     page.on("request", (request) => requests.push(request.url()));
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
     await page.getByRole("button", { name: "Agregar dato manual" }).click();
     await page.getByLabel("Texto o descripción (opcional)").fill(TOKEN);
     await page.locator("#manual-entry-source").fill("Fuente sintética");

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import fs from "node:fs";
 import path from "node:path";
+import { createFreeDocumentViaPicker } from "./helpers/templatePickerFlow.js";
 
 /**
  * F4-02 — presentación funcional de evidencia en `/app`, con el ÚNICO
@@ -73,6 +74,7 @@ function main(page) {
 async function submitAndWaitForEvidence(page) {
   await mockBackend(page);
   await page.goto(APP_URL);
+  await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
   await main(page).getByLabel("Pregunta para investigar").fill(QUESTION);
   await main(page).getByRole("button", { name: "Investigar", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Aceptar e investigar" }).click();

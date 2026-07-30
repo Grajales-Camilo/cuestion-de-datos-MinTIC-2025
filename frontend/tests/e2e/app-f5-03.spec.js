@@ -2,6 +2,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import {
+  createFreeDocumentViaPicker,
+  createFreeDocumentViaPickerWithKeyboard,
+} from "./helpers/templatePickerFlow.js";
 
 const APP_URL = "/app";
 const REAL_STREAM = readFileSync(
@@ -99,6 +103,7 @@ test.describe("/app — F5-03A secciones e investigación contextual (RF-104)", 
   test("cancelar la vista previa no produce ningún POST", async ({ page }) => {
     const { queryRequestBodies } = await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await typeIntoSection(page, SECTION_TEXT);
     await page.getByRole("button", { name: "Investigar esta sección" }).click();
@@ -116,6 +121,7 @@ test.describe("/app — F5-03A secciones e investigación contextual (RF-104)", 
   test("una sección vacía no abre la vista previa ni permite investigar", async ({ page }) => {
     const { queryRequestBodies } = await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await page.getByRole("button", { name: "Investigar esta sección" }).click();
     await expect(page.getByText("no tiene contenido suficiente para investigar")).toBeVisible();
@@ -128,6 +134,7 @@ test.describe("/app — F5-03A secciones e investigación contextual (RF-104)", 
   }) => {
     const { queryRequestBodies } = await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await typeIntoSection(page, SECTION_TEXT);
     await page.getByRole("button", { name: "Investigar esta sección" }).click();
@@ -165,6 +172,7 @@ test.describe("/app — F5-03A secciones e investigación contextual (RF-104)", 
   test("la pregunta libre sigue funcionando sin context_hint forzado, como flujo independiente", async ({ page }) => {
     const { queryRequestBodies } = await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     // Sin tocar ninguna sección ni el botón "Investigar esta sección".
     await page
@@ -193,6 +201,11 @@ test.describe("/app — F5-03A secciones e investigación contextual (RF-104)", 
     await mockBackend(page);
     await page.goto(APP_URL);
     // Foco neutro: recién cargada la página, sin ningún clic previo.
+    // RF-101-02-R1: storage vacío → el selector de plantilla es la PRIMERA
+    // pantalla real; se recorre y confirma también exclusivamente por
+    // teclado (`createFreeDocumentViaPickerWithKeyboard`), para no romper
+    // la garantía "sin ningún clic previo" que esta prueba afirma.
+    await createFreeDocumentViaPickerWithKeyboard(page);
 
     // 1. Alcanza el editor de la sección con Tab real (nunca `.click()`
     // ni `.focus()`) y escribe el diagnóstico — precondición de contenido,
@@ -254,6 +267,9 @@ test.describe("/app — F5-03A secciones e investigación contextual (RF-104)", 
   }) => {
     await mockBackend(page);
     await page.goto(APP_URL);
+    // RF-101-02-R1: mismo motivo que la prueba anterior — cero clics, ni
+    // siquiera para crear el documento inicial.
+    await createFreeDocumentViaPickerWithKeyboard(page);
 
     await tabUntil(
       page,
@@ -284,6 +300,7 @@ test.describe("/app — F5-03A secciones e investigación contextual (RF-104)", 
   test("axe WCAG 2.2 AA con la vista previa de sección abierta", async ({ page }) => {
     await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
     await typeIntoSection(page, SECTION_TEXT);
     await page.getByRole("button", { name: "Investigar esta sección" }).click();
     await expect(page.getByRole("dialog", { name: "Investigar esta sección: Sección 1" })).toBeVisible();
@@ -296,6 +313,7 @@ test.describe("/app — F5-03A secciones e investigación contextual (RF-104)", 
     await page.setViewportSize({ width: 320, height: 800 });
     await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
     await typeIntoSection(page, SECTION_TEXT);
     await page.getByRole("button", { name: "Investigar esta sección" }).click();
     await expect(page.getByRole("dialog", { name: "Investigar esta sección: Sección 1" })).toBeVisible();
@@ -312,6 +330,7 @@ test.describe("/app — F5-03A secciones e investigación contextual (RF-104)", 
 
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
     await typeIntoSection(page, SECTION_TEXT);
     await page.getByRole("button", { name: "Investigar esta sección" }).click();
     await expect(page.getByRole("dialog", { name: "Investigar esta sección: Sección 1" })).toBeVisible();
@@ -326,6 +345,15 @@ test.describe("/app — F5-03A secciones e investigación contextual (RF-104)", 
       window.localStorage.clear();
       window.sessionStorage.clear();
     });
+    // RF-101-02-R1: tras limpiar el storage, `/app` (ya cargada tras el
+    // reload) puede seguir mostrando el selector o el documento previo según
+    // si el autoguardado alcanzó a persistir antes del reload; se pasa por
+    // el selector explícitamente para dejar el estado determinista antes de
+    // continuar (mismo criterio: no se altera ninguna aserción de contenido,
+    // esta prueba no tiene ninguna sobre la sección más allá del texto que
+    // ella misma escribe a continuación).
+    await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page);
     await typeIntoSection(page, SECTION_TEXT);
     await page.getByRole("button", { name: "Investigar esta sección" }).click();
     await expect(page.getByRole("dialog", { name: "Investigar esta sección: Sección 1" })).toBeVisible();

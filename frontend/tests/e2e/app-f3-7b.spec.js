@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { createFreeDocumentViaPicker } from "./helpers/templatePickerFlow.js";
 
 /**
  * `/app` con transporte controlado (`page.route`): F3-7B no tiene todavía
@@ -13,8 +14,20 @@ import AxeBuilder from "@axe-core/playwright";
  */
 
 const APP_URL = "/app";
+const DOC_KEY = "cdd.doc.v1";
 const RUN_ID = "run-e2e-0001";
 const TOKEN = "cdt_rt_e2e_token_no_debe_aparecer_nunca";
+
+/** RF-101-02-R1: antes de recargar, hay que esperar a que el documento
+ * (creado vía TemplatePicker) llegue a persistirse en `cdd.doc.v1`. Sin
+ * esto, un `page.reload()` disparado antes del debounce de autoguardado
+ * (≤5 s) encuentra storage vacío y `/app` vuelve a mostrar el selector en
+ * vez del lienzo — el historial (dentro del lienzo) no llegaría a
+ * renderizarse, sin que eso diga nada sobre si el historial en sí
+ * sobrevive. Mismo patrón que `app-f6-01.spec.js`. */
+async function waitForDocumentPersisted(page) {
+  await page.waitForFunction((key) => window.localStorage.getItem(key) !== null, DOC_KEY, { timeout: 8_000 });
+}
 
 function sseBody({ runId, stepMessage = "Consultando datos.gov.co…" }) {
   const stepEvent = [
@@ -106,6 +119,7 @@ test.describe("/app — consentimiento (D-9, RF-802)", () => {
   test("primera investigación → modal → aceptación → flujo, sin POST antes de aceptar", async ({ page }) => {
     const { postCalls } = await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await submitQuestion(page);
 
@@ -123,6 +137,7 @@ test.describe("/app — consentimiento (D-9, RF-802)", () => {
   test("segunda investigación no vuelve a mostrar el modal", async ({ page }) => {
     await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await submitQuestion(page, "¿Cuál es la primera pregunta de esta sesión?");
     await page.getByRole("dialog").getByRole("button", { name: "Aceptar e investigar" }).click();
@@ -136,6 +151,7 @@ test.describe("/app — consentimiento (D-9, RF-802)", () => {
   test("Cancelar no envía nada y permite reintentar después", async ({ page }) => {
     const { postCalls } = await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await submitQuestion(page);
     await page.getByRole("dialog").getByRole("button", { name: "Cancelar" }).click();
@@ -148,12 +164,14 @@ test.describe("/app — historial (RF-502)", () => {
   test("la investigación aparece en el historial y sobrevive a una recarga", async ({ page }) => {
     await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await submitQuestion(page, "¿Cuál es la cobertura educativa en Antioquia?");
     await page.getByRole("dialog").getByRole("button", { name: "Aceptar e investigar" }).click();
     await expect(main(page).getByText("Completada")).toBeVisible({ timeout: 10000 });
     await expect(historyList(page).getByText("¿Cuál es la cobertura educativa en Antioquia?")).toBeVisible();
 
+    await waitForDocumentPersisted(page);
     await page.reload();
     await expect(historyList(page).getByText("¿Cuál es la cobertura educativa en Antioquia?")).toBeVisible();
     await expect(main(page).getByRole("button", { name: "Reejecutar" })).toBeVisible();
@@ -162,6 +180,7 @@ test.describe("/app — historial (RF-502)", () => {
   test("Reejecutar crea una corrida nueva (un segundo POST)", async ({ page }) => {
     const { postCalls } = await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await submitQuestion(page, "¿Cuál es la cobertura educativa en Antioquia?");
     await page.getByRole("dialog").getByRole("button", { name: "Aceptar e investigar" }).click();
@@ -174,6 +193,7 @@ test.describe("/app — historial (RF-502)", () => {
   test("Refinar precarga la pregunta en el composer para editar antes de enviar", async ({ page }) => {
     await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await submitQuestion(page, "¿Cuál es la cobertura educativa en Antioquia?");
     await page.getByRole("dialog").getByRole("button", { name: "Aceptar e investigar" }).click();
@@ -190,6 +210,7 @@ test.describe("/app — borrado (RF-803)", () => {
   test("borrado exitoso: confirmación explícita, luego desaparece del historial", async ({ page }) => {
     const { deleteCalls } = await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await submitQuestion(page, "¿Cuál es la cobertura educativa en Antioquia?");
     await page.getByRole("dialog").getByRole("button", { name: "Aceptar e investigar" }).click();
@@ -225,6 +246,7 @@ test.describe("/app — borrado (RF-803)", () => {
       await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
     });
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await submitQuestion(page, "¿Cuál es la cobertura educativa en Antioquia?");
     await page.getByRole("dialog").getByRole("button", { name: "Aceptar e investigar" }).click();
@@ -242,6 +264,7 @@ test.describe("/app — teclado, responsive y accesibilidad", () => {
   test("Escape cierra el modal de consentimiento sin aceptar", async ({ page }) => {
     const { postCalls } = await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await submitQuestion(page);
     await expect(page.getByRole("dialog", { name: "Antes de iniciar tu primera investigación" })).toBeVisible();
@@ -254,6 +277,7 @@ test.describe("/app — teclado, responsive y accesibilidad", () => {
     await mockBackend(page);
     await page.setViewportSize({ width: 320, height: 800 });
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await submitQuestion(page);
     await expect(page.getByRole("dialog", { name: "Antes de iniciar tu primera investigación" })).toBeVisible();
@@ -267,6 +291,7 @@ test.describe("/app — teclado, responsive y accesibilidad", () => {
   test("axe sin violaciones críticas con el modal de consentimiento abierto", async ({ page }) => {
     await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
     await submitQuestion(page);
     await expect(page.getByRole("dialog", { name: "Antes de iniciar tu primera investigación" })).toBeVisible();
 
@@ -284,6 +309,7 @@ test.describe("/app — seguridad del token (RNF-011)", () => {
 
     await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await submitQuestion(page, "¿Cuál es la cobertura educativa en Antioquia?");
     await page.getByRole("dialog").getByRole("button", { name: "Aceptar e investigar" }).click();

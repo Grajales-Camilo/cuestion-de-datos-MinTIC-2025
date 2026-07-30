@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { createFreeDocumentViaPicker } from "./helpers/templatePickerFlow.js";
 
 const APP_URL = "/app";
 const REAL_STREAM = readFileSync(
@@ -89,6 +90,7 @@ async function mockBackend(page, { stream = REAL_STREAM, token = TOKEN } = {}) {
 async function completeRun(page, { stream = REAL_STREAM } = {}) {
   const mocked = await mockBackend(page, { stream });
   await page.goto(APP_URL);
+  await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
   await page.getByLabel("Pregunta para investigar").fill(
     "¿Cuál fue el promedio de deserción escolar en Antioquia entre 2018 y 2022?",
   );
@@ -141,6 +143,7 @@ test.describe("/app — F5-02 editor, cita y RF-404", () => {
   test("navegación principal exclusivamente por teclado devuelve foco al editor", async ({ page }) => {
     await mockBackend(page);
     await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
 
     await tabUntil(
       page,

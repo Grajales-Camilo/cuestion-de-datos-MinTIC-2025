@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { createFreeDocumentViaPicker } from "./helpers/templatePickerFlow.js";
 
 const APP_URL = "/app";
 const DOC_KEY = "cdd.doc.v1";
@@ -74,8 +75,12 @@ async function mockBackend(page, { stream = REAL_STREAM, token = TOKEN } = {}) {
 /** Escribe en la Sección 1, investiga desde ahí (context_hint = texto de la
  * sección) e inserta la cita resultante en esa misma sección — igual que
  * `app-f5-03.spec.js`, reutilizado aquí para dejar texto + cita real en el
- * documento antes de probar persistencia. */
+ * documento antes de probar persistencia. Asume storage vacío al entrar
+ * (los tres llamadores de este archivo no siembran ningún documento
+ * previo), así que primero pasa por el selector de plantilla (RF-101-02). */
 async function typeAndInsertCitation(page) {
+  await createFreeDocumentViaPicker(page);
+
   const editor = page.getByRole("textbox", { name: "Documento de trabajo: Sección 1" });
   await editor.click();
   await page.keyboard.type(SECTION_TEXT);
@@ -159,7 +164,7 @@ test.describe("/app — F6-01 persistencia documental (RF-102/RF-103, ESC-08)", 
     expect(raw.toLowerCase()).not.toContain('"authorization"');
   });
 
-  test("versión futura sembrada: aviso visible, documento no sobrescrito ni con el debounce vencido, descarga disponible", async ({
+  test("versión futura sembrada: aviso visible, TemplatePicker ofrece crear un documento en memoria, aviso persiste y nunca se sobrescribe ni con el debounce vencido, descarga disponible", async ({
     page,
   }) => {
     const futureEnvelope = {
@@ -176,10 +181,17 @@ test.describe("/app — F6-01 persistencia documental (RF-102/RF-103, ESC-08)", 
 
     await expect(page.getByText(/versión más nueva/)).toBeVisible();
 
-    // Se puede seguir escribiendo en un documento nuevo en memoria (no se
-    // bloquea la edición), pero la clave autoritativa NUNCA se sobrescribe
-    // mientras la versión futura siga ahí — ni siquiera tras esperar más que
-    // el debounce de 5 s.
+    // RF-101-02: no se auto-abre "libre" — el usuario elige explícitamente.
+    // No hay ningún control "Cambiar plantilla"/"Nuevo documento" aparte del
+    // selector inicial.
+    await expect(page.getByRole("button", { name: /Cambiar plantilla/i })).toHaveCount(0);
+    await page.getByRole("radio", { name: /Libre/ }).click();
+    await page.getByRole("button", { name: "Crear documento" }).click();
+
+    // El aviso de "versión más nueva" sigue visible DESPUÉS de crear el
+    // documento en memoria — nunca se reemplaza por el lienzo normal.
+    await expect(page.getByText(/versión más nueva/)).toBeVisible();
+
     const editor = page.getByRole("textbox", { name: "Documento de trabajo: Sección 1" });
     await editor.click();
     await page.keyboard.type("Este cambio nunca debe sobrescribir la versión futura.");
@@ -194,7 +206,82 @@ test.describe("/app — F6-01 persistencia documental (RF-102/RF-103, ESC-08)", 
     expect(download.suggestedFilename()).toMatch(/\.json$/);
   });
 
-  test("JSON corrupto se recupera de forma segura: se aísla, se abre un documento nuevo y editable", async ({
+  test("migración fallida sembrada (mecanismo real, sin mockear storage/notifyChange): aviso visible, descarga del original, y el raw en localStorage nunca cambia ni con el debounce vencido", async ({
+    page,
+  }) => {
+    // RF-101-02-R1, requisito 5: `loadStoredDocument` (llamado por
+    // `useDocumentAutosave` sin `migrations`, ver `hooks/useDocumentAutosave.js`)
+    // usa el valor por defecto `migrations = {}` en producción. Un sobre con
+    // `schemaVersion` por debajo de `DOCUMENT_STORAGE_SCHEMA_VERSION` (1) no
+    // tiene ningún paso `migrations[0]` disponible, así que
+    // `migrateStoredDocument` devuelve `{ ok: false, reason:
+    // "no_migration_path" }` (documentStorage.js) y `loadStoredDocument`
+    // clasifica el resultado como `MIGRATION_FAILED` — el MISMO camino real
+    // que seguiría un sobre legítimo de una versión de esquema anterior que
+    // esta build ya no sabe migrar. No se mockea `localStorage` ni
+    // `notifyChange`: es el storage real del navegador y el hook real.
+    const legacyEnvelope = {
+      schemaVersion: 0,
+      createdAt: "2020-01-01T00:00:00.000Z",
+      updatedAt: "2020-01-01T00:00:00.000Z",
+      document: { legacyShape: true, note: "Sobre de una version de esquema anterior sin ruta de migracion." },
+    };
+    const legacyRaw = JSON.stringify(legacyEnvelope);
+    await page.addInitScript(
+      ([key, raw]) => window.localStorage.setItem(key, raw),
+      [DOC_KEY, legacyRaw],
+    );
+    await page.goto(APP_URL);
+
+    // Aviso específico de `migration_failed` (BLOCKED_MESSAGES,
+    // DocumentPersistenceStatus.jsx) — deliberadamente distinto del de
+    // `future_version`: el original nunca se tocó, solo no se pudo
+    // actualizar con seguridad.
+    await expect(page.getByText(/No pudimos actualizar de forma segura el documento guardado/)).toBeVisible();
+
+    // Se guarda el raw INICIAL una sola vez, leído directamente de
+    // localStorage (no reconstruido con JSON.stringify): la comparación
+    // final debe ser identidad de bytes, no igualdad estructural.
+    const initialRaw = await page.evaluate((key) => window.localStorage.getItem(key), DOC_KEY);
+    expect(initialRaw).toBe(legacyRaw);
+
+    // Descarga del original ANTES de crear ningún documento nuevo.
+    const firstDownloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Descargar archivo intacto" }).click();
+    const firstDownload = await firstDownloadPromise;
+    expect(firstDownload.suggestedFilename()).toMatch(/\.json$/);
+
+    // Elegir una plantilla y editar el documento en memoria: RF-101-02 no
+    // auto-abre "libre" — el usuario elige explícitamente, conviviendo con
+    // el aviso de migración fallida (nunca lo reemplaza).
+    await page.getByRole("radio", { name: /Libre/ }).click();
+    await page.getByRole("button", { name: "Crear documento" }).click();
+    await expect(page.getByText(/No pudimos actualizar de forma segura el documento guardado/)).toBeVisible();
+
+    const editor = page.getByRole("textbox", { name: "Documento de trabajo: Sección 1" });
+    await editor.click();
+    await page.keyboard.type("Este cambio nunca debe sobrescribir el sobre con migración fallida.");
+
+    // Más que el debounce (`DEFAULT_DEBOUNCE_MS` = 5000 ms en
+    // `useDocumentAutosave.js`): `readyRef` nunca pasó a `true` en la rama
+    // `MIGRATION_FAILED`, así que `notifyChange` sigue siendo un no-op
+    // durante el resto de la sesión de página, sin excepción para el
+    // documento nuevo creado en memoria.
+    await page.waitForTimeout(6_000);
+
+    const rawAfterEdit = await page.evaluate((key) => window.localStorage.getItem(key), DOC_KEY);
+    expect(rawAfterEdit).toBe(legacyRaw);
+
+    // El aviso sigue visible y el original sigue siendo descargable después
+    // de editar y esperar el debounce.
+    await expect(page.getByText(/No pudimos actualizar de forma segura el documento guardado/)).toBeVisible();
+    const secondDownloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Descargar archivo intacto" }).click();
+    const secondDownload = await secondDownloadPromise;
+    expect(secondDownload.suggestedFilename()).toMatch(/\.json$/);
+  });
+
+  test("JSON corrupto se recupera de forma segura: aviso + TemplatePicker conviven, backup se conserva, y solo tras elegir plantilla aparece un documento nuevo editable", async ({
     page,
   }) => {
     await page.addInitScript(
@@ -205,22 +292,43 @@ test.describe("/app — F6-01 persistencia documental (RF-102/RF-103, ESC-08)", 
 
     await expect(page.getByText(/estaba dañado/)).toBeVisible();
 
+    // El selector aparece JUNTO al aviso — el respaldo (copia aislada) ya
+    // existe antes de que el usuario elija nada.
+    await expect(page.getByRole("radio", { name: /Libre/ })).toBeVisible();
+    const corruptKeysBeforeChoice = await page.evaluate(
+      (key) => Object.keys(window.localStorage).filter((k) => k.startsWith(`${key}.corrupt.`)),
+      DOC_KEY,
+    );
+    expect(corruptKeysBeforeChoice.length).toBeGreaterThan(0);
+    const diagnosticRawBeforeChoice = await page.evaluate(
+      ([key, diagKey]) => window.localStorage.getItem(diagKey),
+      [DOC_KEY, corruptKeysBeforeChoice[0]],
+    );
+    expect(diagnosticRawBeforeChoice).toBe("{esto no es json valido");
+
+    // Antes de elegir, no hay editor todavía (no se auto-crea "libre").
+    await expect(page.getByRole("textbox", { name: "Documento de trabajo: Sección 1" })).toHaveCount(0);
+
+    await page.getByRole("radio", { name: /Libre/ }).click();
+    await page.getByRole("button", { name: "Crear documento" }).click();
+
     const editor = page.getByRole("textbox", { name: "Documento de trabajo: Sección 1" });
     await editor.click();
     await page.keyboard.type("Documento nuevo tras corrupción");
     await expect(editor).toContainText("Documento nuevo tras corrupción");
 
-    const corruptKeys = await page.evaluate(
+    // El respaldo aislado sigue intacto tras crear y escribir el documento
+    // nuevo — nunca se pierde ni se sobrescribe.
+    const corruptKeysAfter = await page.evaluate(
       (key) => Object.keys(window.localStorage).filter((k) => k.startsWith(`${key}.corrupt.`)),
       DOC_KEY,
     );
-    expect(corruptKeys.length).toBeGreaterThan(0);
-
-    const diagnosticRaw = await page.evaluate(
+    expect(corruptKeysAfter).toEqual(corruptKeysBeforeChoice);
+    const diagnosticRawAfter = await page.evaluate(
       ([key, diagKey]) => window.localStorage.getItem(diagKey),
-      [DOC_KEY, corruptKeys[0]],
+      [DOC_KEY, corruptKeysAfter[0]],
     );
-    expect(diagnosticRaw).toBe("{esto no es json valido");
+    expect(diagnosticRawAfter).toBe("{esto no es json valido");
   });
 
   test("teclado, axe WCAG 2.2 AA y reflujo a 320 px para el aviso de recuperación", async ({ page }) => {
