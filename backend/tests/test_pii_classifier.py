@@ -120,6 +120,31 @@ def test_high_signal_wins_over_reviewed_roadmap_column() -> None:
     assert result.risk_level == "high"
 
 
+def test_reviewed_preaggregated_workforce_indicators_override_medium_heuristic() -> None:
+    for field_name in ("genero_hombre", "genero_mujer", "edad_30_39"):
+        result = classify_column(
+            field_name,
+            field_name,
+            "Indicador agregado por entidad",
+            FIXTURE,
+            dataset_id="h8rs-jxum",
+        )
+        assert result.risk_level == "low"
+        assert result.matched_pattern_id == "reviewed_dataset:h8rs-jxum"
+
+
+def test_high_signal_still_wins_over_medium_override_review() -> None:
+    result = classify_column(
+        "genero_hombre",
+        "genero hombre",
+        "Número de cédula de cada servidor",
+        FIXTURE,
+        dataset_id="h8rs-jxum",
+    )
+
+    assert result.risk_level == "high"
+
+
 def test_roadmap_person_name_and_identifier_columns_are_high() -> None:
     for field_name in ("primer_nombre_declarante_pn", "segundo_apellido", "numero_identificacion"):
         result = classify_column(field_name, None, None, FIXTURE, dataset_id="c82u-588k")

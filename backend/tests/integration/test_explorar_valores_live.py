@@ -19,7 +19,6 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import normalize_database_url_for_sqlalchemy
@@ -33,7 +32,7 @@ _DATASET_ID = "ji8i-4anb"
 
 
 @pytest.fixture
-async def engine():
+async def engine(isolated_database_url):
     engine = create_async_engine(
         normalize_database_url_for_sqlalchemy(os.environ["DATABASE_URL"]), pool_pre_ping=True
     )
@@ -43,13 +42,6 @@ async def engine():
 
 @pytest.fixture(autouse=True)
 async def seed_departamento_column(engine):
-    async def clean():
-        async with engine.begin() as connection:
-            await connection.execute(
-                text("DELETE FROM catalog_datasets WHERE id = :id"), {"id": _DATASET_ID}
-            )
-
-    await clean()
     now = datetime.now(UTC)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session, session.begin():
@@ -82,7 +74,6 @@ async def seed_departamento_column(engine):
             )
         )
     yield
-    await clean()
 
 
 async def test_explorar_valores_finds_known_value_against_real_socrata(engine) -> None:

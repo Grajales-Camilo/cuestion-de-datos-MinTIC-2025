@@ -94,6 +94,8 @@ Formato: *Given / When / Then*. Cada escenario referencia los requisitos que lo 
 - **RF-207** — Las consultas generadas por el agente DEBEN limitarse a operaciones de lectura (`SELECT`); toda otra operación se rechaza antes de ejecutarse (Constitución Art. VI.3).
 - **RF-208** — Toda cifra presentada al usuario (en resumen, narrativa o tarjetas) DEBE provenir de una **afirmación cuantitativa trazable** (*claim*) registrada según `data-model.md` §"quantitative_claims": con filas de origen, columnas, fórmula, valor bruto, valor presentado, unidad y regla de redondeo. Las cifras derivadas (porcentajes, sumas, promedios, tasas) DEBEN calcularse por un módulo determinista, NUNCA por el LLM en texto libre. Una cifra sin claim asociado es un defecto bloqueante.
 - **RF-209** — Las corridas del agente DEBEN ser durables con esta semántica única: (a) la desconexión del cliente NO interrumpe la ejecución y el stream se reanuda desde el último evento recibido (`Last-Event-ID`); (b) un reinicio real del servidor SÍ interrumpe la corrida activa, que transiciona al estado TERMINAL `interrupted` conservando eventos y resultados parciales accesibles; (c) NO existe reanudación automática del trabajo del agente — el usuario puede volver a ejecutar la consulta; (d) al arrancar, cada instancia del backend DEBE cerrar de forma idempotente como `interrupted` solo las corridas `running` cuya instancia dueña ya no tenga lease vigente; (e) un heartbeat vencido o worker desaparecido también termina como `interrupted`; (f) la duración máxima excedida termina como `failed` con código `RUN_TIMEOUT`; (g) nunca puede quedar una corrida `running` huérfana indefinidamente.
+- **RF-211** — El agente DEBE priorizar respuestas útiles, verificables y suficientemente correctas sobre la optimización exhaustiva de la consulta. Si dispone de evidencia elegible que responde materialmente la pregunta, PUEDE entregarla aunque exista una consulta técnicamente mejor, siempre que adjunte la fuente y declare las limitaciones, ambigüedades o cobertura parcial relevantes. Las imperfecciones de optimización no DEBEN convertirse por sí solas en `no_evidence` ni en rechazo. Esta regla no permite cifras fabricadas, fuentes equivocadas, contradicciones materiales, ausencia de evidencia verificable ni incumplimientos de privacidad.
+- **RF-212 (contrato aprobado T-617C-A; implementación pendiente T-617C)** — Toda cifra presentada al usuario DEBE asociarse con una **etiqueta humana verificable** derivada de metadatos estructurados de la columna fuente (nombre de columna real, nombre visible del plan validado o equivalente registrado en `data-model.md`), NUNCA inferida únicamente del valor numérico ni redactada libremente por el LLM. Cuando el sistema no pueda producir una asociación inequívoca, DEBE conservar la cifra si sigue siendo útil y verificable (RF-211) y DEBE persistir y exponer una **advertencia de presentación** (`presentation_warnings`, contrato en `contracts/api-rest.md` §4c) — distinta de `evidence[].quality.warnings_user`, que evalúa la calidad de la evidencia como conjunto, no el etiquetado de una cifra individual. Una advertencia de presentación NO convierte por sí sola una corrida `completed` en `no_evidence`. La narrativa principal DEBE priorizar los claims que responden materialmente la intención del usuario (RF-211) y DEBE excluir de esa narrativa identificadores técnicos o dimensiones auxiliares que el usuario no solicitó explícitamente; esa selección es general y semántica, nunca condicionada por `case_id`, `dataset_id` ni el texto literal de una pregunta concreta. `columns_used`/`columns` en cada claim público DEBE representar el nombre de columna fuente real (`data-model.md` §"quantitative_claims"), nunca el alias interno de la consulta SoQL (`dim_N`/`metric_N`).
 
 ### Grupo 300 — Índice semántico del catálogo
 
@@ -178,3 +180,58 @@ Cada RNF tiene métrica y método de verificación. "Rápido" o "usable" sin nú
 - **Afirmación cuantitativa (claim):** registro estructurado que vincula una cifra presentada con sus filas de origen, columnas, fórmula, valor bruto, unidad y regla de redondeo (RF-208).
 - **Golden set (conjunto dorado):** colección versionada de preguntas con respuesta/dataset esperado, usada para evaluar el agente.
 - **Evidencia:** resultado de datos validado + narrativa citable + metadatos de trazabilidad.
+- **Respuesta suficientemente correcta:** respuesta cuyo contenido material está respaldado por evidencia elegible y permite al usuario verificar la fuente, aunque la consulta pueda mejorarse o la cobertura sea parcial. No equivale a tolerar fabricación, contradicción material ni fuente incorrecta.
+- **Etiqueta verificable (RF-212):** descripción humana de una cifra presentada, derivada de metadatos estructurados de su columna fuente (nombre real de columna, nombre visible u origen equivalente registrado en el plan validado), nunca inferida del valor numérico ni redactada libremente por el LLM.
+- **Advertencia de presentación (RF-212):** aviso persistido y visible en `presentation_warnings` cuando el sistema no puede asociar una cifra con una etiqueta inequívoca; distinta de `evidence[].quality.warnings_user` (calidad de la evidencia como conjunto). No bloquea por sí sola la entrega de una respuesta `completed`.
+
+## 9. Enmienda T-615 — hechos textuales de primera clase
+
+> **PROPUESTA PARA REVISIÓN — SIN VIGENCIA NORMATIVA.** Esta sección no
+> declara la funcionalidad implementada ni autoriza código, migraciones o
+> cambios de golden. El diseño completo y su auditoría están en
+> `proposals/textual-claims.md`.
+
+### Requisitos propuestos
+
+- **RF-210 (propuesto) —** Todo valor textual factual presentado al usuario
+  (entidad, territorio, categoría, etiqueta, estado, nombre o colección
+  textual) DEBE provenir de un `TextualFact` aceptado y persistido, con
+  evidencia y dataset, filas y columnas fuente, operación cerrada, valores
+  brutos y normalizados, valor presentado, versión de normalización y hash
+  reproducible. Está PROHIBIDO representar texto como claim cuantitativo,
+  `raw_value=1`, conteo ficticio u otra magnitud que no sea el dato afirmado.
+  La selección o derivación textual la ejecuta código determinista; el LLM
+  solo puede ordenar identificadores aceptados y elegir conectores no
+  factuales de un vocabulario cerrado.
+- **RF-602 (extensión propuesta, sin sustituir el texto vigente) —** La
+  batería DEBE medir por separado integridad cuantitativa e integridad
+  textual: cobertura de referencias, reproducibilidad, coincidencia de
+  presentación, segmentos factuales huérfanos y operaciones inválidas. La
+  integridad total es la conjunción de todas las guardas; no se promedian
+  incumplimientos.
+- **RNF-013 (propuesto) — Integridad textual.** Cobertura de referencias
+  textuales = 100 %, hechos textuales reproducibles = 100 %, coincidencia
+  exacta de presentación = 100 %, segmentos factuales huérfanos = 0 y
+  operaciones textuales inválidas = 0. Una respuesta que incumpla se bloquea,
+  no se entrega degradada.
+
+RNF-003 y RF-208 conservan literalmente su alcance, sus métricas y su
+condición bloqueante para cifras. La propuesta añade una guarda independiente;
+no convierte hechos textuales en claims cuantitativos ni debilita la
+trazabilidad numérica.
+
+### Definiciones propuestas
+
+- **Hecho fundamentado (`GroundedFact`):** unión conceptual de
+  `QuantitativeClaim` y `TextualFact`, discriminada por
+  `fact_kind=quantitative|textual` en el dominio interno; la API pública v2
+  conserva `claims[]` cuantitativo sin discriminador.
+- **Hecho textual (`TextualFact`):** registro estructurado que prueba un valor
+  textual mediante una operación cerrada sobre filas y columnas de una
+  evidencia elegible. Sus operaciones iniciales son `direct_text`,
+  `value_presence`, `category_selection`, `argmax_label`, `argmin_label` y
+  `canonical_text_set`.
+- **Segmento factual:** unidad renderizada que contiene datos y debe referir
+  uno o más hechos aceptados. Los conectores y plantillas de limitación no
+  son segmentos factuales y no pueden introducir entidades, categorías,
+  lugares, fechas, estados ni cifras.

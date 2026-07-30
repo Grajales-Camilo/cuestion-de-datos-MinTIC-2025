@@ -1,0 +1,125 @@
+# Contrato materializado de `golden-v2`: hechos derivables
+
+## Estado y alcance
+
+> **T-616B cerrada el 2026-07-18.** La instrucción humana «Continúa con la
+> siguiente tarea» aprobó el paso normativo posterior a T-616A-R. La suite
+> resultante vive en `golden-v2.yaml`, se genera y valida con
+> `scripts/t616b_materialize.py`, contiene 50 casos (40 positivos/10
+> negativos), 59 `acceptable_facts` tipados y 128 proyecciones verificables.
+> `golden-v1.yaml` conserva su SHA-256 histórico. T-617 no se inició.
+
+Este documento no modifica ni relaja `golden-v1`, `eval/metrics.py` ni el
+umbral RNF-002. Registra el origen y las decisiones del contrato nuevo,
+versionado y auditable. Satisface RF-208 y RNF-002: la evaluación debe premiar
+respuestas fundamentadas en la pregunta, no el uso de filtros ocultos del
+evaluador.
+
+`golden-v1` continúa siendo inmutable y útil como línea histórica. No debe
+reemplazarse ni reinterpretarse silenciosamente.
+
+> **Auditoría T-616A-R (2026-07-18, antecedente no normativo).**
+> Corrige y completa la auditoría T-616A tras revisión coordinadora (12/40
+> verificados contra Socrata, confianza mal calibrada, `pilot-022` mal
+> clasificado como incompatible, `pilot-001` mal clasificado como agregado,
+> entre otros hallazgos). La reauditoría caso por caso de los 50 casos —
+> **40/40 positivos verificados contra el catálogo PostgreSQL local y contra
+> Socrata real**, con consultas reproducibles vía
+> `scripts/t616a_audit.py --verify-live`— vive en
+> `eval/reports/t616a-golden-v2-audit.md` (informe humano),
+> `eval/reports/t616a-case-audit.json` (matriz estructurada, esquema
+> `t616a-case-audit-v2`) y `eval/reports/t616a-evidence-manifest.json`
+> (evidencia reproducible no normativa, esquema
+> `t616a-evidence-manifest-v2`, con metadatos/esquema, proyección completa,
+> nulos, duplicados, empates y hashes). En esa fase no se creó
+> `golden-v2.yaml` ni se alteró `golden-v1`; las recomendaciones se aprobaron
+> posteriormente al iniciar T-616B y quedaron materializadas en este contrato.
+
+## Evidencia reproducible
+
+- `eval/reports/a4cc79c8-d011-4de7-83e2-2b3770205e38.md`: el caso
+  `pilot-013-app-dnp` pasa cuando el identificador `PRY00062`, explícito en la
+  pregunta, se conserva como filtro y los campos textuales se representan como
+  presencia verificable.
+- `eval/reports/152bce74-8e21-42e9-83f3-18251b0ffd81.md`: de nueve casos lookup,
+  ocho consultan o intentan consultar fuentes reales, pero solo uno coincide
+  con la fila exacta congelada.
+- `eval/reports/f80dbf19-61d5-4973-93a6-653494b05b79.md`: 038 y 039 consultan el
+  dataset esperado con rango diario explícito y seleccionan fecha, estación y
+  sensor, pero no coinciden con la observación horaria oculta del golden.
+- `eval/reports/2f2a4e7f-6aab-4576-8277-1f3088a1d692.md`: corrida consolidada
+  de los 50 casos sobre el commit actual. Aprueba 25/50 (50%): los diez casos
+  negativos aprueban, quince positivos consultan el dataset esperado pero no
+  coinciden con el hecho congelado y diez no completan con evidencia del
+  dataset esperado. Frente a la línea anterior de 13/50, demuestra la mejora
+  del runtime y, a la vez, que Gate 6 continúa correctamente bloqueado.
+
+Consultas persistidas para la última corrida:
+
+```sql
+SELECT fechaobservacion, codigoestacion, codigosensor, descripcionsensor,
+       nombreestacion, departamento, municipio
+WHERE fechaobservacion >= '2019-02-11'
+  AND fechaobservacion < '2019-02-12'
+LIMIT 100 OFFSET 0
+```
+
+La misma forma se ejecutó para 2020-01-21. Ambos días devuelven al menos 100
+observaciones. La pregunta no contiene la hora, la estación ni una regla de
+orden que seleccione de manera única el registro congelado.
+
+## Casos subdeterminados o con ancla inválida confirmados
+
+| Caso | Diagnóstico | Hecho congelado no determinado |
+|---|---|---|
+| `pilot-001-educacion-magdalena` | ambiguo: «tasa alta» no define umbral ni argmax | congela Zona Bananera 2.44; la reescritura con «mayor» da Cerro de San Antonio 6.28, máximo único |
+| `pilot-022-red-vial` | caso y dataset compatibles; evidencia v1 con `wrong_anchor` | la URL esperada filtra `administrador=1`, `calzada=1`, `categoria=2`, pero no `codigo_tramo='55ST02'` |
+| `pilot-037-calidad-aire` | ambiguo/multi-respuesta; dataset compatible | congela la estación `9020 / I.E. COL. COLOMBIA` sin criterio para escogerla entre varias |
+| `pilot-038-precipitacion` | ambiguo/multi-respuesta; dataset compatible; especifica solo 2019-02-11 | exige estación `0054050010`, sensor `0240` y hora `13:50` |
+| `pilot-039-temperatura` | ambiguo/multi-respuesta; dataset compatible; especifica solo 2020-01-21 | exige estación `0026195501`, sensor `0068` y hora `03:35` |
+
+Los casos ambiguos no pueden convertirse en pruebas de exactitud determinista sin una
+de estas dos correcciones: hacer explícita la restricción en la pregunta o
+evaluar un conjunto de respuestas válidas. Incorporar los valores congelados
+al runtime sería sobreajuste al benchmark y violaría la prohibición de
+hardcodear preguntas, IDs o cifras piloto.
+
+Para 038/039 la matriz propone preguntas nuevas sin marcadores: incluye
+literalmente estación, sensor y hora, y verifica respectivamente 0 mm y
+15.85716 °C. Esos valores son candidatos auditados para una pregunta distinta;
+no convierten retrospectivamente la pregunta v1 en determinada y permanecen
+excluidos hasta aprobación humana.
+
+## Contrato propuesto
+
+Cada caso positivo de `golden-v2` debe declarar:
+
+1. `input_constraints`: restricciones literales presentes en la pregunta.
+2. `selection_rule`: agregación, orden y desempate necesarios para obtener una
+   respuesta única; puede ser nulo solo si las restricciones identifican una
+   única fila.
+3. `acceptable_facts`: uno o más hechos válidos cuando la pregunta admite
+   varias respuestas equivalentes.
+4. `source_urls`: consultas de verificación que aplican únicamente
+   `input_constraints` y `selection_rule`; no filtros de la respuesta esperada.
+5. `observed_at` y `data_cutoff_at`: corte usado para congelar el caso.
+
+El evaluador debe comprobar que la evidencia contiene un hecho aceptable y que
+la consulta ejecutada respeta las restricciones explícitas. Los casos con
+respuesta no única deben usar pertenencia a `acceptable_facts`, no igualdad con
+una fila arbitraria.
+
+## Migración y puertas
+
+1. Auditar los 40 casos positivos de `golden-v1` sin cambiar ese archivo.
+2. Reescribir únicamente los casos ambiguos/incompatibles aprobados en un archivo nuevo
+   `golden-v2.yaml`, con revisión humana de sus fuentes y cortes.
+3. Ejecutar ambos suites durante una versión: v1 informativo y v2 como candidato
+   de aceptación.
+4. Autorizar el cambio de suite normativa de forma explícita en la
+   especificación antes de usar v2 para RNF-002.
+5. No retirar el runtime legado hasta alcanzar la puerta contractual aplicable
+   y conservar `AGENT_RUNTIME=legacy` como rollback durante una versión.
+
+Hasta esa autorización, el resultado honesto es: runtime determinista activo y
+mejorado, pero Gate 6 no aprobado; la retirada del legado permanece bloqueada.

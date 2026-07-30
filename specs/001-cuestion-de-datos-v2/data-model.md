@@ -56,12 +56,20 @@ Espejo de metadatos de un dataset de datos.gov.co. Fuente: Discovery API.
 | `eligibility_status` | text NOT NULL default `diagnostic_only` | CHECK IN (`eligible`, `diagnostic_only`, `blocked`). Controla si el agente puede ejecutar SoQL sobre el dataset. |
 | `eligibility_reasons` | jsonb NOT NULL default `[]` | Códigos deterministas: `publisher_unknown`, `publisher_private`, `pii_unknown`, `pii_high`, `pii_medium_requires_aggregation`, `api_inactive`, etc. |
 | `embedding_text` | text | Texto compuesto usado para el embedding (auditable). |
+| `lexical_search_vector` | tsvector NOT NULL | Representación lexical `spanish` materializada e indexada con GIN. Contiene `name`, `description`, `publisher`, `category`, `embedding_text` y `catalog_columns.field_name`, `display_name`, `description`. |
+| `lexical_rank_vector` | tsvector NOT NULL | Representación sin índice que conserva exactamente el ranking previo: `name`, `publisher`, `category`, `description` y texto ordenado de columnas. |
 
 **Reglas de negocio:**
 - Upsert por `id` (idempotencia, RF-304). Nunca se borra físicamente: si desaparece del portal, `api_active = false`.
 - Un dataset sin `name` no se indexa.
 - `data_updated_at` puede conocerse en la ingesta; `latest_observed_cutoff_at` solo se actualiza como pista desde evidencias ya calculadas. El corte normativo vive en `evidence_results`.
 - `eligibility_status` se calcula en ingesta y se revalida antes de T5. Solo `eligible` puede usarse como evidencia; `diagnostic_only` puede aparecer en búsqueda con advertencia; `blocked` no se propone al agente.
+- `lexical_search_vector` se mantiene dentro de la transacción: trigger de
+  dataset para INSERT/UPDATE de metadatos y triggers a nivel de sentencia para
+  INSERT/UPDATE/DELETE de `catalog_columns`. El backfill es idempotente. No es
+  generated column porque depende de filas de otra tabla.
+- `lexical_rank_vector` se mantiene por los mismos triggers y permite ordenar
+  antes de enriquecer `columns_preview`/`columns_all` para el top-10.
 
 ### `official_publishers`
 Registro canónico y versionado de publicadores oficiales elegibles (RF-401). Se carga desde fixture del repositorio; no se embebe en código.
@@ -275,7 +283,7 @@ Afirmaciones cuantitativas trazables (RF-208). Toda cifra presentada al usuario 
 | `claim_text` | text NOT NULL | Enunciado en lenguaje natural ("La tasa fue 8,4 %"). |
 | `claim_type` | text NOT NULL | `direct` (valor tomado tal cual de una celda) \| `derived` (calculado con fórmula). |
 | `source_row_indexes` | int[] NOT NULL | Índices de las filas de `evidence_results.rows` usadas (o `[-1]` si opera sobre el agregado completo). |
-| `columns_used` | text[] NOT NULL | Columnas utilizadas. |
+| `columns_used` | text[] NOT NULL | Columnas fuente utilizadas, identificadas por su **nombre de columna real** (p. ej. `genero_hombre`), NUNCA por el alias interno posicional que el renderer SoQL asigna para el `SELECT` (`dim_N`/`metric_N`, ver `contracts/agent-tools.md` T5). El alias es un detalle de implementación de la consulta y no debe filtrarse a este campo ni a ningún campo público derivado de él (RF-212, T-617C-A). Esta regla ya estaba implícita en los ejemplos previos de `contracts/api-rest.md` §4 (`"columns": ["matriculados", "desertores"]`); T-617C-A la hace explícita porque el código vigente antes de esa enmienda no la cumplía (`backend/eval/reports/t617c-semantic-claim-labels.md`). |
 | `formula` | jsonb | DSL reproducible de fórmula (ver `contracts/agent-tools.md` T7). NULL solo si `claim_type = direct`. |
 | `raw_value` | numeric NOT NULL | Valor bruto sin redondear (`8.3721`). |
 | `display_value` | text NOT NULL | Valor exactamente como se presenta ("8,4 %"). |
@@ -284,6 +292,75 @@ Afirmaciones cuantitativas trazables (RF-208). Toda cifra presentada al usuario 
 | `source_hash` | text NOT NULL | Hash SHA-256 canónico de contenido: JSON con versión de algoritmo, `dataset_id`, `soql_query` canonicalizada, filas fuente seleccionadas y ordenadas por regla determinista, columnas usadas, DSL de fórmula normalizada, `raw_value`, `unit` y `rounding`. No incluye `evidence_id`, `claim_id`, `run_id` ni timestamps. |
 
 **Reglas:** `raw_value` DEBE ser reproducible re-aplicando `formula` sobre las filas referenciadas (verificado en pruebas.md §4.2); `display_value` DEBE derivarse de `raw_value` + `rounding` + `unit`; el verificador de groundedness comprueba que ninguna cifra del texto final carece de claim. La canonicalización de filas debe ser explícita: usa `source_row_indexes` ordenados de forma ascendente sobre el arreglo de `evidence_results.rows`, que a su vez proviene de una consulta SoQL canonicalizada con orden determinista cuando el orden afecte el claim. Cambiar contenido de fila, fórmula, columnas, `raw_value`, unidad o redondeo cambia el hash; cambiar únicamente UUIDs de corrida/evidencia/claim no lo cambia.
+
+**Etiquetado semántico y advertencias de presentación (RF-212, T-617C-A) —
+SIN MIGRACIÓN DE ESTA TABLA.** `label`, `label_status` y
+`presentation_warnings` (contrato completo en `contracts/api-rest.md` §4c,
+decisión en `research.md` §29) **no son columnas de `quantitative_claims`**.
+Se persisten y se sirven exclusivamente dentro del JSONB `agent_runs.final_answer`
+(tabla `agent_runs`, ya existente) y en la serialización pública de
+`RespuestaFinal.claims[]`/`RespuestaFinal.presentation_warnings`. Esta tabla
+relacional no gana columnas nuevas por esta enmienda; `source_hash` y el
+resto de campos anteriores no cambian de significado ni de cálculo. Si una
+futura ronda decide persistir el estado de etiquetado con la misma
+granularidad transaccional que el resto del claim (alternativa 2 evaluada en
+`research.md` §29), eso requerirá una migración explícita, versionada y
+reversible, fuera del alcance de T-617C-A.
+
+### `textual_facts` — PROPUESTA T-615
+
+> **PROPUESTA PARA REVISIÓN — SIN TABLA NI MIGRACIÓN IMPLEMENTADAS.** No
+> cambia `quantitative_claims`. La justificación y contrato completo están en
+> `research.md` §27 y `proposals/textual-claims.md`.
+
+Hechos textuales trazables propuestos para RF-210/RNF-013. Todo texto factual
+se construye desde evidencia elegible; una etiqueta, categoría o nombre no se
+representa mediante una cantidad ficticia.
+
+| Campo | Tipo | Reglas propuestas |
+|---|---|---|
+| `id` | uuid PK | Es el `fact_id` del contrato REST. |
+| `run_id` | uuid FK → agent_runs CASCADE | Permite borrado integral por corrida. |
+| `evidence_id` | uuid FK → evidence_results CASCADE | NOT NULL. Determina de forma no ambigua el `dataset_id`; no se duplica este último en la tabla. |
+| `fact_text` | text NOT NULL | Plantilla determinista por operación; no texto libre del LLM. |
+| `operation` | text NOT NULL | CHECK IN (`direct_text`, `value_presence`, `category_selection`, `argmax_label`, `argmin_label`, `canonical_text_set`). |
+| `source_row_indexes` | int[] NOT NULL | No vacío; índices cero-basados válidos, canonicalizados ascendentes; no admite `-1`. |
+| `columns_used` | text[] NOT NULL | No vacío; todas existen en las filas usadas. |
+| `raw_values` | text[] NOT NULL | No vacío; grafía fuente conservada. |
+| `normalized_values` | text[] NOT NULL | No vacío; resultado de `normalization_profile`. |
+| `display_value` | text NOT NULL | No vacío; texto exacto insertable en la respuesta. |
+| `normalization_profile` | text NOT NULL | Inicialmente `text-es-v1`. |
+| `operation_params` | jsonb NOT NULL | Parámetros cerrados y validados por operación, incluida selección/desempate. |
+| `algorithm_version` | text NOT NULL | Inicialmente `textual-fact-v1`. |
+| `source_hash` | text NOT NULL | `sha256-jcs-v1:<64 hex minúsculos>` sobre RFC 8785/JCS UTF-8. |
+
+**Restricciones propuestas.**
+
+- `text-es-v1` aplica NFC, canonicaliza saltos/espacios, recorta y usa
+  `casefold` solo para comparación. Conserva tildes, `ñ`, puntuación y caja
+  mostrada.
+- `direct_text` exige una fila/columna. `argmax_label` y `argmin_label`
+  exigen columnas de etiqueta/métrica y `tie_policy=reject`.
+  `canonical_text_set` deduplica por normalizado y ordena canónicamente.
+- El hash incluye versión, operación, perfil, `dataset_id` resuelto desde la
+  evidencia, SoQL canónica, filas/subconjunto fuente, columnas, valores,
+  presentación y parámetros; excluye UUIDs de instancia y timestamps.
+- Índices propuestos: `run_id`, `evidence_id` y `source_hash`. El hash no es
+  único entre corridas.
+- Las validaciones que dependen de contenido de arrays/filas se realizan en
+  modelos tipados y constructor determinista; la base impone enum, no vacíos,
+  FK, cascades y formato.
+
+**Retención propuesta.** RF-803 y RF-804 borran `textual_facts` por la misma
+cascade que el resto de contenido operativo. Antes del borrado, evaluación
+solo puede copiar algoritmo, operación y `source_hash` a fingerprints; quedan
+prohibidos `fact_text`, `raw_values`, `normalized_values`, `display_value` y
+filas en `eval_case_results`.
+
+**Golden-v2 futuro.** T-616 puede proponer `acceptable_facts` con discriminador
+`fact_kind=quantitative|textual`. Para texto debe declarar operación,
+columnas, valor normalizado, regla de selección y alternativas aceptables.
+Esta estructura no se materializa ni modifica `golden-v1` en T-615.
 
 ## 5. Entidades de evaluación (OE3)
 

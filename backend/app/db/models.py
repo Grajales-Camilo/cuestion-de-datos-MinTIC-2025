@@ -21,7 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -136,6 +136,8 @@ class CatalogDataset(Base):
         server_default=text("'[]'::jsonb"),
     )
     embedding_text: Mapped[str | None] = mapped_column(Text)
+    lexical_search_vector: Mapped[str] = mapped_column(TSVECTOR, nullable=False)
+    lexical_rank_vector: Mapped[str] = mapped_column(TSVECTOR, nullable=False)
 
 
 class CatalogColumn(Base):
@@ -472,6 +474,89 @@ class QuantitativeClaim(Base):
     display_value: Mapped[str] = mapped_column(Text, nullable=False)
     unit: Mapped[str | None] = mapped_column(Text)
     rounding: Mapped[int | None] = mapped_column(Integer)
+    source_hash: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class TextualFact(Base):
+    """Persistencia aislada de hechos textuales (T-615C, RF-703/RF-803/RF-804)."""
+
+    __tablename__ = "textual_facts"
+    __table_args__ = (
+        CheckConstraint(
+            "operation IN ('direct_text', 'value_presence', 'category_selection', "
+            "'argmax_label', 'argmin_label', 'canonical_text_set')",
+            name="ck_textual_facts_operation",
+        ),
+        CheckConstraint(
+            "cardinality(source_row_indexes) > 0",
+            name="ck_textual_facts_source_rows_nonempty",
+        ),
+        CheckConstraint(
+            "0 <= ALL(source_row_indexes)",
+            name="ck_textual_facts_source_rows_nonnegative",
+        ),
+        CheckConstraint(
+            "cardinality(columns_used) > 0",
+            name="ck_textual_facts_columns_nonempty",
+        ),
+        CheckConstraint(
+            "cardinality(raw_values) > 0",
+            name="ck_textual_facts_raw_values_nonempty",
+        ),
+        CheckConstraint(
+            "cardinality(normalized_values) > 0",
+            name="ck_textual_facts_normalized_values_nonempty",
+        ),
+        CheckConstraint(
+            "cardinality(raw_values) = cardinality(normalized_values)",
+            name="ck_textual_facts_values_cardinality",
+        ),
+        CheckConstraint(
+            "char_length(fact_text) > 0",
+            name="ck_textual_facts_fact_text_nonempty",
+        ),
+        CheckConstraint(
+            "char_length(display_value) > 0",
+            name="ck_textual_facts_display_value_nonempty",
+        ),
+        CheckConstraint(
+            "normalization_profile = 'text-es-v1'",
+            name="ck_textual_facts_normalization_profile",
+        ),
+        CheckConstraint(
+            "algorithm_version = 'textual-fact-v1'",
+            name="ck_textual_facts_algorithm_version",
+        ),
+        CheckConstraint(
+            "source_hash ~ '^sha256-jcs-v1:[0-9a-f]{64}$'",
+            name="ck_textual_facts_source_hash",
+        ),
+        Index("ix_textual_facts_run_id", "run_id"),
+        Index("ix_textual_facts_evidence_id", "evidence_id"),
+        Index("ix_textual_facts_source_hash", "source_hash"),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    evidence_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evidence_results.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    fact_text: Mapped[str] = mapped_column(Text, nullable=False)
+    operation: Mapped[str] = mapped_column(Text, nullable=False)
+    source_row_indexes: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    columns_used: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    raw_values: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    normalized_values: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    display_value: Mapped[str] = mapped_column(Text, nullable=False)
+    normalization_profile: Mapped[str] = mapped_column(Text, nullable=False)
+    operation_params: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    algorithm_version: Mapped[str] = mapped_column(Text, nullable=False)
     source_hash: Mapped[str] = mapped_column(Text, nullable=False)
 
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import dataclasses
 import hashlib
 import secrets
 import sys
@@ -30,8 +31,26 @@ from datetime import UTC, datetime, timedelta
 import httpx
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from app.agent.deterministic_dependencies import (
+    RuntimeLLMUsage,
+    build_real_runtime_dependencies,
+)
+from app.agent.deterministic_graph import SupervisorBudgets
+from app.agent.deterministic_pipeline import (
+    DeterministicExecutionError,
+    DeterministicPersistenceCancelled,
+    persist_deterministic_execution,
+)
+from app.agent.deterministic_runtime import (
+    DeterministicRunCancelled,
+    DeterministicToolInfrastructureError,
+    RuntimeTraceEntry,
+    SynthesisIntegrityError,
+    run_deterministic_agent,
+)
 from app.agent.durability import get_run, touch_run_heartbeat, write_terminal_event_once
 from app.agent.graph import (
     ClaimPlannerOutput,
@@ -42,7 +61,14 @@ from app.agent.graph import (
     build_graph,
     initial_state,
 )
-from app.agent.persistence import persist_final_answer
+from app.agent.persistence import (
+    load_allowed_grounded_facts,
+    load_dataset_evidence_metadata,
+    persist_final_answer,
+    persist_run_telemetry,
+    record_step_and_event,
+    update_step_tool_result,
+)
 from app.agent.toy_graph import NODES, build_toy_graph
 from app.config import Settings
 from app.db.engine import create_app_async_engine
@@ -50,9 +76,27 @@ from app.db.models import AgentRun
 from app.llm.factory import (
     LLMConfigurationError,
     LLMProviderError,
+    LLMStructuredOutputError,
     get_structured_chat_model,
 )
-from app.schemas import ErrorDetail, ErrorEnvelope
+from app.quality.claim_labels import (
+    build_presentation_warnings,
+    fallback_dataset_topically_relevant,
+    intent_relevance_tokens,
+)
+from app.quality.grounded_facts import QuantitativeFactKind
+from app.quality.grounded_synthesis import (
+    GroundedSynthesisValidationError,
+    build_grounded_synthesis_fallback,
+    render_grounded_synthesis,
+    validate_grounded_synthesis_plan,
+)
+from app.schemas import (
+    ErrorDetail,
+    ErrorEnvelope,
+    TextualFactResponse,
+    materialize_textual_fact_fields,
+)
 from app.tools.buscar_catalogo import buscar_catalogo
 from app.tools.ejecutar_soql import ejecutar_soql
 from app.tools.explorar_valores import explorar_valores
@@ -308,7 +352,639 @@ def _usage_totals(state: dict) -> tuple[int, int, float]:
     )
 
 
+def _accepted_candidate_index(trace: tuple[RuntimeTraceEntry, ...]) -> int | None:
+    """Último `candidate_index` no nulo de la traza: identifica el rango del
+    candidato cuya ejecución terminó siendo la evidencia final (aceptada o
+    abstenida), para aplicar `fallback_dataset_topically_relevant` sin
+    depender de un campo dedicado en `DeterministicRuntimeResult`."""
+
+    for entry in reversed(trace):
+        if entry.candidate_index is not None:
+            return entry.candidate_index
+    return None
+
+
+async def execute_deterministic_agent_run_async(
+    settings: Settings,
+    run_id: uuid.UUID,
+    cancel_event: threading.Event | None = None,
+) -> dict:
+    """Ejecuta el runtime v2; nunca cae automáticamente al grafo legado."""
+
+    cancel_event = cancel_event or threading.Event()
+    engine = create_app_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
+    started = time.monotonic()
+    llm_usage = RuntimeLLMUsage()
+    observed_steps = 0
+    try:
+        run = await get_run(engine, run_id)
+        if run is None:
+            raise LookupError(f"run_id={run_id} no existe")
+        if settings.embedding_model is None:
+            raise LLMConfigurationError("EMBEDDING_MODEL es obligatorio para buscar catálogo")
+        embedding_client = GoogleGenerativeAIEmbeddings(
+            model=settings.embedding_model,
+            google_api_key=_secret_value(settings.google_api_key),
+        )
+        async with httpx.AsyncClient(base_url=SOCRATA_RESOURCE_BASE_URL) as http_client:
+            retrieved_dataset_ids: list[str] = []
+            attempted_dataset_ids: list[str] = []
+
+            async def observe_transition(entry, usage) -> None:
+                nonlocal observed_steps
+                observed_steps += 1
+                dataset_id = (
+                    retrieved_dataset_ids[entry.candidate_index]
+                    if entry.candidate_index is not None
+                    and entry.candidate_index < len(retrieved_dataset_ids)
+                    else None
+                )
+                if entry.node.value == "select_candidate" and dataset_id:
+                    attempted_dataset_ids.append(dataset_id)
+                await record_step_and_event(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    node=entry.node.value,
+                    display_message=entry.reason,
+                    detail={
+                        "runtime": "deterministic",
+                        "candidate_index": entry.candidate_index,
+                        "dataset_id": dataset_id,
+                        "retrieved_dataset_ids": list(retrieved_dataset_ids),
+                        "attempted_dataset_ids": list(dict.fromkeys(attempted_dataset_ids)),
+                        "plan_validation_errors": (
+                            [entry.diagnostic_code] if entry.diagnostic_code else []
+                        ),
+                        "usage": usage.model_dump(mode="json"),
+                    },
+                )
+                await touch_run_heartbeat(engine, run_id)
+
+            dependencies = build_real_runtime_dependencies(
+                settings=settings,
+                engine=engine,
+                http_client=http_client,
+                embedding_client=embedding_client,
+                usage=llm_usage,
+                is_cancelled=cancel_event.is_set,
+            )
+            original_retrieve = dependencies.retrieve
+
+            async def retrieve_with_diagnostics(intent):
+                retrieval = await original_retrieve(intent)
+                retrieved_dataset_ids.extend(
+                    candidate.item.dataset_id for candidate in retrieval.candidates
+                )
+                return retrieval
+
+            dependencies = dataclasses.replace(dependencies, retrieve=retrieve_with_diagnostics)
+            original_profile = dependencies.profile
+
+            async def profile_with_observability(dataset_id: str):
+                tool_started = time.monotonic()
+                profile = await original_profile(dataset_id)
+                await update_step_tool_result(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    tool_input={"dataset_id": dataset_id},
+                    tool_output={},
+                    latency_ms=round((time.monotonic() - tool_started) * 1000),
+                )
+                return profile
+
+            dependencies = dataclasses.replace(dependencies, profile=profile_with_observability)
+            original_plan = dependencies.plan
+
+            async def plan_with_observability(intent, context, explored, error):
+                tool_started = time.monotonic()
+                selection = await original_plan(intent, context, explored, error)
+                await update_step_tool_result(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    tool_input={},
+                    tool_output={},
+                    latency_ms=round((time.monotonic() - tool_started) * 1000),
+                )
+                return selection
+
+            dependencies = dataclasses.replace(dependencies, plan=plan_with_observability)
+            original_synthesize = dependencies.synthesize
+
+            async def synthesize_with_observability(intent, claims):
+                tool_started = time.monotonic()
+                synthesis = await original_synthesize(intent, claims)
+                await update_step_tool_result(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    tool_input={},
+                    tool_output={},
+                    latency_ms=round((time.monotonic() - tool_started) * 1000),
+                )
+                return synthesis
+
+            dependencies = dataclasses.replace(
+                dependencies, synthesize=synthesize_with_observability
+            )
+            original_explore = dependencies.explore
+
+            async def explore_with_observability(profile, selection, explored, max_tool_calls):
+                explored_indexes = {item.column_index for item in explored}
+                target = next(
+                    (
+                        item
+                        for item in selection.filters
+                        if item.value_type is not None
+                        and item.value_type.value == "text"
+                        and item.values
+                        and item.column_index not in explored_indexes
+                    ),
+                    None,
+                )
+                tool_input = {
+                    "dataset_id": profile.option.dataset_id,
+                    "column_index": target.column_index if target is not None else None,
+                    "proposed_values": list(target.values) if target is not None else [],
+                    "max_tool_calls": max_tool_calls,
+                }
+                tool_started = time.monotonic()
+                try:
+                    exploration = await original_explore(
+                        profile,
+                        selection,
+                        explored,
+                        max_tool_calls,
+                    )
+                except (LookupError, ValueError, DeterministicToolInfrastructureError) as exc:
+                    error_code = (
+                        exc.code
+                        if isinstance(exc, DeterministicToolInfrastructureError)
+                        else "EXPLORATION_ERROR"
+                    )
+                    await update_step_tool_result(
+                        engine,
+                        run_id,
+                        step_number=observed_steps,
+                        tool_input=tool_input,
+                        tool_output={
+                            "tool": "explorar_valores",
+                            "ok": False,
+                            "error": {"code": error_code},
+                        },
+                        latency_ms=round((time.monotonic() - tool_started) * 1000),
+                        error=str(exc),
+                    )
+                    raise
+                await update_step_tool_result(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    tool_input=tool_input,
+                    tool_output={
+                        "tool": "explorar_valores",
+                        "ok": bool(exploration.values),
+                        "values": list(exploration.values),
+                        "search_term": exploration.search_term,
+                        "tool_calls": exploration.tool_calls,
+                    },
+                    latency_ms=round((time.monotonic() - tool_started) * 1000),
+                )
+                return exploration
+
+            dependencies = dataclasses.replace(
+                dependencies,
+                explore=explore_with_observability,
+            )
+            original_execute = dependencies.execute
+
+            async def execute_with_observability(validated):
+                tool_started = time.monotonic()
+                tool_input = {
+                    "dataset_id": validated.dataset_id,
+                    "plan_hash": validated.source_plan_hash,
+                }
+                try:
+                    execution = await original_execute(validated)
+                except DeterministicExecutionError as exc:
+                    await update_step_tool_result(
+                        engine,
+                        run_id,
+                        step_number=observed_steps,
+                        tool_input=tool_input,
+                        tool_output=exc.tool_output or {},
+                        latency_ms=round((time.monotonic() - tool_started) * 1000),
+                        error=str(exc),
+                    )
+                    raise
+                await update_step_tool_result(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    tool_input=tool_input,
+                    tool_output=execution.tool_output,
+                    latency_ms=round((time.monotonic() - tool_started) * 1000),
+                )
+                return execution
+
+            dependencies = dataclasses.replace(dependencies, execute=execute_with_observability)
+            result = await run_deterministic_agent(
+                run.question,
+                dependencies=dependencies,
+                budgets=SupervisorBudgets(
+                    max_candidates=8,
+                    max_explorations=6,
+                    max_queries=6,
+                    max_plan_repairs=2,
+                    max_llm_calls=10,
+                    max_duration_ms=settings.run_max_duration_s * 1000,
+                ),
+                is_cancelled=cancel_event.is_set,
+                observe_transition=observe_transition,
+                defer_synthesis_until_persisted=(settings.deterministic_textual_facts_enabled),
+            )
+        await touch_run_heartbeat(engine, run_id)
+        latency_ms = round((time.monotonic() - started) * 1000)
+        evidence: list[dict] = []
+        claims: list[dict] = []
+        presentation_warnings: list[dict] = []
+        persisted = None
+        # T-617B-C13-D9 (golden-v2, pilot-018-transporte-ferreo): este chequeo
+        # decidía únicamente por presencia de `textual_facts`/`textual_rejections`,
+        # sin consultar tema -- un candidato de repliegue sin relación temática
+        # (`5r3g-zv5z`, "Tráfico Portuario Marítimo") completaba igual la
+        # persistencia y síntesis citando un hecho textual de esa misma
+        # columna sin relación (`tipo_carga`: "GRANEL LÍQUIDO") para una
+        # pregunta de concesiones ferroviarias, porque `deterministic_runtime.py`
+        # ya no era consultado en este punto (el resultado ya había vuelto).
+        # Se aplica la MISMA señal de repliegue-sin-relación-temática que
+        # `claims_materially_relevant`/`textual_result_available` ya usan
+        # internamente, vía el mismo helper compartido -- nunca por
+        # `case_id`/`dataset_id` ni un candidato concreto. Las rechazos
+        # (`textual_rejections`) nunca se filtran por tema: son auditoría de
+        # un intento fallido, no una respuesta entregada.
+        textual_facts_present = result.execution is not None and bool(
+            getattr(result.execution, "textual_facts", ())
+        )
+        textual_rejections_present = result.execution is not None and bool(
+            getattr(result.execution, "textual_rejections", ())
+        )
+        if textual_facts_present:
+            evidence_draft = getattr(result.execution, "evidence_draft", None)
+            textual_facts_present = fallback_dataset_topically_relevant(
+                getattr(evidence_draft, "dataset_name", None),
+                requested_tokens=intent_relevance_tokens(
+                    result.intent.topic, result.intent.administrative_terms
+                ),
+                accepted_candidate_index=_accepted_candidate_index(result.trace),
+            )
+        has_internal_textual_result = textual_facts_present or textual_rejections_present
+        if result.status in {"completed", "ready_for_synthesis"} or has_internal_textual_result:
+            assert result.execution is not None
+            if result.status == "completed" and not settings.deterministic_textual_facts_enabled:
+                assert result.synthesis is not None
+            if cancel_event.is_set():
+                raise DeterministicRunCancelled("corrida cancelada antes de persistir")
+            metadata = await load_dataset_evidence_metadata(
+                engine,
+                result.execution.rendered_query.dataset_id,
+            )
+            if metadata is None:
+                raise LookupError("el dataset ejecutado desapareció antes de persistir")
+            persisted = await persist_deterministic_execution(
+                result.execution,
+                engine=engine,
+                run_id=run_id,
+                official_publisher_id=metadata.official_publisher_id,
+                is_cancelled=cancel_event.is_set,
+            )
+        if cancel_event.is_set():
+            raise DeterministicRunCancelled("corrida cancelada antes del terminal")
+        allowed_grounded_facts = None
+        synthesis_answer: str | None = None
+        if (
+            settings.deterministic_textual_facts_enabled
+            and persisted is not None
+            and result.execution is not None
+        ):
+            allowed_grounded_facts = await load_allowed_grounded_facts(engine, run_id)
+            if allowed_grounded_facts.facts:
+                synthesis_plan_attempted = False
+                try:
+                    if dependencies.plan_synthesis is None:
+                        raise GroundedSynthesisValidationError(
+                            "no existe planificador de síntesis cerrada"
+                        )
+                    synthesis_plan_attempted = True
+                    synthesis_plan = await dependencies.plan_synthesis(
+                        result.intent,
+                        allowed_grounded_facts,
+                    )
+                    validate_grounded_synthesis_plan(
+                        synthesis_plan,
+                        allowed_grounded_facts,
+                    )
+                except (
+                    GroundedSynthesisValidationError,
+                    LLMProviderError,
+                    TypeError,
+                    ValidationError,
+                    ValueError,
+                ):
+                    synthesis_plan = build_grounded_synthesis_fallback(
+                        allowed_grounded_facts,
+                        requested_tokens=intent_relevance_tokens(
+                            result.intent.topic, result.intent.administrative_terms
+                        ),
+                    )
+                if cancel_event.is_set():
+                    raise DeterministicRunCancelled(
+                        "corrida cancelada después de planificar síntesis"
+                    )
+                synthesis_answer = render_grounded_synthesis(
+                    synthesis_plan,
+                    allowed_grounded_facts,
+                )
+                synthesis_usage = result.usage.model_copy(
+                    update={"llm_calls": (result.usage.llm_calls + int(synthesis_plan_attempted))}
+                )
+                observed_steps += 1
+                await record_step_and_event(
+                    engine,
+                    run_id,
+                    step_number=observed_steps,
+                    node="synthesize",
+                    display_message=("síntesis literal validada desde hechos persistidos"),
+                    detail={
+                        "runtime": "deterministic",
+                        "schema_version": synthesis_plan.schema_version.value,
+                        "allowed_fact_count": len(allowed_grounded_facts.facts),
+                        "grounded_synthesis_plan": synthesis_plan.model_dump(mode="json"),
+                        "usage": synthesis_usage.model_dump(mode="json"),
+                    },
+                )
+        quantitative_completed = result.status == "completed"
+        prepared_textual_count = (
+            len(result.execution.textual_facts) if result.execution is not None else 0
+        )
+        allowed_identities = (
+            {(fact.fact_kind.value, fact.id) for fact in allowed_grounded_facts.facts}
+            if allowed_grounded_facts is not None
+            else set()
+        )
+        persisted_textual_facts = (
+            tuple(
+                fact
+                for fact in persisted.textual_facts
+                if ("textual", fact.fact_id) in allowed_identities
+            )
+            if settings.deterministic_textual_facts_enabled and persisted is not None
+            else ()
+        )
+        textual_persistence_complete = (
+            prepared_textual_count == 0 or len(persisted_textual_facts) == prepared_textual_count
+        )
+        textual_facts = [
+            TextualFactResponse.model_validate(fact.model_dump()).model_dump(mode="json")
+            for fact in persisted_textual_facts
+        ]
+        if settings.deterministic_textual_facts_enabled:
+            public_completed = synthesis_answer is not None
+            quantitative_completed = any(
+                fact.fact_kind is QuantitativeFactKind.QUANTITATIVE
+                for fact in (
+                    allowed_grounded_facts.facts if allowed_grounded_facts is not None else ()
+                )
+            )
+        else:
+            public_completed = quantitative_completed or (
+                bool(textual_facts) and textual_persistence_complete
+            )
+        if public_completed:
+            assert persisted is not None
+            evidence = [persisted.evidence]
+            if quantitative_completed:
+                claims = (
+                    [
+                        claim
+                        for claim in persisted.claims
+                        if (
+                            "quantitative",
+                            uuid.UUID(str(claim["claim_id"])),
+                        )
+                        in allowed_identities
+                    ]
+                    if settings.deterministic_textual_facts_enabled
+                    else list(persisted.claims)
+                )
+                # RF-212 (contracts/api-rest.md §4c): advertencia de
+                # presentación por claim con etiquetado ambiguo, distinta de
+                # evidence[].quality.warnings_user. Vacía si no hay ninguna;
+                # nunca convierte por sí sola `completed` en `no_evidence`.
+                presentation_warnings = build_presentation_warnings(claims)
+
+        final_answer = {
+            "run_id": str(run_id),
+            "status": "completed" if public_completed else "no_evidence",
+            "intention": result.intent.model_dump(mode="json"),
+            "summary": (
+                synthesis_answer
+                if public_completed
+                and quantitative_completed
+                and settings.deterministic_textual_facts_enabled
+                else result.synthesis.answer
+                if public_completed and quantitative_completed and result.synthesis is not None
+                else (
+                    "Se encontraron hechos textuales verificables."
+                    if textual_facts
+                    else "No encontré evidencia elegible suficiente para responder."
+                )
+            ),
+            "narrative": (
+                synthesis_answer
+                if public_completed and settings.deterministic_textual_facts_enabled
+                else result.synthesis.answer
+                if public_completed and quantitative_completed and result.synthesis is not None
+                else None
+            ),
+            "evidence": evidence,
+            "claims": claims,
+            "presentation_warnings": presentation_warnings,
+            "textual_facts": textual_facts,
+            "partial_textual_facts": [],
+            "no_evidence_report": (
+                None
+                if public_completed
+                else {
+                    "reason": result.stop_reason.value if result.stop_reason else "NO_EVIDENCE",
+                    "suggestions": [
+                        "Reformular la pregunta con tema, territorio o periodo explícitos."
+                    ],
+                    "datasets_reviewed": [],
+                    "external_sources": [],
+                }
+            ),
+            "usage": {
+                "steps_used": observed_steps,
+                "input_tokens": llm_usage.input_tokens,
+                "output_tokens": llm_usage.output_tokens,
+                "estimated_cost_usd": llm_usage.estimated_cost_usd,
+                "latency_ms": latency_ms,
+                "termination_reason": (
+                    result.stop_reason.value if result.stop_reason is not None else None
+                ),
+            },
+        }
+        await persist_final_answer(
+            engine,
+            run_id,
+            final_answer,
+            latency_ms=latency_ms,
+            llm_provider=settings.llm_provider,
+            llm_model=settings.llm_model,
+            input_tokens=llm_usage.input_tokens,
+            output_tokens=llm_usage.output_tokens,
+            estimated_cost_usd=llm_usage.estimated_cost_usd,
+        )
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status=final_answer["status"],
+            error_code=None,
+            payload=final_answer,
+        )
+        return {"final_answer": final_answer, "runtime": "deterministic"}
+    except (DeterministicRunCancelled, DeterministicPersistenceCancelled):
+        return {}
+    except SynthesisIntegrityError as exc:
+        latency_ms = round((time.monotonic() - started) * 1000)
+        await persist_run_telemetry(
+            engine,
+            run_id,
+            steps_used=observed_steps,
+            latency_ms=latency_ms,
+            llm_provider=settings.llm_provider,
+            llm_model=settings.llm_model,
+            input_tokens=llm_usage.input_tokens,
+            output_tokens=llm_usage.output_tokens,
+            estimated_cost_usd=llm_usage.estimated_cost_usd,
+        )
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code="STRUCTURED_OUTPUT_INVALID",
+                status="failed",
+                message_user=(
+                    "No fue posible producir una respuesta sin cifras "
+                    "no respaldadas por la evidencia."
+                ),
+                message_dev=str(exc),
+                retryable=False,
+            )
+        ).model_dump()
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status="failed",
+            error_code="STRUCTURED_OUTPUT_INVALID",
+            payload=payload,
+        )
+        return {"terminal_error": payload, "runtime": "deterministic"}
+    except DeterministicToolInfrastructureError as exc:
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code=exc.code,
+                status="failed",
+                message_user=(
+                    "La fuente de datos no respondió a tiempo."
+                    if exc.code == "SOCRATA_TIMEOUT"
+                    else "La fuente de datos no está disponible en este momento."
+                ),
+                message_dev=str(exc),
+                retryable=True,
+            )
+        ).model_dump()
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status="failed",
+            error_code=exc.code,
+            payload=payload,
+        )
+        return {"terminal_error": payload, "runtime": "deterministic"}
+    except LLMStructuredOutputError as exc:
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code="STRUCTURED_OUTPUT_INVALID",
+                status="failed",
+                message_user=(
+                    "No fue posible interpretar de forma segura la respuesta "
+                    "estructurada del modelo."
+                ),
+                message_dev=str(exc),
+                retryable=False,
+            )
+        ).model_dump()
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status="failed",
+            error_code="STRUCTURED_OUTPUT_INVALID",
+            payload=payload,
+        )
+        return {"terminal_error": payload, "runtime": "deterministic"}
+    except (LLMProviderError, LLMConfigurationError) as exc:
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code="LLM_PROVIDER_ERROR",
+                status="failed",
+                message_user="El servicio de inteligencia artificial no está disponible.",
+                message_dev=str(exc),
+                retryable=False,
+            )
+        ).model_dump()
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status="failed",
+            error_code="LLM_PROVIDER_ERROR",
+            payload=payload,
+        )
+        return {"terminal_error": payload, "runtime": "deterministic"}
+    except Exception as exc:
+        payload = ErrorEnvelope(
+            error=ErrorDetail(
+                code="INTERNAL",
+                status="failed",
+                message_user="Ocurrió un error inesperado durante la investigación.",
+                message_dev=str(exc),
+                retryable=False,
+            )
+        ).model_dump()
+        await write_terminal_event_once(
+            engine,
+            run_id,
+            status="failed",
+            error_code="INTERNAL",
+            payload=payload,
+        )
+        return {"terminal_error": payload, "runtime": "deterministic"}
+    finally:
+        await engine.dispose()
+
+
 async def execute_agent_run_async(
+    settings: Settings,
+    run_id: uuid.UUID,
+    cancel_event: threading.Event | None = None,
+) -> dict:
+    if settings.agent_runtime == "legacy":
+        return await execute_legacy_agent_run_async(settings, run_id, cancel_event)
+    return await execute_deterministic_agent_run_async(settings, run_id, cancel_event)
+
+
+async def execute_legacy_agent_run_async(
     settings: Settings,
     run_id: uuid.UUID,
     cancel_event: threading.Event | None = None,
@@ -385,9 +1061,7 @@ async def execute_agent_run_async(
                 max_steps=settings.agent_max_steps,
                 context_hint=run.context_hint,
             )
-            async with AsyncPostgresSaver.from_conn_string(
-                settings.psycopg_database_url
-            ) as saver:
+            async with AsyncPostgresSaver.from_conn_string(settings.psycopg_database_url) as saver:
                 await saver.setup()
                 graph = build_graph(deps, saver, interrupt=True)
                 while True:
@@ -412,7 +1086,8 @@ async def execute_agent_run_async(
                 payload=error,
             )
             return state
-        final_answer = state["final_answer"]
+        final_answer = materialize_textual_fact_fields(state["final_answer"])
+        state["final_answer"] = final_answer
         input_tokens, output_tokens, estimated_cost = _usage_totals(state)
         final_answer["usage"]["latency_ms"] = latency_ms
         final_answer["usage"]["estimated_cost_usd"] = estimated_cost

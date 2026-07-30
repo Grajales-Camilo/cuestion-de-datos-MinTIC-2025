@@ -95,6 +95,23 @@ class EvidenceDraft:
     row_count: int
     data_updated_at: datetime | None
     evaluated_at: datetime
+    #: Hallazgo real (T-617B-C13-D7 continuación, pilot-025/pilot-026,
+    #: golden-v2): `dataset_eligibility_reasons` hereda
+    #: `pii_medium_requires_aggregation` del riesgo PII del DATASET completo
+    #: (peor caso de todas sus columnas, `classify_dataset`), nunca solo de
+    #: las columnas realmente seleccionadas -- un LOOKUP de un identificador
+    #: `low` (código de municipio/departamento) nunca puede cumplir
+    #: `aggregation_min_count >= 5` (por construcción devuelve 1 fila) y
+    #: quedaba `blocked` sin exponer ninguna columna sensible. Default `True`
+    #: preserva el comportamiento previo exacto para cualquier llamador que
+    #: no lo fije explícitamente (runtime legado `app/agent/graph.py`,
+    #: pruebas existentes de `validate_evidence`). El pipeline determinista
+    #: lo fija a `plan.include_group_count` -- la misma señal ya acotada por
+    #: columna que decide si `soql_renderer` añade `count(*)` -- para que la
+    #: exigencia de agregación se desactive exactamente cuando ninguna
+    #: columna medium se expone, sin tocar el caso agregado (SUM/AVG/...)
+    #: donde `include_group_count` sigue reflejando el riesgo del dataset.
+    aggregation_safety_required: bool = True
 
 
 @dataclass(frozen=True)
@@ -544,7 +561,9 @@ def validate_evidence(
     ]
     eligibility_status = _worst_eligibility(statuses)
 
-    is_medium_pii = "pii_medium_requires_aggregation" in reasons
+    is_medium_pii = (
+        "pii_medium_requires_aggregation" in reasons and draft.aggregation_safety_required
+    )
     aggregation_min_count = _aggregation_min_count(parsed, draft.rows)
     if is_medium_pii and (
         aggregation_min_count is None or aggregation_min_count < MIN_AGGREGATION_COUNT

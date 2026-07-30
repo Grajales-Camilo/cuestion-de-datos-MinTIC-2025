@@ -68,10 +68,18 @@ import hashlib
 import json
 import re
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal, DecimalException
 
-CLAIMS_ALGORITHM_VERSION = "1.0.0"
+from app.quality.claim_labels import LabelStatus, derive_claim_label
+
+#: v2.0.0 (T-617C-R1, RF-212): la identidad de columnas embebida en el hash
+#: pasa de alias de ejecución (`dim_N`/`metric_N`) a nombre de columna fuente
+#: real. v1.0.0 sigue siendo verificable explícitamente vía
+#: `compute_legacy_source_hash` para claims persistidos antes de esta
+#: enmienda -- nunca se invalida evidencia histórica en silencio.
+CLAIMS_ALGORITHM_VERSION = "2.0.0"
+LEGACY_CLAIMS_ALGORITHM_VERSION = "1.0.0"
 
 ALLOWED_AGG_FUNCTIONS = {"sum", "avg", "count", "min", "max"}
 ALLOWED_OPS = {"add", "sub", "mul", "div", "ratio", "pct_change"}
@@ -89,6 +97,14 @@ class ClaimSpec:
     unit: str | None = None
     rounding: int | None = None
     formula: dict | None = None
+    #: Mapeo del alias de ejecución (p. ej. `dim_2`) usado en `columns` hacia
+    #: el nombre de columna fuente real (p. ej. `genero_hombre`). `columns`
+    #: sigue siendo el alias interno necesario para leer `EvidenceContext.rows`
+    #: y reproducir `source_hash`; este mapeo solo alimenta los campos
+    #: públicos `public_columns`/`label` (RF-212). Sin entrada para un alias
+    #: dado, ese alias se usa tal cual como nombre público (compatibilidad
+    #: retroactiva con specs que ya declaran nombres reales directamente).
+    column_field_names: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -108,8 +124,20 @@ class BuiltClaim:
     rounding: int
     formula: dict | None
     source_row_indexes: tuple[int, ...]
+    #: Alias de ejecución interno (p. ej. `dim_2`); NUNCA se expone tal cual
+    #: en un campo público (RF-212). Se conserva porque `compute_source_hash`
+    #: y la reverificación de hechos fundamentados dependen de que coincida
+    #: con las claves de `EvidenceContext.rows`/`evidence_results.rows`.
     columns_used: tuple[str, ...]
     source_hash: str
+    #: Nombre(s) de columna fuente real(es) usados por el claim, derivados de
+    #: `ClaimSpec.column_field_names` (RF-212). Este es el campo que debe
+    #: exponerse públicamente como `columns`/`columns_used`, nunca `columns_used`.
+    public_columns: tuple[str, ...] = ()
+    #: Etiqueta humana verificable (RF-212, `contracts/api-rest.md` §4c) o
+    #: `None` si `label_status="ambiguous"`.
+    label: str | None = None
+    label_status: LabelStatus = "ambiguous"
 
 
 @dataclass(frozen=True)
@@ -329,6 +357,26 @@ def _build_derived(evidence: EvidenceContext, spec: ClaimSpec) -> tuple[Decimal,
     return raw, used
 
 
+def _infer_direct_rounding(raw_value: Decimal) -> int:
+    """Hallazgo real (pilot-034-eolica-jepirachi, dataset `vy9n-w6hc`): un
+    claim `direct` sin `rounding` explícito (el pipeline determinista, T7,
+    nunca lo fija -- `deterministic_pipeline._claim_specs`) caía en el
+    default `0` de abajo y presentaba `Capacidad: 18` para una fuente
+    `18.42`, una contradicción material (RNF-003) aunque el dato subyacente
+    fuera correcto. Un claim `direct` es una lectura literal de una celda
+    (`_build_direct`), no un cálculo (`derived`): su precisión debe ser la
+    escala decimal ya presente en `raw_value` (vía `_to_decimal`), nunca una
+    inferida desde `case_id`, nombre de columna o dataset. `Decimal` conserva
+    los ceros decimales de la fuente tal cual se escribieron (p. ej.
+    `"18.4200"` -> exponente -4 -> redondeo 4), así que esta política es
+    determinista y reproducible sin heurísticas adicionales."""
+
+    exponent = raw_value.as_tuple().exponent
+    if not isinstance(exponent, int):
+        return 0
+    return max(0, -exponent)
+
+
 def _build_one_claim(evidence: EvidenceContext, spec: ClaimSpec) -> BuiltClaim:
     if spec.claim_type not in ("direct", "derived"):
         raise ClaimRejected(f"claim_type '{spec.claim_type}' no reconocido")
@@ -339,19 +387,28 @@ def _build_one_claim(evidence: EvidenceContext, spec: ClaimSpec) -> BuiltClaim:
 
     if spec.claim_type == "direct":
         raw_value, used_columns = _build_direct(evidence, spec)
+        default_rounding = _infer_direct_rounding(raw_value)
     else:
         raw_value, used_columns = _build_derived(evidence, spec)
+        default_rounding = 0
 
-    rounding = spec.rounding if spec.rounding is not None else 0
+    rounding = spec.rounding if spec.rounding is not None else default_rounding
     display_value = format_es_co(raw_value, rounding, spec.unit)
     sorted_indexes = tuple(sorted(spec.source_row_indexes))
+
+    sorted_alias_columns = tuple(sorted(used_columns))
+    public_columns = tuple(
+        spec.column_field_names.get(alias, alias) for alias in sorted_alias_columns
+    )
+    label, label_status = derive_claim_label(public_columns)
 
     source_hash = compute_source_hash(
         dataset_id=evidence.dataset_id,
         canonical_soql=evidence.canonical_soql,
         source_row_indexes=sorted_indexes,
         rows=evidence.rows,
-        columns=spec.columns,
+        execution_columns=sorted_alias_columns,
+        public_columns=public_columns,
         formula=spec.formula,
         raw_value=raw_value,
         unit=spec.unit,
@@ -367,8 +424,11 @@ def _build_one_claim(evidence: EvidenceContext, spec: ClaimSpec) -> BuiltClaim:
         rounding=rounding,
         formula=spec.formula,
         source_row_indexes=sorted_indexes,
-        columns_used=tuple(sorted(used_columns)),
+        columns_used=sorted_alias_columns,
         source_hash=source_hash,
+        public_columns=public_columns,
+        label=label,
+        label_status=label_status,
     )
 
 
@@ -414,10 +474,25 @@ def format_es_co(raw_value: Decimal, rounding: int, unit: str | None) -> str:
 # --- source_hash --------------------------------------------------------------
 
 
-def _row_subset_canonical(
+def _row_subset_canonical_legacy(
     rows: tuple[dict, ...], indexes: tuple[int, ...], columns: tuple[str, ...]
 ) -> list[dict]:
     return [{col: rows[idx].get(col) for col in columns} for idx in indexes]
+
+
+def _row_subset_canonical(
+    rows: tuple[dict, ...],
+    indexes: tuple[int, ...],
+    execution_columns: tuple[str, ...],
+    public_columns: tuple[str, ...],
+) -> list[dict]:
+    """Extrae el subconjunto canónico de filas leyendo por alias de
+    ejecución (única clave presente en `rows`, ver `EvidenceContext`), pero
+    reindexa el resultado por nombre de columna público (RF-212): el alias
+    nunca queda embebido en el material que produce `source_hash`."""
+
+    pairs = tuple(zip(execution_columns, public_columns, strict=True))
+    return [{public: rows[idx].get(alias) for alias, public in pairs} for idx in indexes]
 
 
 def _canonical_json(value: object) -> str:
@@ -430,19 +505,61 @@ def compute_source_hash(
     canonical_soql: str,
     source_row_indexes: tuple[int, ...],
     rows: tuple[dict, ...],
-    columns: tuple[str, ...],
+    execution_columns: tuple[str, ...],
+    public_columns: tuple[str, ...],
     formula: dict | None,
     raw_value: Decimal,
     unit: str | None,
     rounding: int,
 ) -> str:
+    """Hash reproducible v2.0.0 (RF-212): la identidad de columnas embebida
+    en el material (`"columns"`, `rows_subset_canonical`) es el nombre de
+    columna fuente real (`public_columns`), nunca el alias de ejecución
+    (`execution_columns`) usado solo para leer `rows`. Para claims
+    persistidos antes de esta versión usar `compute_legacy_source_hash`."""
+
     sorted_indexes = tuple(sorted(source_row_indexes))
     payload = {
         "algorithm_version": CLAIMS_ALGORITHM_VERSION,
         "dataset_id": dataset_id,
         "canonical_soql": canonical_soql,
         "source_row_indexes": list(sorted_indexes),
-        "rows_subset_canonical": _row_subset_canonical(rows, sorted_indexes, columns),
+        "rows_subset_canonical": _row_subset_canonical(
+            rows, sorted_indexes, execution_columns, public_columns
+        ),
+        "columns": list(public_columns),
+        "formula_dsl_canonical": formula,
+        "raw_value": format(raw_value, "f"),
+        "unit": unit,
+        "rounding": rounding,
+    }
+    digest = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+    return f"sha256:{digest}"
+
+
+def compute_legacy_source_hash(
+    *,
+    dataset_id: str,
+    canonical_soql: str,
+    source_row_indexes: tuple[int, ...],
+    rows: tuple[dict, ...],
+    columns: tuple[str, ...],
+    formula: dict | None,
+    raw_value: Decimal,
+    unit: str | None,
+    rounding: int,
+) -> str:
+    """Reproduce el hash v1.0.0 (columns = alias de ejecución) bit a bit,
+    exclusivamente para reverificar claims persistidos antes de T-617C-R1.
+    No usar para claims nuevos."""
+
+    sorted_indexes = tuple(sorted(source_row_indexes))
+    payload = {
+        "algorithm_version": LEGACY_CLAIMS_ALGORITHM_VERSION,
+        "dataset_id": dataset_id,
+        "canonical_soql": canonical_soql,
+        "source_row_indexes": list(sorted_indexes),
+        "rows_subset_canonical": _row_subset_canonical_legacy(rows, sorted_indexes, columns),
         "columns": list(columns),
         "formula_dsl_canonical": formula,
         "raw_value": format(raw_value, "f"),
@@ -468,9 +585,22 @@ _LONG_DATE_RE = re.compile(
 )
 
 _SECTION_WORDS = (
-    "sección", "seccion", "artículo", "articulo", "numeral", "literal",
-    "capítulo", "capitulo", "anexo", "página", "pagina", "pág", "pag",
-    "núm", "num", "no.",
+    "sección",
+    "seccion",
+    "artículo",
+    "articulo",
+    "numeral",
+    "literal",
+    "capítulo",
+    "capitulo",
+    "anexo",
+    "página",
+    "pagina",
+    "pág",
+    "pag",
+    "núm",
+    "num",
+    "no.",
 )
 
 _RANGE_RE = re.compile(r"\b(\d+(?:[.,]\d+)?)\s*(?:-|a)\s*(\d+(?:[.,]\d+)?)\b")
@@ -549,6 +679,4 @@ def find_orphan_figures(text: str, accepted_display_values: Iterable[str]) -> tu
         for display_value in accepted_display_values
         for token in find_figures(display_value)
     }
-    return tuple(
-        token for token in find_figures(text) if _numeric_core(token) not in allowed_cores
-    )
+    return tuple(token for token in find_figures(text) if _numeric_core(token) not in allowed_cores)

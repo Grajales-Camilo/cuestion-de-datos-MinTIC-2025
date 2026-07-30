@@ -1,9 +1,11 @@
 import pytest
 
+from app.quality.claim_labels import COUNT_FIELD_SENTINEL
 from app.tools.soql_parser import (
     ColumnInfo,
     DatasetCatalogInfo,
     SoqlGuardError,
+    extract_column_field_names,
     validate_and_canonicalize,
 )
 
@@ -239,3 +241,40 @@ def test_medium_pii_without_count_aggregate_is_rejected() -> None:
             "SELECT genero, avg(edad) AS promedio GROUP BY genero", _medium_pii_dataset()
         )
     assert excinfo.value.code == "PII_AGGREGATION_REQUIRED"
+
+
+# --- extract_column_field_names (RF-212, T-617C-R1) --------------------------
+
+
+def test_extract_column_field_names_resolves_plain_column_alias() -> None:
+    mapping = extract_column_field_names("select genero_hombre as dim_1 limit 1")
+    assert mapping == {"dim_1": "genero_hombre"}
+
+
+def test_extract_column_field_names_resolves_aggregate_argument() -> None:
+    mapping = extract_column_field_names(
+        "select municipio as dim_1, sum(valor) as metric_sum_1 group by municipio limit 1"
+    )
+    assert mapping == {"dim_1": "municipio", "metric_sum_1": "valor"}
+
+
+def test_extract_column_field_names_maps_count_star_to_sentinel() -> None:
+    mapping = extract_column_field_names("select count(*) as metric_count_1 limit 1")
+    assert mapping == {"metric_count_1": COUNT_FIELD_SENTINEL}
+
+
+def test_extract_column_field_names_maps_privacy_group_count_to_sentinel() -> None:
+    mapping = extract_column_field_names(
+        "select genero as dim_1, avg(edad) as metric_avg_1, count(*) as group_count "
+        "group by genero limit 1"
+    )
+    assert mapping == {
+        "dim_1": "genero",
+        "metric_avg_1": "edad",
+        "group_count": COUNT_FIELD_SENTINEL,
+    }
+
+
+def test_extract_column_field_names_ignores_items_without_alias() -> None:
+    mapping = extract_column_field_names("select genero_hombre limit 1")
+    assert mapping == {}

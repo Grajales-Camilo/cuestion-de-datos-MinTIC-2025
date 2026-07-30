@@ -2,14 +2,29 @@
 
 from __future__ import annotations
 
+import sys
 import uuid
+from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+
+import pytest
 
 import eval.run as run_module
 from app.config import Settings
 from eval.loader import GoldenCase, GoldenSuite
 from eval.persistence import PersistedGoldenSuite
+
+
+def test_main_help_renders_literal_percentage(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(sys, "argv", ["eval.run", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_module.main()
+
+    assert exc_info.value.code == 0
+    assert "negativos 100%" in capsys.readouterr().out
 
 
 def _settings(**overrides: object) -> Settings:
@@ -20,6 +35,11 @@ def _settings(**overrides: object) -> Settings:
         "SOCRATA_APP_TOKEN": "token-local",
         "RETENTION_HASH_SALT": "replace-with-local-development-salt-32-bytes",
         "EVAL_MODE": True,
+        # Las pruebas que atraviesan `run_suite` simulan una certificación
+        # formal de las suites golden actuales, que desde T-615 incluye hechos
+        # textuales. Los casos del preflight que prueban el rechazo lo apagan
+        # explícitamente.
+        "DETERMINISTIC_TEXTUAL_FACTS_ENABLED": True,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -35,6 +55,326 @@ def _fake_suite() -> GoldenSuite:
     )
 
 
+def test_config_snapshot_registers_deterministic_textual_facts_enabled(monkeypatch) -> None:
+    """T-617B0-R3 #6: config_snapshot debe registrar
+    deterministic_textual_facts_enabled porque afecta el contrato del
+    planificador determinista y hoy no quedaba registrado en la corrida de
+    evaluación."""
+
+    monkeypatch.setattr(run_module, "_git_commit", lambda: "abc123")
+    settings = _settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=True)
+
+    snapshot = run_module._config_snapshot(settings, seed=601000)
+
+    assert snapshot["deterministic_textual_facts_enabled"] is True
+    assert snapshot["eval_seed"] == 601000
+
+
+@pytest.mark.parametrize("schema_version", ["golden-v1", "golden-v2"])
+@pytest.mark.parametrize("gate_mode", ["smoke", "full"])
+def test_formal_certification_requires_textual_capability(
+    schema_version: str,
+    gate_mode: str,
+) -> None:
+    with pytest.raises(
+        RuntimeError,
+        match=rf"{schema_version} con --gate {gate_mode} exige",
+    ):
+        run_module._validate_eval_capabilities(
+            schema_version=schema_version,
+            gate_mode=gate_mode,
+            settings=_settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=False),
+        )
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "gate_mode", "enabled"),
+    [
+        ("golden-v2", "smoke", True),
+        ("golden-v2", "full", True),
+        ("golden-v2", "directed", False),
+        ("golden-v1", "smoke", True),
+        ("golden-v1", "full", True),
+        ("golden-v1", "directed", False),
+    ],
+)
+def test_eval_capability_preflight_preserves_compatible_modes(
+    schema_version: str,
+    gate_mode: str,
+    enabled: bool,
+) -> None:
+    run_module._validate_eval_capabilities(
+        schema_version=schema_version,
+        gate_mode=gate_mode,
+        settings=_settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=enabled),
+    )
+
+
+def test_failed_run_snapshot_preserves_persisted_usage_without_final_answer() -> None:
+    snapshot = run_module._final_snapshot_from_run(
+        SimpleNamespace(
+            status="failed",
+            terminal_error_code="STRUCTURED_OUTPUT_INVALID",
+            final_answer=None,
+            steps_used=7,
+            latency_ms=18062,
+            input_tokens=11305,
+            output_tokens=2608,
+            estimated_cost_usd=0.009912,
+        )
+    )
+
+    assert snapshot == {
+        "status": "failed",
+        "usage": {
+            "steps_used": 7,
+            "latency_ms": 18062,
+            "input_tokens": 11305,
+            "output_tokens": 2608,
+            "estimated_cost_usd": 0.009912,
+            "termination_reason": "STRUCTURED_OUTPUT_INVALID",
+        },
+    }
+
+
+def test_final_snapshot_preserves_existing_completed_answer_without_technical_overlay() -> None:
+    final_answer = {
+        "status": "completed",
+        "summary": "Respuesta pública persistida.",
+        "evidence": [{"dataset_id": "abcd-1234"}],
+        "claims": [{"display_value": "42"}],
+        "usage": {"estimated_cost_usd": 0.001},
+    }
+    snapshot = run_module._final_snapshot_from_run(
+        SimpleNamespace(
+            status="failed",
+            terminal_error_code="INTERNAL",
+            final_answer=final_answer,
+            estimated_cost_usd=Decimal("9.99"),
+        )
+    )
+
+    assert snapshot == final_answer
+    assert snapshot is not final_answer
+
+
+def test_final_snapshot_from_none_is_safe_and_does_not_fabricate_public_answer() -> None:
+    snapshot = run_module._final_snapshot_from_run(None)
+
+    assert snapshot == {
+        "status": "failed",
+        "usage": {
+            "steps_used": None,
+            "latency_ms": None,
+            "input_tokens": None,
+            "output_tokens": None,
+            "estimated_cost_usd": None,
+            "termination_reason": None,
+        },
+    }
+    assert "summary" not in snapshot
+    assert "narrative" not in snapshot
+    assert "evidence" not in snapshot
+    assert "claims" not in snapshot
+
+
+def test_structured_output_invalid_decimal_cost_reaches_case_metrics_and_aggregate() -> None:
+    case = GoldenCase(
+        "case-structured-output-invalid",
+        "positive",
+        "pregunta privada que no debe persistirse en métricas",
+        ("abcd-1234",),
+        (),
+        2,
+        "n",
+    )
+    final = run_module._final_snapshot_from_run(
+        SimpleNamespace(
+            status="failed",
+            terminal_error_code="STRUCTURED_OUTPUT_INVALID",
+            final_answer=None,
+            steps_used=7,
+            latency_ms=18062,
+            input_tokens=11305,
+            output_tokens=2608,
+            estimated_cost_usd=Decimal("0.009912"),
+        )
+    )
+    assessment = run_module.CaseAssessment(
+        False,
+        True,
+        False,
+        ("abcd-1234",),
+        (),
+        "síntesis inválida",
+    )
+    observations = (
+        run_module.StageObservation(
+            node="synthesize",
+            detail={"usage": {"llm_calls": 3, "queries": 1}},
+            output={},
+        ),
+    )
+    diagnostics = run_module.build_stage_diagnostics(
+        case,
+        final,
+        assessment,
+        observations,
+        provider_error_code="STRUCTURED_OUTPUT_INVALID",
+    )
+    claims_integrity = run_module.evaluate_claims_integrity(final)
+    outcome = run_module._build_case_outcome(
+        case,
+        assessment,
+        diagnostics,
+        claims_integrity,
+        observations,
+    )
+    aggregate = run_module.aggregate_metrics([outcome])
+    persisted = run_module._case_result_model(
+        eval_run_id=uuid.uuid4(),
+        case_db_id=uuid.uuid4(),
+        agent_run_id=uuid.uuid4(),
+        final=final,
+        assessment=assessment,
+        stage_diagnostics=diagnostics,
+        claims_integrity=claims_integrity,
+        error_code="STRUCTURED_OUTPUT_INVALID",
+    )
+
+    assert final["usage"]["estimated_cost_usd"] == Decimal("0.009912")
+    assert diagnostics["estimated_cost_usd"] == Decimal("0.009912")
+    assert diagnostics["failure_owner"] == "agent"
+    assert diagnostics["failure_code"] == "structured_output_invalid"
+    assert outcome.cost_usd == Decimal("0.009912")
+    assert outcome.infrastructure_failure is False
+    assert aggregate.avg_cost_usd == Decimal("0.009912")
+    assert aggregate.infrastructure_failure_count == 0
+    assert persisted.metrics["usage"]["estimated_cost_usd"] == Decimal("0.009912")
+    assert persisted.metrics["stage_diagnostics"]["estimated_cost_usd"] == Decimal("0.009912")
+    assert case.question not in repr(persisted.metrics)
+
+
+@pytest.mark.parametrize(
+    "run_status,terminal_error_code,expected_failure_code",
+    [
+        ("failed", "LLM_PROVIDER_ERROR", "provider_error"),
+        # T-617B0-R3A #5 (requisito D/E.5): HEARTBEAT_EXPIRED/WORKER_LOST se
+        # persisten con status="interrupted" (app.agent.heartbeat_sweep), no
+        # "failed". La solución adoptada (opción 1 de la auditoría) es leer
+        # AMBOS estados no evaluables; sin esto, esta rama de la
+        # parametrización fallaría con error_code=None.
+        ("interrupted", "HEARTBEAT_EXPIRED", "heartbeat_expired"),
+        # T-617B0-R3B (requisito A): RUN_INTERRUPTED también se persiste con
+        # status="interrupted" (arranque idempotente del backend marcando
+        # corridas con lease vencida, plan.md §11) y antes de esta corrección
+        # caía en expected_dataset_not_retrieved/owner=agent porque
+        # diagnostics no lo reconocía como terminal no evaluable.
+        ("interrupted", "RUN_INTERRUPTED", "run_interrupted"),
+    ],
+)
+async def test_run_suite_propagates_provider_terminal_from_agent_run(
+    monkeypatch, run_status: str, terminal_error_code: str, expected_failure_code: str
+) -> None:
+    """T-617B0-R3A #1 (prueba integral, requisito E.1): reproduce el punto
+    originalmente defectuoso dentro de `run_suite` — no solo
+    `build_stage_diagnostics`/`evaluate_smoke_gate` por separado. `get_run`
+    devuelve un `status`/`terminal_error_code` no evaluable y
+    `final_answer=None` (como el agent run real
+    235466d2-a403-4c01-bc8e-817713ca3062 del smoke, para el caso
+    `status="failed"`). Sin la lectura de
+    `run.status`/`run.terminal_error_code` en `run_suite`, esta prueba falla
+    contra e74f3522853c75f6ae6ad984048bc327669602bb con
+    `error_code is None` y `failure_code == "intent_mismatch"`."""
+
+    suite = GoldenSuite(
+        name="golden-v1",
+        version="1.0.0",
+        snapshot_at="2026-07-11",
+        cases=(
+            GoldenCase("pilot-005-empleo-publico", "positive", "q1", ("abcd-1234",), (), 1, "n"),
+        ),
+        source_path=None,
+    )
+    suite_id = uuid.uuid4()
+    case_ids = {case.case_id: uuid.uuid4() for case in suite.cases}
+
+    monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
+    monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
+    monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+    monkeypatch.setattr(run_module, "validate_gate_selection", lambda *a, **k: None)
+    monkeypatch.setattr(
+        run_module,
+        "create_app_async_engine",
+        lambda *a, **k: SimpleNamespace(dispose=AsyncMock()),
+    )
+    monkeypatch.setattr(
+        run_module,
+        "sync_golden_suite",
+        AsyncMock(return_value=PersistedGoldenSuite(suite_id=suite_id, case_ids=case_ids)),
+    )
+    monkeypatch.setattr(run_module, "register_worker_instance", AsyncMock(return_value="worker-1"))
+    monkeypatch.setattr(run_module, "mark_worker_shutdown", AsyncMock())
+    monkeypatch.setattr(run_module, "create_eval_run", AsyncMock(return_value=uuid.uuid4()))
+    monkeypatch.setattr(run_module, "execute_agent_run_async", AsyncMock())
+    # No relanza excepción: el agente mismo capturó el 504 de proveedor y
+    # persistió el terminal en `agent_runs`, sin `final_answer`.
+    monkeypatch.setattr(
+        run_module,
+        "get_run",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                status=run_status,
+                terminal_error_code=terminal_error_code,
+                final_answer=None,
+            )
+        ),
+    )
+    monkeypatch.setattr(run_module, "_planner_search_dataset_ids", AsyncMock(return_value=[]))
+    monkeypatch.setattr(run_module, "_stage_observations", AsyncMock(return_value=()))
+
+    persisted_calls = []
+
+    async def fake_persist(engine, **kwargs):
+        persisted_calls.append(kwargs)
+
+    monkeypatch.setattr(run_module, "_persist_case_result", fake_persist)
+    monkeypatch.setattr(run_module, "_finalize_eval_record", AsyncMock())
+    monkeypatch.setattr(run_module, "_write_report", lambda *a, **k: None)
+    monkeypatch.setattr(
+        run_module,
+        "_create_eval_record",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                id=uuid.uuid4(), llm_provider="google", llm_model="gemini-2.5-flash"
+            )
+        ),
+    )
+
+    result = await run_module.run_suite(
+        suite_name="golden-v1", provider=None, model=None, seed=1, limit=None
+    )
+
+    assert len(persisted_calls) == 1
+    call = persisted_calls[0]
+    assert call["error_code"] == terminal_error_code
+    assert call["assessment"].passed is False
+    assert call["stage_diagnostics"]["failure_code"] == expected_failure_code
+    assert call["stage_diagnostics"]["failure_owner"] == "infrastructure"
+    assert call["stage_diagnostics"]["terminal_error_code"] == terminal_error_code
+    assert call["stage_diagnostics"]["failure_code"] != "intent_mismatch"
+
+    assert result.aggregate is not None
+    assert result.aggregate.infrastructure_failure_count == 1
+    assert result.aggregate.infrastructure_failure_case_ids == ("pilot-005-empleo-publico",)
+
+    assert result.verdict is not None
+    assert result.verdict.passed is False
+    infra_metric = next(m for m in result.verdict.metrics if m.name == "infraestructura")
+    assert infra_metric.passed is False
+    assert any("infraestructura" in reason for reason in result.verdict.blocking_reasons)
+
+
 async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch) -> None:
     suite = _fake_suite()
     suite_id = uuid.uuid4()
@@ -43,6 +383,11 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
     monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
     monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
     monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+    # Esta prueba aísla la resiliencia del bucle por-caso, no la puerta: el
+    # preflight de selección (validate_gate_selection) se cubre en sus propias
+    # pruebas dedicadas y aquí se neutraliza como un colaborador más, igual que
+    # engine/sync/register, para conservar el mini-suite de 2 casos.
+    monkeypatch.setattr(run_module, "validate_gate_selection", lambda *a, **k: None)
     monkeypatch.setattr(
         run_module,
         "create_app_async_engine",
@@ -77,6 +422,7 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
         ),
     )
     monkeypatch.setattr(run_module, "_planner_search_dataset_ids", AsyncMock(return_value=[]))
+    monkeypatch.setattr(run_module, "_stage_observations", AsyncMock(return_value=()))
 
     persisted_calls = []
 
@@ -87,8 +433,8 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
 
     finalize_calls = []
 
-    async def fake_finalize(engine, *, record_id, results):
-        finalize_calls.append((record_id, results))
+    async def fake_finalize(engine, *, record_id, aggregate):
+        finalize_calls.append((record_id, aggregate))
 
     monkeypatch.setattr(run_module, "_finalize_eval_record", fake_finalize)
     monkeypatch.setattr(run_module, "_write_report", lambda *a, **k: None)
@@ -113,6 +459,11 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
     assert failed_call["agent_run_id"] is None
     assert failed_call["error_code"] == "RuntimeError"
     assert failed_call["assessment"].passed is False
+    # T-617B0-R3A: una excepción del arnés (runner/engine/persistencia/
+    # dependencia del evaluador, aquí `create_eval_run` reventando) bloquea
+    # como infraestructura, NUNCA como regresión semántica del agente.
+    assert failed_call["stage_diagnostics"]["failure_code"] == "harness_error"
+    assert failed_call["stage_diagnostics"]["failure_owner"] == "infrastructure"
     assert "boom" in failed_call["assessment"].failure_reason
 
     ok_call = persisted_calls[1]
@@ -121,8 +472,11 @@ async def test_run_suite_persists_a_failed_case_and_still_finalizes(monkeypatch)
 
     # La corrida se cierra (finaliza) aunque un caso haya reventado.
     assert len(finalize_calls) == 1
-    _, results = finalize_calls[0]
-    assert len(results) == 2
+    _, aggregate = finalize_calls[0]
+    # Ambos casos son positivos: uno reventó, el otro pasó => 1/2 sobre positivos.
+    assert aggregate.positive_total == 2
+    assert aggregate.positive_passed == 1
+    assert aggregate.success_rate == 0.5
 
 
 async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_going(
@@ -139,6 +493,9 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
     monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
     monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
     monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+    # Igual que la prueba anterior: se aísla la resiliencia del bucle, no la
+    # puerta; el preflight se neutraliza para conservar el mini-suite de 2 casos.
+    monkeypatch.setattr(run_module, "validate_gate_selection", lambda *a, **k: None)
     monkeypatch.setattr(
         run_module,
         "create_app_async_engine",
@@ -163,6 +520,7 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
         ),
     )
     monkeypatch.setattr(run_module, "_planner_search_dataset_ids", AsyncMock(return_value=[]))
+    monkeypatch.setattr(run_module, "_stage_observations", AsyncMock(return_value=()))
     monkeypatch.setattr(
         run_module,
         "_create_eval_record",
@@ -182,8 +540,7 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
         # Solo la primera llamada (caso 1, con agent_run_id valido) falla.
         if len(persisted_calls) == 1:
             raise RuntimeError(
-                'insert or update on table "eval_case_results" violates '
-                "foreign key constraint"
+                'insert or update on table "eval_case_results" violates foreign key constraint'
             )
 
     monkeypatch.setattr(run_module, "_persist_case_result", flaky_persist)
@@ -199,3 +556,316 @@ async def test_run_suite_retries_persistence_without_agent_run_id_and_keeps_goin
     assert persisted_calls[1]["agent_run_id"] is None
     assert persisted_calls[1]["error_code"] == "RuntimeError"
     assert persisted_calls[2]["agent_run_id"] is not None
+
+
+async def test_run_suite_aborts_when_persistence_fails_twice(monkeypatch) -> None:
+    """T-617B0-R3B #2 (requisito B): si el reintento de persistencia TAMBIÉN
+    falla, la excepción NUNCA se silencia. `run_suite` debe abortar con
+    `EvalPersistenceError` (no devolver ningún `RunSuiteResult`/veredicto que
+    pudiera leerse como PASS), y el cleanup de worker/engine debe ejecutarse
+    de todas formas vía el `finally` existente. Sin la corrección, el
+    `except Exception: pass` original silenciaba el segundo fallo y permitía
+    que la corrida siguiera acumulando `results`/`outcomes` como si el caso
+    hubiera quedado persistido."""
+
+    suite = _fake_suite()
+    suite_id = uuid.uuid4()
+    case_ids = {case.case_id: uuid.uuid4() for case in suite.cases}
+
+    monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
+    monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
+    monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+    monkeypatch.setattr(run_module, "validate_gate_selection", lambda *a, **k: None)
+
+    engine_disposed = AsyncMock()
+    monkeypatch.setattr(
+        run_module,
+        "create_app_async_engine",
+        lambda *a, **k: SimpleNamespace(dispose=engine_disposed),
+    )
+    monkeypatch.setattr(
+        run_module,
+        "sync_golden_suite",
+        AsyncMock(return_value=PersistedGoldenSuite(suite_id=suite_id, case_ids=case_ids)),
+    )
+    monkeypatch.setattr(run_module, "register_worker_instance", AsyncMock(return_value="worker-1"))
+    worker_shutdown = AsyncMock()
+    monkeypatch.setattr(run_module, "mark_worker_shutdown", worker_shutdown)
+    monkeypatch.setattr(run_module, "create_eval_run", AsyncMock(return_value=uuid.uuid4()))
+    monkeypatch.setattr(run_module, "execute_agent_run_async", AsyncMock())
+    monkeypatch.setattr(
+        run_module,
+        "get_run",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                final_answer={"status": "no_evidence", "evidence": [], "claims": []}
+            )
+        ),
+    )
+    monkeypatch.setattr(run_module, "_planner_search_dataset_ids", AsyncMock(return_value=[]))
+    monkeypatch.setattr(run_module, "_stage_observations", AsyncMock(return_value=()))
+    monkeypatch.setattr(
+        run_module,
+        "_create_eval_record",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                id=uuid.uuid4(), llm_provider="google", llm_model="gemini-2.5-flash"
+            )
+        ),
+    )
+
+    finalize_calls = []
+    monkeypatch.setattr(
+        run_module,
+        "_finalize_eval_record",
+        AsyncMock(side_effect=lambda *a, **k: finalize_calls.append(1)),
+    )
+    write_report_calls = []
+    monkeypatch.setattr(run_module, "_write_report", lambda *a, **k: write_report_calls.append(1))
+
+    persisted_calls = []
+
+    async def always_fails(engine, **kwargs):
+        persisted_calls.append(kwargs)
+        raise RuntimeError(
+            'insert or update on table "eval_case_results" violates foreign key constraint'
+        )
+
+    monkeypatch.setattr(run_module, "_persist_case_result", always_fails)
+
+    with pytest.raises(run_module.EvalPersistenceError, match="c1"):
+        await run_module.run_suite(
+            suite_name="golden-v1", provider=None, model=None, seed=1, limit=None
+        )
+
+    # Los dos intentos del primer caso se hicieron; la corrida se abortó ahí
+    # mismo, sin seguir al segundo caso de la suite.
+    assert len(persisted_calls) == 2
+    assert persisted_calls[0]["agent_run_id"] is not None
+    assert persisted_calls[1]["agent_run_id"] is None
+
+    # No se generó ningún resultado que pudiera leerse como PASS.
+    assert finalize_calls == []
+    assert write_report_calls == []
+
+    # El cleanup de worker y engine se ejecutó de todas formas (finally).
+    worker_shutdown.assert_awaited_once()
+    engine_disposed.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "gate_mode,match",
+    [("full", "puerta full"), ("smoke", "puerta smoke")],
+)
+async def test_run_suite_preflight_rejects_incompatible_selection_before_engine(
+    monkeypatch, gate_mode: str, match: str
+) -> None:
+    """T-617B0-R2: el preflight rechaza una selección incompatible con la puerta
+    ANTES de crear el engine o invocar el agente/LLM. `_fake_suite` tiene solo 2
+    positivos: ni completa la puerta full (50 casos) ni cubre los 10 canónicos
+    del smoke. Espías demuestran que no se gastó cuota."""
+
+    suite = _fake_suite()
+    monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
+    monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
+    monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+
+    engine_calls: list[object] = []
+
+    def spy_engine(*a, **k):
+        engine_calls.append((a, k))
+        return SimpleNamespace(dispose=AsyncMock())
+
+    monkeypatch.setattr(run_module, "create_app_async_engine", spy_engine)
+
+    llm_calls: list[int] = []
+    monkeypatch.setattr(
+        run_module,
+        "create_eval_run",
+        AsyncMock(side_effect=lambda *a, **k: llm_calls.append(1)),
+    )
+    monkeypatch.setattr(
+        run_module,
+        "execute_agent_run_async",
+        AsyncMock(side_effect=lambda *a, **k: llm_calls.append(1)),
+    )
+    # Otros colaboradores de I/O: si el preflight fallara en abortar, estos
+    # revelarían la fuga; deben quedar intactos (nunca invocados).
+    sync_spy = AsyncMock()
+    monkeypatch.setattr(run_module, "sync_golden_suite", sync_spy)
+    register_spy = AsyncMock(return_value="worker-1")
+    monkeypatch.setattr(run_module, "register_worker_instance", register_spy)
+
+    with pytest.raises(RuntimeError, match=match):
+        await run_module.run_suite(
+            suite_name="golden-v1",
+            provider=None,
+            model=None,
+            seed=1,
+            limit=None,
+            gate_mode=gate_mode,
+        )
+
+    assert engine_calls == []  # engine nunca creado
+    assert llm_calls == []  # agente/LLM nunca invocado
+    sync_spy.assert_not_awaited()
+    register_spy.assert_not_awaited()
+
+
+async def test_run_suite_preflight_rejects_unknown_gate_mode_before_engine(monkeypatch) -> None:
+    """Un gate_mode programático desconocido se rechaza explícitamente antes de
+    tocar el engine (defensa contra invocaciones internas mal formadas)."""
+
+    suite = _fake_suite()
+    monkeypatch.setattr(run_module, "get_settings", lambda: _settings())
+    monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
+    monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+
+    engine_calls: list[object] = []
+    monkeypatch.setattr(
+        run_module,
+        "create_app_async_engine",
+        lambda *a, **k: engine_calls.append((a, k)) or SimpleNamespace(dispose=AsyncMock()),
+    )
+
+    with pytest.raises(RuntimeError, match="gate_mode desconocido"):
+        await run_module.run_suite(
+            suite_name="golden-v1",
+            provider=None,
+            model=None,
+            seed=1,
+            limit=None,
+            gate_mode="bogus",
+        )
+
+    assert engine_calls == []
+
+
+@pytest.mark.parametrize("schema_version", ["golden-v1", "golden-v2"])
+async def test_formal_capability_preflight_fails_before_engine_and_llm(
+    monkeypatch,
+    schema_version: str,
+) -> None:
+    suite = GoldenSuite(
+        name=schema_version,
+        version="2.0.0",
+        snapshot_at="2026-07-18",
+        cases=_fake_suite().cases,
+        source_path=None,
+        schema_version=schema_version,
+    )
+    engine_calls: list[object] = []
+    llm_calls = AsyncMock()
+
+    monkeypatch.setattr(
+        run_module,
+        "get_settings",
+        lambda: _settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=False),
+    )
+    monkeypatch.setattr(run_module, "default_suite_path", lambda name: "irrelevant")
+    monkeypatch.setattr(run_module, "load_golden_suite", lambda path: suite)
+    monkeypatch.setattr(
+        run_module,
+        "create_app_async_engine",
+        lambda *a, **k: engine_calls.append((a, k)),
+    )
+    monkeypatch.setattr(run_module, "execute_agent_run_async", llm_calls)
+
+    with pytest.raises(
+        RuntimeError,
+        match=rf"{schema_version} con --gate smoke exige",
+    ):
+        await run_module.run_suite(
+            suite_name=schema_version,
+            provider="google",
+            model="gemini-2.5-flash",
+            seed=601000,
+            limit=None,
+            gate_mode="smoke",
+            textual_facts_enabled=False,
+        )
+
+    assert engine_calls == []
+    llm_calls.assert_not_awaited()
+
+
+def test_select_cases_supports_exact_generic_case_ids() -> None:
+    suite = _fake_suite()
+
+    selected = run_module._select_cases(
+        suite.cases,
+        limit=None,
+        case_ids=[suite.cases[1].case_id],
+    )
+
+    assert selected == [suite.cases[1]]
+
+
+def test_select_cases_rejects_unknown_case_id() -> None:
+    suite = _fake_suite()
+
+    with pytest.raises(RuntimeError, match="case_id inexistente: missing"):
+        run_module._select_cases(suite.cases, limit=None, case_ids=["missing"])
+
+
+def test_report_renders_stage_reason_and_retrieval_tables(tmp_path: Path) -> None:
+    assessment = run_module.CaseAssessment(False, False, False, (), (), "sin dataset")
+    diagnostics = {
+        "agent_run_id": "run-1",
+        "last_successful_stage": None,
+        "failure_stage": "retrieval",
+        "failure_code": "expected_dataset_not_retrieved",
+        "failure_owner": "agent",
+        "retrieved_dataset_ids": ["other-id"],
+        "attempted_dataset_ids": [],
+        "accepted_dataset_id": None,
+        "expected_dataset_rank": None,
+        "candidate_count": 1,
+        "query_count": 0,
+        "exploration_count": 0,
+        "llm_call_count": 1,
+        "stop_reason": None,
+        "evidence_count": 0,
+        "claim_count": 0,
+        "facts_verified": False,
+        "latency_ms": 10,
+        "estimated_cost_usd": 0,
+    }
+    target = tmp_path / "report.md"
+
+    case = GoldenCase("case-1", "positive", "q", ("abcd-1234",), (), 1, "n")
+    outcome = run_module._build_case_outcome(
+        case,
+        assessment,
+        diagnostics,
+        run_module.evaluate_claims_integrity({"status": "no_evidence"}),
+        (),
+    )
+    aggregate = run_module.aggregate_metrics([outcome])
+    verdict = run_module.evaluate_full_gate(aggregate)
+
+    run_module._write_report(
+        target,
+        record=SimpleNamespace(
+            id="eval-1",
+            llm_provider="google",
+            llm_model="model",
+            embedding_model="embedding-model",
+            eval_seed=614010,
+            git_commit="abc123",
+            config_snapshot={"runtime": "deterministic"},
+        ),
+        suite_name="golden-v2",
+        results=[("case-1", assessment, diagnostics)],
+        aggregate=aggregate,
+        verdict=verdict,
+    )
+
+    report = target.read_text(encoding="utf-8")
+    assert "- Suite: golden-v2" in report
+    assert "## Fallos por etapa" in report
+    assert "expected_dataset_not_retrieved" in report
+    assert "## Recuperación" in report
+    assert "other-id" in report
+    assert "## Veredicto de puerta" in report
+    assert "Positivos aprobados: 0/1" in report

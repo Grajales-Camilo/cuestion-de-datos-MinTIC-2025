@@ -226,6 +226,174 @@ Materializa las **afirmaciones cuantitativas** (claims, RF-208) a partir de evid
 - Se considera “cifra” cualquier token numérico visible en español o formato internacional: enteros, decimales con coma o punto, porcentajes, monedas, magnitudes con separador de miles, años usados como valor analítico, rangos numéricos y tasas. No se consideran cifras: IDs técnicos (`dataset_id`, UUID), fechas completas en citas, códigos DIVIPOLA y números de sección si no expresan un dato sustantivo.
 - **El sintetizador SOLO puede citar cifras a través de `display_value` de claims aceptados.** Una cifra en la narrativa sin `claim_id` asociado es un defecto bloqueante (verificado por el chequeo de groundedness, pruebas.md §4.2).
 
+## T7b — `construir_hechos_textuales` — PROPUESTA T-615
+
+> **PROPUESTA PARA REVISIÓN — NO IMPLEMENTADA NI VIGENTE.** No reemplaza T7
+> ni autoriza código o migración. El contrato completo se fundamenta en
+> `research.md` §27 y `proposals/textual-claims.md`.
+
+Materializaría `TextualFact` a partir de evidencia elegible. Es un nodo
+determinista separado: el LLM puede proponer una especificación tipada, pero
+no normaliza, selecciona, desempata, calcula el hash ni redacta el valor
+factual.
+
+**Entrada propuesta**
+
+```json
+{
+  "evidence_id": "9a2b...",
+  "textual_fact_specs": [
+    {
+      "operation": "argmax_label",
+      "source_row_indexes": [0, 1, 2],
+      "columns": ["departamento", "total"],
+      "operation_params": {
+        "label_column": "departamento",
+        "metric_column": "total",
+        "tie_policy": "reject"
+      }
+    }
+  ]
+}
+```
+
+**Salida propuesta**
+
+```json
+{
+  "ok": true,
+  "facts": [
+    {
+      "fact_id": "8d2e...",
+      "fact_kind": "textual",
+      "fact": "El departamento con el valor máximo es Valle del Cauca.",
+      "operation": "argmax_label",
+      "evidence_id": "9a2b...",
+      "dataset_id": "m8fd-ahd9",
+      "source_row_indexes": [0, 1, 2],
+      "columns": ["departamento", "total"],
+      "raw_values": ["VALLE DEL CAUCA"],
+      "normalized_values": ["valle del cauca"],
+      "display_value": "VALLE DEL CAUCA",
+      "normalization_profile": "text-es-v1",
+      "operation_params": {
+        "label_column": "departamento",
+        "metric_column": "total",
+        "tie_policy": "reject"
+      },
+      "algorithm_version": "textual-fact-v1",
+      "source_hash": "sha256-jcs-v1:cd34..."
+    }
+  ],
+  "rejected": []
+}
+```
+
+**Reglas propuestas:**
+
+- Enum cerrado:
+  `direct_text|value_presence|category_selection|argmax_label|argmin_label|canonical_text_set`.
+- `text-es-v1`: Unicode NFC, saltos/espacios canonicalizados, `casefold` solo
+  para igualdad; tildes, `ñ`, caja de presentación y puntuación se conservan.
+- `null`, vacío, fila fuera de rango, columna ausente, operación desconocida,
+  métrica no numérica o regla no reproducible rechazan el hecho.
+- `argmax_label` y `argmin_label` usan inicialmente
+  `tie_policy="reject"`; un empate no se resuelve por orden incidental.
+- `canonical_text_set` deduplica por valor normalizado y ordena
+  canónicamente; no depende del orden accidental de respuesta.
+- El hash incluye versión, operación, normalización, dataset, SoQL canónica,
+  filas/subconjunto fuente, columnas, valores y parámetros. No incluye UUIDs
+  de instancia, timestamps ni texto libre del LLM.
+- `fact` se genera desde una plantilla determinista por operación. Está
+  prohibido convertir una etiqueta o categoría en `raw_value=1`, `count=1` u
+  otra cifra ficticia.
+- Una evidencia `blocked`, `diagnostic_only` o `no_recomendada` no puede
+  producir un hecho entregable automáticamente; aplica la misma puerta de
+  elegibilidad que a T7.
+
+**Contrato aprobado de síntesis factual (`grounded-synthesis-plan-v1`)**
+
+El LLM solo puede devolver `schema_version`, `segments` y `closing`. Cada
+segmento contiene `segment_id`, `connector`, `template` y `fact_refs` tipadas
+por `fact_kind` e `id`; se prohíben campos libres. Enums:
+
+- `connector`: `sin_conector|ademas|por_otra_parte|en_conjunto`;
+- `template`: `fact_statement|subject_fact|comparison_pair`;
+- `closing`: `sin_cierre|limitacion_disponibilidad|advertencia_calidad`.
+
+Los IDs deben pertenecer a claims/facts persistidos, aceptados y de evidencia
+elegible de la misma corrida. `comparison_pair` exige dos referencias
+compatibles; las otras plantillas exigen una. El renderer produce toda cláusula
+factual e inserta `display_value` literalmente. ID desconocido, duplicado,
+incompatible, evidencia ausente/no elegible, enum/campo extra o JSON inválido
+rechazan el plan completo. Agotada la reparación presupuestada se usa
+`grounded-synthesis-fallback-v1`. Sin hechos elegibles se usa la abstención
+`no_evidence`; `insufficient_evidence` queda reservada para una falla
+operacional que impida certificar el conjunto permitido. Nunca se entrega
+contenido factual parcial.
+
+**Renderer literal `grounded-synthesis-renderer-v1`.** Para esta versión,
+`atomic_clause` se obtiene únicamente del objeto persistido:
+
+- claim cuantitativo: `"{claim}: {display_value}."`;
+- hecho textual: `"{fact}"`, sin modificar ni volver a insertar su valor.
+
+Las plantillas de segmento son literales:
+
+- `fact_statement`: `"{atomic_clause}"`;
+- `subject_fact`: `"Resultado verificado: {atomic_clause}"`;
+- `comparison_pair`:
+  `"Resultados relacionados: {atomic_clause_1} {atomic_clause_2}"`.
+
+`comparison_pair` es presentación conjunta, no resta, cociente, orden ni
+afirmación de superioridad. Sus dos referencias son compatibles si y solo si:
+
+1. son distintas;
+2. están persistidas y aceptadas en la misma corrida;
+3. apuntan al mismo `evidence_id`;
+4. esa evidencia es elegible.
+
+Puede combinar dos claims, dos hechos textuales o uno de cada tipo. Unidad,
+operación y tipo no son condiciones porque la plantilla no compara magnitudes.
+Cualquier comparación matemática futura exige otra plantilla y contrato.
+
+El conector se antepone literalmente al segmento ya renderizado:
+
+- `sin_conector`: `""`;
+- `ademas`: `"Además, "`;
+- `por_otra_parte`: `"Por otra parte, "`;
+- `en_conjunto`: `"En conjunto, "`.
+
+El primer segmento exige `sin_conector`; los demás no pueden usarlo. Los
+segmentos se unen con un espacio. El cierre se añade al final:
+
+- `sin_cierre`: `""`;
+- `limitacion_disponibilidad`:
+  `" La respuesta se limita a la evidencia disponible."`;
+- `advertencia_calidad`:
+  `" La evidencia utilizada presenta una advertencia de calidad."`.
+
+No se corrigen caja, puntuación ni espacios dentro de `claim`, `display_value`
+o `fact`; si un objeto persistido no satisface su contrato, se rechaza antes de
+renderizar.
+
+**Fallback determinista `grounded-synthesis-fallback-v1`.** Ante error del
+proveedor, plan inválido o reparación agotada, el código:
+
+1. reúne solo claims y hechos persistidos, reverificados y elegibles;
+2. ordena por `fact_kind` (`quantitative` antes de `textual`), `dataset_id`,
+   `source_row_indexes`, `columns` y `source_hash`;
+3. toma como máximo ocho objetos;
+4. crea un `fact_statement` por objeto, con `sin_conector` para el primero y
+   `ademas` para los siguientes;
+5. usa `limitacion_disponibilidad` si había más de ocho objetos;
+   en otro caso usa `advertencia_calidad` si alguna evidencia seleccionada
+   tiene clasificación `baja`, y `sin_cierre` en los demás casos.
+
+El fallback nunca genera `comparison_pair`, nunca recibe texto libre y pasa por
+el mismo validador y renderer. Sin objetos elegibles termina `no_evidence`; no
+fabrica un plan vacío.
+
 ## T8 — `comparabilidad_territorial`
 Advierte cuando dos o más territorios resueltos por T3 en la misma corrida no son comparables entre sí (Cap. 9 del Handbook de CSS para Política, `docs/capitulos-css-politicas-publicas.md`). Nodo determinista: no usa LLM, no acepta invocación libre del enrutador. El grafo lo ejecuta automáticamente cuando T3 devuelve `divipola_code` de ≥2 territorios distintos en el mismo run. Implementado por `app/quality/territorial.py` sobre la tabla `territorio_tipologia` (tarea T-404).
 
@@ -257,7 +425,7 @@ Advierte cuando dos o más territorios resueltos por T3 en la misma corrida no s
 
 | Regla | Valor |
 |---|---|
-| Pasos totales máx. por corrida | 10 (configurable `AGENT_MAX_STEPS`) |
+| Pasos totales máx. por corrida | 14 (configurable `AGENT_MAX_STEPS`; RF-201 y `research.md` §19) |
 | Llamadas máx. a `ejecutar_soql` por corrida | 4 |
 | Autocorrecciones de SoQL tras `SOQL_SYNTAX` | 2 por consulta |
 | Filas al contexto LLM | ≤ 50 por consulta (resumen); Evidencia completa ≤ 1.000 |

@@ -131,6 +131,169 @@ Reglas: primer evento ≤ 2 s tras la conexión (RNF-008); heartbeat `: ping` ca
 - `status = "interrupted"`: la corrida fue cortada por reinicio, heartbeat vencido o worker desaparecido (plan.md §11); `summary` es `string | null`, `narrative` es `null`, `evidence` y `claims` contienen solo lo validado hasta ese punto y pueden ser `[]`, `no_evidence_report` es `null`, y `usage` incluye `termination_reason` (`RUN_INTERRUPTED` | `WORKER_LOST` | `HEARTBEAT_EXPIRED`) con `latency_ms`/`estimated_cost_usd` nullable si no se alcanzaron a calcular.
 - `status = "failed"`: `summary` es `string | null`, `narrative` es `null`, `evidence` y `claims` contienen solo parciales validados para diagnóstico y pueden ser `[]`, `no_evidence_report` es `null`, `usage.termination_reason` contiene el código terminal (`RUN_TIMEOUT`, `LLM_PROVIDER_ERROR`, `STRUCTURED_OUTPUT_INVALID`, `SOCRATA_ERROR`, `SOCRATA_TIMEOUT`, `INTERNAL`). `STRUCTURED_OUTPUT_INVALID` (añadido 2026-07-11, hallazgo del agente evaluador) distingue una salida estructurada que sigue sin cumplir el esquema tras agotar el repair loop de una falla real del proveedor (`LLM_PROVIDER_ERROR`: red, cuota, 5xx, timeout) — no es `retryable`, porque el problema es de esquema/prompt, no de red.
 
+### 4b. Hechos textuales aditivos — T-615 aprobada
+
+> **ACTIVACIÓN INCREMENTAL.** T-615A fue aprobada y T-615B…T-615F están
+> cerradas. Los campos de esta sección solo se vuelven públicos al cerrar y
+> verificar T-615G.
+
+La extensión conserva `claims` y `partial_claims` exactamente cuantitativos,
+sin discriminador ni campos nuevos dentro de sus elementos. Añade dos
+propiedades raíz optativas:
+
+```text
+textual_facts: list[TextualFactResponse] = []
+partial_textual_facts: list[TextualFactResponse] = []
+```
+
+Ejemplo de la variante textual:
+
+```json
+{
+  "fact_id": "8d2e...uuid",
+  "fact_kind": "textual",
+  "fact": "El municipio observado es Medellín.",
+  "operation": "direct_text",
+  "evidence_id": "9a2b...",
+  "dataset_id": "abcd-1234",
+  "source_row_indexes": [0],
+  "columns": ["municipio"],
+  "raw_values": ["Medellín"],
+  "normalized_values": ["medellín"],
+  "display_value": "Medellín",
+  "normalization_profile": "text-es-v1",
+  "operation_params": {},
+  "algorithm_version": "textual-fact-v1",
+  "source_hash": "sha256-jcs-v1:cd34..."
+}
+```
+
+**Compatibilidad:**
+
+- Un histórico sin campos textuales equivale a listas vacías. No se reescribe
+  ni se infiere tipo por forma, descripción o `raw_value=1`.
+- El dominio interno puede discriminar por `fact_kind`; las tablas y la API
+  pública permanecen separadas.
+- Antes de emitir texto, snapshots y diff OpenAPI deben demostrar que
+  `claims.items` no cambió; también se prueban SSE, históricos, clientes
+  estrictos y tolerantes. No encontrar consumidores no prueba compatibilidad.
+
+**Invariante de síntesis aprobado:** cada segmento factual lleva referencias
+tipadas a `claim_id`/`fact_id` existentes. El LLM solo devuelve el esquema
+`grounded-synthesis-plan-v1` definido en `agent-tools.md`; un renderizador
+determinista inserta literalmente los `display_value`. No se admite prosa factual libre como
+medio de eludir el discriminador. RNF-003 sigue verificando cifras sin cambio.
+
+**Matriz terminal obligatoria para T-615G:**
+
+| Estado | Hechos textuales públicos | `summary` / `narrative` antes de T-615H | Relación con evidencia |
+|---|---|---|---|
+| `completed`, solo textual | `textual_facts` con hechos persistidos y reverificados; `partial_textual_facts=[]` | `summary="Se encontraron hechos textuales verificables."`; `narrative=null` | `evidence` contiene la evidencia de los hechos; `claims=[]`; `no_evidence_report=null` |
+| `completed`, mixto | `textual_facts` separado de `claims` | La síntesis vigente cubre solo claims cuantitativos | Cada hecho conserva su `evidence_id`; `no_evidence_report=null` |
+| `no_evidence` | Ambas listas textuales vacías | Semántica vigente de abstención | `evidence=[]` y reporte de no evidencia obligatorio |
+| `interrupted` | Solo hechos ya persistidos y reverificados en `partial_textual_facts` | `narrative=null` | Evidencia parcial validada; no se construyen hechos al serializar |
+| `failed` | Ambas listas textuales vacías | `narrative=null` | Filas internas, si existen, son solo de diagnóstico/retención |
+
+Con `DETERMINISTIC_TEXTUAL_FACTS_ENABLED=false`, las respuestas nuevas
+materializan ambas listas como vacías y no cargan hechos desde la tabla. Los
+payloads terminales históricos no se reescriben; si sus campos no existen, la
+lectura pública los materializa como `[]`.
+
+### 4c. Etiquetado semántico de claims y advertencias de presentación — T-617C-A aprobada
+
+> **CONTRATO APROBADO, IMPLEMENTACIÓN PENDIENTE (T-617C).** Esta sección
+> describe la forma exacta de los campos; su emisión real por el runtime
+> determinista depende del cierre de T-617C. Decisión y alternativas en
+> `research.md` §29; auditoría de flujo en
+> `backend/eval/reports/t617c-semantic-claim-labels.md`.
+
+Añade dos campos opcionales dentro de cada elemento de `claims[]` (§4) y una
+propiedad raíz nueva, todos aditivos y retrocompatibles:
+
+```text
+claims[].label: string | null = null
+claims[].label_status: "verified" | "ambiguous" | null = null
+presentation_warnings: list[PresentationWarning] = []
+```
+
+`label`/`label_status` **no reemplazan** ningún campo existente de `claims[]`
+(`claim`, `columns`, `display_value`, etc. — §4 — conservan su forma). Un
+histórico o una respuesta emitida antes de cerrar T-617C sin estos campos
+equivale a `label=null`, `label_status=null` y `presentation_warnings=[]`; no
+se infiere ni se reescribe retroactivamente.
+
+Ejemplo (claim con etiqueta verificada; equivalente al caso disparador de
+T-617C, sin usar sus valores concretos como regla):
+
+```json
+{
+  "claim_id": "7c1d...uuid",
+  "claim": "La planta registra 764 hombres en el último mes disponible",
+  "claim_type": "direct",
+  "evidence_id": "9a2b...",
+  "dataset_id": "h8rs-jxum",
+  "source_row_indexes": [0],
+  "columns": ["genero_hombre"],
+  "raw_value": 764,
+  "display_value": "764",
+  "unit": null,
+  "rounding": 0,
+  "source_hash": "sha256:ab12...",
+  "label": "Hombres",
+  "label_status": "verified"
+}
+```
+
+Ejemplo de `presentation_warnings` (claim cuya columna fuente no pudo
+vincularse con una etiqueta inequívoca; la cifra se conserva igualmente
+porque sigue siendo útil y verificable, RF-211):
+
+```json
+"presentation_warnings": [
+  {
+    "claim_id": "e4f0ba87-...uuid",
+    "code": "AMBIGUOUS_LABEL",
+    "message_user": "No se pudo asociar esta cifra con una etiqueta verificable; se conserva por ser útil y verificable, pero su significado exacto no está confirmado."
+  }
+]
+```
+
+**Reglas del contrato:**
+
+- `label_status="verified"` ⇒ `label` fue derivado de metadatos estructurados
+  de la columna fuente (nombre de columna real, nombre visible del plan
+  validado o equivalente, `data-model.md`) y puede vincularse con esa
+  columna. El LLM nunca redacta `label` libremente ni lo infiere del valor
+  numérico.
+- `label_status="ambiguous"` ⇒ `label=null`; el sistema no inventó una
+  etiqueta. El claim permanece en `claims[]` con su `display_value` si sigue
+  siendo útil y verificable (RF-211); la ambigüedad se señala en
+  `presentation_warnings`, no ocultando la cifra.
+- `presentation_warnings` es **distinto** de `evidence[].quality.warnings_user`
+  (§6, `contracts/validacion-calidad.md`): ese campo evalúa la calidad de la
+  evidencia como conjunto (score, elegibilidad, frescura, nulos);
+  `presentation_warnings` evalúa si una cifra individual ya presentada tiene
+  una etiqueta inequívoca. Ambos pueden aparecer simultáneamente sobre el
+  mismo claim/evidencia sin fusionarse.
+- Una entrada en `presentation_warnings` **NUNCA** convierte por sí sola
+  `status="completed"` en `status="no_evidence"`; RF-211 sigue gobernando la
+  entrega de respuestas parciales pero verificables.
+- `code` es un identificador tipado extensible (no enum cerrado en este
+  contrato); el único valor definido en esta enmienda es `AMBIGUOUS_LABEL`.
+  `message_user` sigue el mismo estándar que `quality.warnings_user`
+  (Art. V.5): español claro, sin nombres técnicos de checks.
+- `presentation_warnings` es vacío por defecto y en cualquier respuesta que
+  no presente ambigüedad de etiquetado.
+- **Invariante reforzado sobre `columns`/`columns_used` (§4, RF-212):**
+  representan el nombre de columna fuente real (p. ej. `"genero_hombre"`),
+  nunca el alias interno de la consulta SoQL (`dim_N`/`metric_N`). No es un
+  campo nuevo: aclara una discrepancia código-contrato preexistente — el
+  ejemplo de `columns` en §4 ya usaba nombres reales
+  (`["matriculados", "desertores"]`) antes de esta enmienda.
+- Sin migración: estos campos se sirven desde `agent_runs.final_answer`
+  (JSONB), sin tocar la tabla relacional `quantitative_claims`
+  (`data-model.md`).
+
 ## 5. Objeto `Evidencia`
 ```json
 {
@@ -253,7 +416,7 @@ Límites: `q` 3–500 chars no vacíos tras trim; `k` 1–25 (default 10); `k > 
 - `GET /v2/admin/ingest/runs?limit=20` → historial de `ingest_runs`.
 - `POST /v2/admin/publishers/reload` → recarga fixture versionado de publicadores oficiales y aliases (T-106/T-201A). Responde `202` con resumen de altas/cambios/aliases ambiguos.
 - `POST /v2/admin/retention/run` → dispara manualmente el barrido idempotente de retención (T-306). Responde `202` con conteos planificados/ejecutados. Forma mínima: `{ "status": "accepted" | "skipped", "reason": null | "already_running", "planned": {...}, "executed": {...} }`. Si otro barrido ya posee el advisory lock PostgreSQL de retención, responde `202` con `status="skipped"` y `reason="already_running"`, sin copiar métricas ni borrar datos.
-- `GET /v2/admin/metrics` → agregados de corridas y evaluación. Fuente normativa: RNF-001/RNF-009 desde `agent_runs` recientes y `technical_metrics`; RNF-002/RNF-003/RNF-004/RNF-005 desde `eval_runs` y `eval_case_results`, nunca estimado desde logs textuales.
+- `GET /v2/admin/metrics` → agregados de corridas y evaluación. Fuente normativa: RNF-001/RNF-009 desde `agent_runs` recientes y `technical_metrics`; RNF-002/RNF-003/RNF-004/RNF-005 desde `eval_runs` y `eval_case_results`, nunca estimado desde logs textuales. Para la validación operativa T-703 acepta `window_days` (default `7`, rango `1..90`) y devuelve, como mínimo, `window_started_at`, `window_ended_at`, `runtime`, `deployment_version`, `simple.sample_size`, `simple.latency_p95_ms`, `multistep.sample_size`, `multistep.latency_p95_ms`, `cost.sample_size`, `cost.avg_usd`, `completeness`, `excluded_eval_count`, `excluded_canary_count` y `verdict` (`PASS` | `FAIL` | `INSUFFICIENT_EVIDENCE`). La clasificación simple/multietapa se deriva de la traza estructurada, no del texto de la pregunta. La respuesta no incluye identificadores de corrida ni contenido de usuario. El reporte T-703 conserva por separado los IDs sintéticos generados por T-701 únicamente para excluirlos de la cohorte; esos IDs no forman parte de la respuesta agregada.
 
 ## 10. Compatibilidad y versionado
 - El prefijo `/v2` es estable; cambios incompatibles ⇒ `/v3`.

@@ -83,7 +83,7 @@ No se define un `addopts` global que excluya integración, para no impedir accid
 - `DELETE /v2/agent/runs/{id}`: 204, purga checkpoints con `adelete_thread(run_id)` y el `GET` posterior da 404; repetir el DELETE da 404 (idempotencia observable). Variante activa: borrar una corrida `running` detiene la tarea, no deja estado `cancelled`, no emite eventos posteriores y termina en 404.
 - `GET /v2/agent/runs/{id}`: valida los cinco esquemas normativos (`running`, `completed`, `no_evidence`, `interrupted`, `failed`), incluida la nulabilidad exacta de `RespuestaFinal` en `interrupted` y los datos parciales permitidos en `failed`.
 - `GET /v2/catalog/search`: valida `q` vacío/corto/largo; valida `k` > 25 como `422`; excluye dataset inactivo; marca `index_stale`; retorna `latest_observed_cutoff_at` solo como pista y nunca sustituye `data_cutoff_at` por `data_updated_at`.
-- Endpoints administrativos: `401` sin `X-Admin-Token`, `401` con token inválido; `POST /v2/admin/ingest` y `GET /v2/admin/ingest/runs`; `POST /v2/admin/publishers/reload`; `POST /v2/admin/retention/run`; `/v2/admin/metrics` calcula RNF-002 desde `eval_runs`/`eval_case_results`.
+- Endpoints administrativos: `401` sin `X-Admin-Token`, `401` con token inválido; `POST /v2/admin/ingest` y `GET /v2/admin/ingest/runs`; `POST /v2/admin/publishers/reload`; `POST /v2/admin/retention/run`; `/v2/admin/metrics` calcula RNF-002 desde `eval_runs`/`eval_case_results` y RNF-001/RNF-009 desde agregados técnicos reales. Probar `window_days` fuera de rango, exclusión de `eval`/canary, separación simple/multietapa, ausencia de contenido de usuario y que muestra insuficiente, costo nulo o latencia nula producen `INSUFFICIENT_EVIDENCE`, nunca `PASS`.
 - **Invariante Art. I.4:** ninguna `Evidencia` serializada sin objeto `quality` (prueba que intenta construirla y debe fallar).
 - **Invariante RF-208:** una `RespuestaFinal` cuyo `summary`/`narrative` contiene una cifra sin claim correspondiente no pasa la validación de serialización.
 - Sobre de error estándar en TODAS las rutas no-2xx excepto `/v2/health`; `message_user` presente y en español.
@@ -130,7 +130,8 @@ Esta suite cubre ESC-07 para ingesta e índice: T-201 verifica ingesta idempoten
 
 ### 4.1 Con LLM guionado (deterministas, en CI de cada push)
 Se inyecta un LLM falso que devuelve decisiones predefinidas para probar la MECÁNICA del grafo sin costo ni azar:
-- Respeta `AGENT_MAX_STEPS`: al paso 10 fuerza transición a sintetizador `no_evidence` (RF-201/205).
+- Respeta `AGENT_MAX_STEPS`: al paso 14 por defecto fuerza transición a
+  sintetizador `no_evidence` (RF-201/205; el valor sigue siendo configurable).
 - Tras `SOQL_SYNTAX`, reintenta máximo 2 veces y luego cambia de estrategia.
 - El validador corre SIEMPRE tras `ejecutar_soql` exitoso (imposible saltarlo).
 - El sintetizador solo recibe observaciones de herramientas (aislamiento que sustenta groundedness).
@@ -165,6 +166,325 @@ Reglas de la corrida: golden set congelado por versión (cambiarlo = `golden-v2`
 - Pregunta que induce a inventar ("dame la cifra exacta aunque no la encuentres").
 - Pregunta con premisa falsa ("¿por qué Sonsón es la ciudad más rica de Colombia?") → el agente debe corregir con datos, no seguir la premisa.
 - SoQL malicioso sugerido por el usuario dentro de la pregunta → la guardia lo neutraliza.
+
+### 4.4 Enmienda de aceptación y evaluación del núcleo determinista
+
+Esta sección implementa `research.md` §25 y gobierna la migración sin sustituir las puertas generales de §4.1–4.3.
+
+#### Separación obligatoria por runtime
+
+| Marcador | Archivo principal | Runtime permitido | Propósito |
+|---|---|---|---|
+| `legacy_agent_acceptance` | `tests/integration/test_legacy_agent_acceptance.py` | `app.agent.graph` | Mantener verificable el rollback y las siete historias históricas. |
+| `deterministic_agent_acceptance` | `tests/integration/test_deterministic_agent_acceptance.py` | `execute_deterministic_agent_run_async` | Validar el runtime productivo nuevo de punta a punta. |
+
+La aceptación determinista no puede importar `build_graph`, `initial_state` ni reutilizar helpers que ejecuten el router legado. Las pruebas unitarias pueden invocar `run_deterministic_agent`; la aceptación E2E debe entrar por `execute_deterministic_agent_run_async` para cubrir dependencias, PostgreSQL, eventos, evidencia, calidad, claims, respuesta y terminal.
+
+Los marcadores se registran en `backend/pyproject.toml` y se ejecutan independientemente:
+
+```powershell
+uv run pytest -q -m legacy_agent_acceptance
+uv run pytest -q -m deterministic_agent_acceptance
+uv run pytest -q -m "integration and not legacy_agent_acceptance"
+```
+
+Las fixtures de aceptación deben borrar exclusivamente los UUID creados por cada prueba. Queda prohibido vaciar tablas compartidas. La suite determinista debe preservar filas preexistentes y demostrar que el runtime legado no fue invocado.
+
+#### Historias mínimas de aceptación determinista
+
+1. Camino positivo completo hasta `completed`, con evidencia, calidad, claims, respuesta fundamentada, trazas ordenadas y un solo terminal.
+2. Cambio de candidato: rechazo controlado del primero y éxito del segundo sin terminación anticipada.
+3. Reparación de plan: primer `QueryPlan` inválido, error tipado, reparación acotada y cero ejecución de SoQL inválido.
+4. Exploración categórica: una sola columna textual pendiente, valor observado incorporado y sin repetición innecesaria.
+5. Privacidad: PII alta rechazada; PII media insegura rechazada; PII media agregada permitida.
+6. Abstención segura: `no_evidence`, motivo tipado, cero evidencia/claims inventados y cero cifras huérfanas.
+7. Fallo de proveedor: terminal controlado; fallback determinista de síntesis solo donde esté definido; nunca fallback al legado.
+8. Cancelación: observada entre transiciones, sin `completed` ni doble terminal.
+9. Presupuestos: candidatos, exploraciones, consultas, reparaciones, llamadas LLM y duración nunca exceden su máximo.
+
+#### Matriz diagnóstica de evaluación
+
+Cada `eval_case_result` debe registrar, dentro de una estructura JSONB versionada compatible con el modelo actual, como mínimo:
+
+- `last_successful_stage`, `failure_stage`, `failure_code`, `stop_reason`.
+- `retrieved_dataset_ids`, `attempted_dataset_ids`, `accepted_dataset_id`, `expected_dataset_rank`.
+- `plan_validation_errors`.
+- `query_count`, `candidate_count`, `exploration_count`, `llm_call_count`.
+- `evidence_count`, `claim_count`, `facts_verified`.
+- `latency_ms`, `estimated_cost_usd`.
+
+Etapas canónicas: `intent`, `retrieval`, `candidate_selection`, `profiling`, `planning`, `plan_validation`, `value_exploration`, `query_execution`, `evidence_quality`, `claims`, `synthesis`, `acceptance`.
+
+Códigos iniciales: `intent_mismatch`, `expected_dataset_not_retrieved`, `expected_dataset_not_attempted`, `profile_failed`, `plan_invalid`, `plan_repair_exhausted`, `value_not_resolved`, `query_failed`, `zero_rows`, `evidence_not_eligible`, `claims_rejected`, `synthesis_rejected`, `expected_fact_not_found`, `ambiguous_golden`, `budget_exceeded`.
+
+El reporte Markdown debe incluir resumen por etapa, motivos de fallo y tabla de recuperación. Para cada fallo debe responder automáticamente dónde falló, por qué, qué datasets recuperó e intentó, qué presupuesto agotó y si el diagnóstico corresponde al agente o al contrato golden. Los códigos son datos; el texto humano del reporte no los reemplaza.
+
+#### Smoke determinista dirigido
+
+Antes de repetir 50 casos se ejecutan estos 10:
+
+- Positivos sólidos: `pilot-002-seguridad-homicidios`, `pilot-003-salud-vigilancia`, `pilot-005-empleo-publico`, `pilot-013-app-dnp`.
+- Patrones diferenciados: `pilot-012-control-fiscal`, `pilot-021-sensibilizacion-valle`, `pilot-022-red-vial`, `pilot-038-precipitacion`.
+- Negativos: `pilot-045-negativo-dato-personal`, `pilot-046-negativo-tiempo-real`.
+
+Puerta: negativos 2/2, ningún caso sólido retrocede, todos los fallos tienen etapa/código y el reporte queda persistido con commit, runtime, modelo, suite y semilla.
+
+#### Interpretación proporcional de resultados (RF-211)
+
+La evaluación busca detectar respuestas falsas o materialmente equivocadas; no
+probar que cada SoQL sea la consulta óptima entre millones de posibilidades.
+El reporte debe conservar por separado:
+
+- el veredicto mecánico de la puerta y sus métricas, sin reescribirlo;
+- los bloqueos reales: fabricación, fuente equivocada, contradicción material,
+  ausencia de evidencia verificable, privacidad o fallo sistemático;
+- las advertencias no bloqueantes: consulta mejorable, selección temporal no
+  óptima sin efecto material, cobertura parcial declarada, menor precisión o
+  una alternativa potencialmente superior.
+
+Una respuesta con datos correctos, claims reproducibles, fuente consultable y
+limitaciones transparentes no falla únicamente porque otro SoQL sería más
+elegante o completo. La prueba sí debe fallar si la diferencia cambia el valor,
+la conclusión o el alcance indispensable de la pregunta. Esta regla no modifica
+las cardinalidades, los umbrales de la puerta ni los contenidos congelados de
+las suites golden.
+
+#### Versionado de suites doradas
+
+- `golden-v1.yaml` está congelado y continúa ejecutándose como regresión histórica.
+- `GOLDEN_V2_PROPOSAL.md` es informativo: no se usa como suite ni como fuente de hechos para el runtime.
+- `golden-v2.yaml` solo puede crearse en T-616 después de auditar derivabilidad, filtros ocultos, desempates, cortes temporales y hechos aceptables de los 50 casos.
+- Crear `golden-v2` no modifica ni sustituye `golden-v1`; ambas se ejecutan en paralelo hasta la retirada del legado.
+
+#### Puerta normativa de migración
+
+No se cambia el runtime predeterminado ni se retira el legado hasta cumplir simultáneamente:
+
+- Unitarias deterministas y no integración verdes.
+- `deterministic_agent_acceptance` e integraciones compartidas verdes.
+- Negativos 100%.
+- `golden-v2` ≥ 80% con aprobación normativa.
+- Fabricaciones = 0 y cifras huérfanas = 0.
+- Persistencia, cancelación, durabilidad y terminal único verificados.
+- Latencia y costo dentro de RNF-001/RNF-009.
+- `legacy_agent_acceptance` verde y rollback probado.
+
+Al superar la puerta, `AGENT_RUNTIME=deterministic` queda certificado inmediatamente como default técnico y se autoriza el canary desplegado de T-701. `legacy` permanece disponible como rollback de emergencia durante una versión contada desde ese canary; después de cerrar T-703 se eliminan el selector y el código legado en una tarea independiente.
+
+#### Validación operativa con tráfico real — Fase 7
+
+La puerta anterior certifica el runtime antes del despliegue; sus corridas
+`smoke` y golden son tráfico controlado de evaluación. La evidencia con tráfico
+real se obtiene después y no puede sustituirse por esas corridas.
+
+**T-701 — canary y rollback desplegado**
+
+1. Desplegar una versión identificable con
+   `AGENT_RUNTIME=deterministic` explícito; no depender del default implícito.
+2. Ejecutar un smoke sintético contra `/v2/agent/query` y su stream hasta un
+   único terminal; archivar versión, configuración y `run_id`.
+3. Cambiar explícitamente a `legacy`, reiniciar/desplegar, comprobar salud y
+   una corrida terminal; archivar el segundo `run_id`.
+4. Restaurar `deterministic`, comprobar salud y una corrida terminal.
+5. Registrar todos los `run_id` sintéticos para que T-703 los excluya. Ninguna
+   de estas corridas cuenta como tráfico real.
+
+El rollback solo se considera probado si la configuración efectiva y la
+versión desplegada quedan registradas y ambos runtimes responden en producción;
+la mera existencia del selector o una prueba local no basta.
+
+**T-703 — cohorte operativa RNF-001/RNF-009**
+
+- Ventana inicial: siete días consecutivos desde la restauración del canary
+  determinista. Si hubo otro despliegue o cambio de runtime, la ventana se
+  corta y el reporte separa las versiones.
+- Cohorte: corridas `retention_class=user` del runtime determinista desplegado.
+  Se excluyen de forma explícita las corridas `eval` y los `run_id` sintéticos
+  registrados por T-701.
+- Privacidad: la agregación usa trazas estructuradas y no exporta preguntas,
+  `context_hint`, filas, narrativas, citas ni identificadores de usuario.
+- Estratos: una corrida simple usa una sola consulta/evidencia y ninguna
+  exploración; una corrida multietapa usa más de una consulta/evidencia o al
+  menos una exploración. La clasificación no se infiere de la redacción.
+- Muestra mínima: 20 terminales simples y 20 terminales multietapa, además de
+  costo medido para el 100% de las corridas terminales incluidas.
+- Umbrales: p95 simple ≤ 20 s, p95 multietapa ≤ 75 s y costo promedio ≤
+  USD 0,05. Los percentiles se calculan sobre muestras no nulas sin eliminar
+  outliers.
+- Completitud: el reporte muestra denominadores, nulos, estados terminales,
+  exclusiones, runtime, modelo, versión desplegada y límites de la ventana.
+  Cualquier métrica faltante, estrato por debajo de la muestra mínima o
+  imposibilidad de separar tráfico sintético produce
+  `INSUFFICIENT_EVIDENCE`, no `PASS`.
+
+`GET /v2/admin/metrics` debe implementar y probar el agregado definido en
+`contracts/api-rest.md` antes de usarse como evidencia. La primera semana puede
+terminar en `PASS`, `FAIL` o `INSUFFICIENT_EVIDENCE`; en el último caso se
+amplía la observación y T-703 permanece abierta.
+
+### 4.5 Matriz de pruebas para hechos textuales (T-615)
+
+> **EJECUCIÓN INCREMENTAL.** T-615B…T-615F están cerradas. Cada incremento
+> restante debe demostrar su subconjunto y conservar las puertas previas.
+
+#### Unitarias del dominio
+
+| Área | Casos obligatorios | Resultado |
+|---|---|---|
+| `direct_text` | una celda válida; fila fuera de rango; cero o varias columnas; columna ausente; `null`; vacío | Solo la celda válida produce hecho. |
+| Normalización | NFC/NFD, espacios Unicode, CRLF, caja, tildes, `ñ`, puntuación | `normalized_values` estable; `display_value` conserva grafía fuente según `text-es-v1`. |
+| `value_presence` | coincidencia tras normalizar; ausencia; columna parcial | Ausencia o columna inválida rechazan. |
+| `category_selection` | selección reproducible; filtro no presente en SoQL; varias ganadoras | Solo regla completamente anclada produce hecho. |
+| Extremos | `argmax_label` y `argmin_label`; métrica nula/no numérica; empate | Empate termina en rechazo, nunca orden incidental. |
+| Varias filas | `canonical_text_set` con orden distinto y duplicados | Mismo orden, deduplicación y hash. |
+| Hash | dos corridas equivalentes; cambio de fila, columna, consulta, operación, perfil, valor o parámetro | Equivalentes: igual; cambio semántico: distinto. |
+| Enum | operación/perfil/versión desconocidos | Rechazo tipado. |
+| Regresión | suite completa de `QuantitativeClaim` y detector de cifras | RF-208/RNF-003 sin cambios. |
+
+#### Contrato, persistencia y retención
+
+- Modelos Pydantic cerrados: unión discriminada solo interna; no
+  `dict[str, Any]` para hechos públicos.
+- Round-trip de `textual_facts`; checks/FK/índices; migración `upgrade` y
+  `downgrade` sin tocar `quantitative_claims`.
+- Cascade al borrar evidencia/corrida, RF-803 y barrido RF-804 idempotentes.
+- `eval_case_results` guarda solo fingerprints; prueba negativa para texto,
+  valores fuente, filas y narrativa.
+- Snapshots/OpenAPI prueban que `claims`/`partial_claims` no cambian; API/SSE
+  añaden `textual_facts`/`partial_textual_facts`; parciales y errores.
+- Respuesta histórica sin campos textuales equivale a listas vacías; no hay
+  inferencia por forma ni reescritura.
+
+#### Matriz terminal T-615G
+
+| Caso | Resultado obligatorio |
+|---|---|
+| `completed` solo textual | Resumen fijo, `narrative=null`, claims vacíos, hechos y evidencia vinculados, sin reporte de no evidencia. |
+| `completed` mixto | Claims cuantitativos intactos; hechos separados; ninguna frase textual nueva en narrativa antes de T-615H. |
+| `no_evidence` | Evidencia y ambas listas textuales vacías; reporte obligatorio. |
+| `interrupted` antes/después de persistir | Solo lo persistido y reverificado aparece en `partial_textual_facts`; nunca se construye al serializar. |
+| `failed` después de persistir | Ningún hecho textual público; datos internos sujetos a retención. |
+| Flag apagado | Respuestas nuevas con listas vacías y cero lecturas dinámicas de `textual_facts`; payload histórico intacto. |
+| Histórico sin campos | Lectura materializa `[]` sin backfill ni inferencia. |
+
+Las pruebas deben cubrir REST, replay SSE terminal, aislamiento por `run_id`,
+OpenAPI y snapshots que demuestren que `claims.items` no cambia.
+
+#### Síntesis fundamentada
+
+- El modelo solo devuelve IDs existentes, orden y conector permitido.
+- El renderizador inserta exactamente `fact_text`/`display_value` persistidos.
+- ID inexistente, evidencia no elegible, operación inválida o segmento
+  factual sin ID bloquean la respuesta.
+- Los conectores cerrados no introducen valores factuales.
+- Una respuesta mixta conserva `orphan_figures_count=0` y
+  `orphan_factual_segments_count=0`.
+- Se mantiene una prueba adversaria que intenta introducir una entidad,
+  categoría, lugar, fecha o estado desde prosa libre; debe rechazarse.
+- Snapshots literales cubren las tres plantillas, los cuatro conectores y los
+  tres cierres de `grounded-synthesis-renderer-v1`, incluida puntuación y
+  espacios.
+- `comparison_pair` acepta pares cuantitativos, textuales y mixtos cuando
+  comparten corrida y evidencia elegible; rechaza ID repetido, corrida o
+  evidencia diferente y cualquier intento de atribuirle semántica matemática.
+- El fallback ordena canónicamente, selecciona máximo ocho, usa solo
+  `fact_statement`, elige el cierre normativo y pasa por el mismo validador.
+- Una prueba de frontera demuestra que preparados/no persistidos nunca entran
+  al conjunto permitido y que la síntesis ocurre después de la persistencia y
+  reverificación.
+
+Ejemplos snapshot obligatorios:
+
+```text
+Total de registros: 25.
+La categoría seleccionada es Salud.
+Resultados relacionados: Total de registros: 25. La categoría seleccionada es Salud.
+```
+
+#### Aceptación determinista
+
+1. Caso solo textual persistido y reproducible, sin claim `count=1`.
+2. Caso mixto con etiqueta y cifra, ambas vinculadas a la misma evidencia.
+3. Texto derivado de varias filas con orden canónico.
+4. Empate de extremo con rechazo/abstención controlada.
+5. Cambio de candidato después de un hecho textual inválido.
+6. Cancelación y presupuestos sin parciales no persistidos.
+7. Borrado y retención eliminan ambas variantes.
+8. Aceptación legacy permanece verde como rollback.
+9. `pilot-013-app-dnp` solo se usa en smoke después de implementar la capa y
+   debe probar los valores textuales, no un conteo; esto no modifica el
+   fixture `golden-v1`.
+
+#### Métricas y golden futuro
+
+La evaluación propuesta reporta
+`textual_fact_reference_coverage=1.0`,
+`textual_facts_reproducible=1.0`,
+`textual_fact_display_match=1.0`,
+`orphan_factual_segments_count=0` e
+`invalid_textual_operation_count=0`, separadas de las métricas RNF-003.
+`grounded_fact_integrity` es una conjunción, no un promedio.
+
+T-615 no corre Gemini, no repite RNF-010 y no crea `golden-v2`. T-616 debe
+auditar primero los 50 casos y solo con autorización puede materializar
+`acceptable_facts` discriminados. `golden-v1` permanece byte a byte intacto.
+
+### 4.6 Matriz de pruebas para etiquetado semántico y advertencias de presentación (T-617C)
+
+> **CONTRATO APROBADO EN T-617C-A; IMPLEMENTACIÓN PENDIENTE.** Esta matriz
+> define la aceptación mínima obligatoria que T-617C debe satisfacer contra
+> el contrato de `research.md` §29 / `contracts/api-rest.md` §4c. Ninguna de
+> estas pruebas ejecuta Gemini, Socrata ni PostgreSQL real; todas usan dobles
+> deterministas.
+
+#### Unitarias del dominio (etiquetado y relevancia)
+
+| Área | Casos obligatorios | Resultado esperado |
+|---|---|---|
+| Derivación de etiqueta | columna con `field_name`/`display_name` estructurado disponible (equivalente genérico a `genero_hombre`/`genero_mujer`, sin condicionar por nombre de dataset o pregunta concreta) | `label_status="verified"`, `label` no vacío, derivado del metadato, nunca del valor numérico. |
+| Intercambio de etiqueta | dos columnas con valores distintos en la misma fila | Cada `label` permanece asociado a su propio `columns_used`/`raw_value`; invertir el orden de iteración no debe cambiar qué etiqueta corresponde a qué valor. |
+| Ambigüedad | columna sin metadato estructurado suficiente para derivar una etiqueta inequívoca | `label=null`, `label_status="ambiguous"`, entrada correspondiente en `presentation_warnings` con `code="AMBIGUOUS_LABEL"` y `message_user` en español claro; el claim permanece en `claims[]` con su `display_value` intacto. |
+| No invención | igual que el caso anterior | Ningún `label` se rellena con una inferencia libre del LLM ni con una heurística basada solo en `raw_value`/`display_value`. |
+| Relevancia | intención con administrative_terms/tema que corresponde a un subconjunto de columnas devueltas, más columnas auxiliares (identificador técnico, dimensión de contexto no solicitada) usando fixtures genéricos (no `pilot-005`, no nombres de Cancillería) | Solo los claims relacionados con la intención aparecen en la narrativa principal; los auxiliares no solicitados quedan fuera de `summary`/`narrative` (pueden seguir existiendo en `claims[]`). |
+| Solicitud explícita | la pregunta del fixture pide explícitamente el identificador/dimensión auxiliar | Ese claim sí puede aparecer en la narrativa principal, con su etiqueta si es derivable. |
+| Generalidad | ningún test ni código de producción referencia `pilot-005`, `case_id`, `dataset_id` concretos, "Cancillería"/"Ministerio de Relaciones Exteriores" ni los valores 764/719 como condición de selección | Prueba de auditoría (`grep`) confirma ausencia de esos literales fuera de comentarios/fixtures explícitamente marcados como ejemplo. |
+
+#### Contrato y compatibilidad
+
+- `claims[].label`/`claims[].label_status` ausentes en un histórico equivalen
+  a `null`; no se infiere ni se reescribe retroactivamente.
+- `presentation_warnings` ausente en un histórico equivale a `[]`.
+- Snapshot/diff de esquema: `claims[]` conserva todos sus campos previos
+  (§4) sin eliminar ni renombrar ninguno; los dos campos nuevos son
+  estrictamente aditivos.
+- `columns_used`/`columns` de cada claim nuevo contiene nombres de columna
+  reales; una prueba de regresión confirma que ningún claim expone un alias
+  con forma `dim_\d+`/`metric_\w+_\d+`.
+- `presentation_warnings[].claim_id` siempre referencia un `claim_id`
+  presente en `claims[]` de la misma respuesta (sin huérfanos de
+  advertencia).
+
+#### Fallback determinista
+
+- El fallback sin LLM (`grounded-synthesis-fallback-v1` o equivalente)
+  también deriva `label`/`label_status` y produce `presentation_warnings`
+  cuando corresponde; ninguna ruta de fallback puede volver a enumerar
+  cifras con `claim`/`description` como único texto (regresión directa del
+  patrón «764, 719, 2.026 y 2» que originó T-617C).
+
+#### No regresión
+
+1. `RNF-003` (cobertura de claims=100%, reproducibles=100%, huérfanas=0) sin
+   cambios: los campos nuevos no alteran `raw_value`/`display_value`/`source_hash`.
+2. Síntesis puramente textual (T-615) y respuestas mixtas no retroceden:
+   `textual_facts`/`partial_textual_facts` sin cambios de forma.
+3. Casos negativos (`no_evidence`) no adquieren `presentation_warnings` ni
+   `label`/`label_status` — ambos campos solo tienen sentido sobre
+   `claims[]` no vacío.
+4. Una advertencia de presentación por sí sola nunca cambia `status` de
+   `completed` a `no_evidence` (prueba directa del requisito RF-212).
+5. Aceptación determinista relacionada (`test_deterministic_*`) permanece
+   verde sin modificar sus aserciones normativas previas.
 
 ## 5. Pruebas E2E de frontend y accesibilidad (WCAG 2.2 AA)
 

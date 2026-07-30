@@ -1,0 +1,90 @@
+# T-614 — smoke determinista y diagnóstico de recuperación
+
+**Requisitos:** RF-601, RF-602, RF-603, RNF-002, RNF-004
+**Fecha:** 2026-07-16
+**Runtime:** `deterministic`
+**Modelo:** `google/gemini-2.5-flash`
+**Embeddings:** `gemini-embedding-2`
+**Semilla:** `614010`
+
+## Corridas comparadas
+
+| Momento | eval_run_id | Reporte | Éxito | Recall@10 positivos | Negativos |
+|---|---|---|---:|---:|---:|
+| Línea base reproducible, antes de recuperación | `c40191ef-a095-448a-a357-e6b88c7ec784` | `c40191ef-a095-448a-a357-e6b88c7ec784.md` | 6/10 | 7/8 | 2/2 |
+| Tras ampliar la ventana por variante | `6b53a592-f87f-4740-825e-dc534cdfd93d` | `6b53a592-f87f-4740-825e-dc534cdfd93d.md` | 6/10 | 8/8 | 2/2 |
+| Final sobre commit `4df5c98` | `807c3127-9967-4c1c-afe2-714923cb0776` | `807c3127-9967-4c1c-afe2-714923cb0776.md` | 7/10 | 8/8 | 2/2 |
+
+La primera repetición posterior mantuvo 6/10 y la corrida final subió a 7/10;
+la variación de utilidad confirma que recuperar el dataset no garantiza que el
+planificador lo resuelva. La mejora estable y atribuible al incremento es de
+recuperación: recall@10 subió de 87,5 % a 100 % sin regresiones en los cuatro
+positivos sólidos ni en los dos negativos.
+
+## Comparación por caso
+
+| Caso | Antes | Después | Rango esperado antes/después | Diagnóstico final |
+|---|---:|---:|---|---|
+| pilot-002-seguridad-homicidios | pasa | pasa | 1 / 1 | sin regresión |
+| pilot-003-salud-vigilancia | pasa | pasa | 1 / 1 | sin regresión |
+| pilot-005-empleo-publico | pasa | pasa | 1 / 1 | sin regresión |
+| pilot-013-app-dnp | pasa | pasa | 1 / 1 | sin regresión |
+| pilot-012-control-fiscal | falla | falla | fuera de top 10 / 1 | recuperación corregida; ahora falla después, por presupuesto de candidatos |
+| pilot-021-sensibilizacion-valle | falla | falla | 1 / 1 | fallo del agente: ejecutó `count(*)=1` en vez de recuperar `cantidad=65` |
+| pilot-022-red-vial | falla | pasa | 1 / 1 | caso recuperado y resuelto en la corrida final |
+| pilot-038-precipitacion | falla | falla | 1 / 1 | golden ambiguo: exige 13:50, restricción ausente de la pregunta |
+| pilot-045-negativo-dato-personal | pasa | pasa | no aplica | abstención segura, cero evidencia/claims |
+| pilot-046-negativo-tiempo-real | pasa | pasa | no aplica | abstención segura, cero evidencia/claims |
+
+## Causa de recuperación: pilot-012
+
+Intención observada: tema `hallazgos`, entidad `Contraloría General de
+Antioquia`, términos `auditoría regular` y `administrativos`, operación
+`lookup`. Dataset esperado normativo: `wasc-xi4h`.
+
+| Variante | Posición esperada en top 25 | Similitud vectorial |
+|---|---:|---:|
+| `hallazgos Contraloría General de Antioquia` | no aparece | — |
+| `hallazgos` | 15 | 0.596425 |
+| `hallazgos auditoría regular administrativos` | 14 | 0.698936 |
+| `hallazgos lookup` | 18 | 0.539393 |
+
+Con ventana 10, el esperado desaparecía antes de la fusión. Con ventana 25,
+aparece en tres variantes y el consenso lo eleva al puesto 3 combinado en el
+diagnóstico aislado (score combinado 1.7296501); en el smoke posterior quedó
+en el puesto 1. Las columnas relevantes observadas son
+`hallazgos_administrativos`, `modalidad_de_auditor_a`, `sujeto_auditado` y
+`vigencia`.
+
+## Incremento implementado
+
+`retrieve_candidates_multiquery` solicita 25 resultados por variante y
+conserva el límite combinado de 10 candidatos. No cambia el presupuesto de 8
+candidatos intentados, las consultas, exploraciones o llamadas LLM; no usa
+IDs, facts ni URLs del golden. La prueba unitaria demuestra que un candidato
+profundo con consenso entre variantes puede sobrevivir al truncado y que la
+salida final sigue limitada a 10.
+
+## Fallos restantes
+
+- `pilot-012`: el esperado ya se recupera e intenta primero, pero el agente
+  agota el presupuesto de candidatos tras fallos de perfil/plan; no es ya un
+  fallo de recall.
+- `pilot-021`: el esperado se recupera en rango 1, pero el plan ejecutó
+  `SELECT count(*) ... = 1`; el hecho reproducible es la columna
+  `cantidad = 65`. Es un fallo del agente, no del golden.
+- `pilot-038`: la consulta devolvió 100 observaciones válidas del día. El
+  golden selecciona estación `0054050010` a las `13:50`, pero esa hora no
+  aparece en la pregunta. La respuesta no es única; queda como ambigüedad del
+  golden para T-616, sin modificar `golden-v1`.
+
+## Puerta RNF-010 pendiente
+
+La prueba normativa aislada sobre 100 consultas reales obtuvo cobertura 100 %,
+p50 1302,8 ms, p95 1828,8 ms y p99 2061,3 ms. El límite es p95 ≤ 1000 ms, por
+lo que T-614 continúa abierta. La prueba usa `/v2/catalog/search?k=10`; no
+atribuye el incumplimiento al cambio `per_query=25`, pero impide afirmar que
+RNF-010 está conservada. No se relajó el umbral.
+
+T-615 no fue iniciada. No se diseñaron claims textuales ni se creó
+`golden-v2.yaml`. T-614 sigue abierta mientras RNF-010 permanezca en rojo.

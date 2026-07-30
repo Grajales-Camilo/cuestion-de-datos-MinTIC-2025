@@ -22,6 +22,7 @@ class ColumnCatalogRow:
     data_type: str
     pii_risk_level: str
     eligibility_status: str
+    display_name: str | None = None
 
 
 async def fetch_dataset_catalog_info(
@@ -43,7 +44,8 @@ async def fetch_dataset_catalog_info(
         column_rows = (
             await connection.execute(
                 text(
-                    "SELECT field_name, data_type, pii_risk_level, eligibility_status "
+                    "SELECT field_name, data_type, pii_risk_level, eligibility_status, "
+                    "display_name "
                     "FROM catalog_columns WHERE dataset_id = :id"
                 ),
                 {"id": dataset_id},
@@ -72,7 +74,8 @@ async def fetch_columns_catalog(
         rows = (
             await connection.execute(
                 text(
-                    "SELECT field_name, data_type, pii_risk_level, eligibility_status "
+                    "SELECT field_name, data_type, pii_risk_level, eligibility_status, "
+                    "display_name "
                     "FROM catalog_columns WHERE dataset_id = :id"
                 ),
                 {"id": dataset_id},
@@ -84,6 +87,7 @@ async def fetch_columns_catalog(
             data_type=row.data_type,
             pii_risk_level=row.pii_risk_level,
             eligibility_status=row.eligibility_status,
+            display_name=row.display_name,
         )
         for row in rows
     ]

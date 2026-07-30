@@ -51,7 +51,7 @@ def _entry(code: str, level: str, tipologia: str) -> TerritorioTipologiaData:
 
 
 @pytest.fixture
-async def engine():
+async def engine(isolated_database_url):
     database_url = normalize_database_url_for_sqlalchemy(os.environ["DATABASE_URL"])
     engine = create_async_engine(database_url, pool_pre_ping=True)
     yield engine
@@ -60,13 +60,8 @@ async def engine():
 
 @pytest.fixture
 async def seeded_divipola(engine):
-    async with engine.begin() as connection:
-        await connection.execute(text("DELETE FROM territorio_tipologia"))
-        await connection.execute(text("DELETE FROM divipola_entries"))
     await upsert_divipola_entries(engine, divipola_rows_to_entries(_DIVIPOLA_ROWS))
     yield
-    async with engine.begin() as connection:
-        await connection.execute(text("DELETE FROM territorio_tipologia"))
 
 
 async def test_upsert_creates_rows_for_known_divipola_codes(engine, seeded_divipola) -> None:

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from pydantic import SecretStr
 
@@ -45,6 +46,7 @@ async def test_catalog_search_trims_query_and_returns_contract(monkeypatch) -> N
 
     monkeypatch.setattr(main, "catalog_search_with_platform_loop", fake_search)
     main.app.state.settings = DummySettings()
+    main.app.state.catalog_search_resources = SimpleNamespace(closed=False)
 
     async with AsyncClient(transport=ASGITransport(app=main.app), base_url="http://test") as client:
         response = await client.get(

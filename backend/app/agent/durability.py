@@ -24,6 +24,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.db.models import AgentRun, AgentRunEvent, TechnicalMetric
+from app.schemas import materialize_textual_fact_fields
 
 EventType = Literal["step", "evidence", "answer", "error"]
 TerminalStatus = Literal["completed", "no_evidence", "interrupted", "failed"]
@@ -106,6 +107,7 @@ async def write_terminal_event_once(
     """
 
     event_type: EventType = "answer" if status in ("completed", "no_evidence") else "error"
+    public_payload = materialize_textual_fact_fields(payload, status=status)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     now = datetime.now(UTC)
     async with session_factory() as session, session.begin():
@@ -127,11 +129,11 @@ async def write_terminal_event_once(
                 run_id=run_id,
                 seq=seq,
                 event_type=event_type,
-                payload=payload,
+                payload=public_payload,
                 created_at=now,
             )
         )
-    return EmittedEvent(run_id=run_id, seq=seq, event_type=event_type, payload=payload)
+    return EmittedEvent(run_id=run_id, seq=seq, event_type=event_type, payload=public_payload)
 
 
 async def touch_run_heartbeat(engine: AsyncEngine, run_id: uuid.UUID) -> None:
@@ -152,12 +154,16 @@ async def list_events_since(
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
         rows = (
-            await session.execute(
-                select(AgentRunEvent)
-                .where(AgentRunEvent.run_id == run_id, AgentRunEvent.seq > since_seq)
-                .order_by(AgentRunEvent.seq)
+            (
+                await session.execute(
+                    select(AgentRunEvent)
+                    .where(AgentRunEvent.run_id == run_id, AgentRunEvent.seq > since_seq)
+                    .order_by(AgentRunEvent.seq)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     return list(rows)
 
 

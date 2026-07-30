@@ -144,4 +144,55 @@ Get-ChildItem . -Recurse -Filter *.md |
 
 ## Pendientes (sin cambios)
 
-- [ ] Decisión de embeddings y dimensión (research.md §1) — se resuelve en T-205; bloquea T-104B/T-203.
+- [x] Decisión de embeddings y dimensión (research.md §1) — resuelta por
+  T-205 con `gemini-embedding-2`, 768 dimensiones; T-104B/T-203 ya no están
+  bloqueadas por esta decisión.
+
+# Ronda 7 — Enmienda T-615 aprobada (2026-07-17)
+
+> **APROBADA POR DECISIÓN HUMANA.** HEAD normativo:
+> `f7725eeced8afc93ccd7fcc250e248a05f2db616`. La aprobación autoriza
+> exclusivamente T-615B; T-615C y posteriores continúan bloqueadas.
+
+- [x] **R7-1 Concepto y separación.** Aprobar
+  `GroundedFact = QuantitativeClaim | TextualFact` y tabla separada
+  `textual_facts`; RF-208/RNF-003 permanecen intactos.
+- [x] **R7-2 Operaciones cerradas.** Aprobar
+  `direct_text`, `value_presence`, `category_selection`, `argmax_label`,
+  `argmin_label` y `canonical_text_set`; prohibir texto mediante `count=1`.
+- [x] **R7-3 Normalización.** Aprobar `text-es-v1`: NFC, espacios/saltos
+  canónicos, `casefold` solo para comparación y preservación de
+  tildes/`ñ`/puntuación/grafía mostrada.
+- [x] **R7-4 Ambigüedad.** Aprobar `tie_policy=reject` para extremos y
+  prohibición de seleccionar por orden incidental.
+- [x] **R7-5 Procedencia y hash.** Aprobar material canónico, exclusión de
+  UUIDs/timestamps y dataset resuelto obligatoriamente desde la evidencia.
+- [x] **R7-6 API.** Aprobar `claims` y `partial_claims` cuantitativos
+  intactos, campos textuales raíz aditivos separados y lectura histórica
+  estrictamente cuantitativa.
+- [x] **R7-7 Síntesis.** Aprobar selección de IDs + conectores cerrados +
+  renderizado factual determinista; no admitir prosa factual libre.
+- [x] **R7-8 Métricas.** Aprobar métricas textuales separadas y puerta total
+  por conjunción, sin cambiar umbrales ni RNF-003.
+- [x] **R7-9 Golden.** Confirmar que T-615 no toca `golden-v1` ni crea
+  `golden-v2`; `acceptable_facts` discriminados solo se trabajan en T-616.
+- [x] **R7-10 Entregas.** Aprobar secuencia T-615A…T-615J y autorización
+  separada por incremento, migración y cierre.
+
+# Ronda 8 — Utilidad proporcional y verificable (2026-07-19)
+
+- [x] **R8-1 Regla rectora.** Constitución Art. I.5 prioriza respuestas
+  útiles, verificables, suficientemente correctas y transparentes, sin relajar
+  la prohibición de fabricar, la trazabilidad ni la privacidad.
+- [x] **R8-2 Requisito estable.** RF-211 evita convertir una mejora técnica de
+  consulta en abstención automática cuando la respuesta material sigue
+  sustentada.
+- [x] **R8-3 Frontera operativa.** `validacion-calidad.md` separa bloqueos
+  reales de advertencias no bloqueantes sin cambiar pesos, umbrales ni
+  elegibilidad.
+- [x] **R8-4 Evaluación honesta.** `pruebas.md` conserva el veredicto mecánico,
+  cardinalidades, umbrales y golden, y reporta aparte la interpretación
+  cualitativa.
+- [x] **R8-5 Escala y no sobreajuste.** `research.md` §28 y `plan.md` §13.4
+  prohíben reglas por caso y documentan la prioridad de seguridad,
+  correspondencia material, transparencia y optimización.

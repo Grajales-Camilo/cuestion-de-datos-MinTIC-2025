@@ -51,9 +51,7 @@ SCALAR_FUNCTIONS = {"upper", "lower", "date_extract_y"} | {
 }
 ALLOWED_FUNCTIONS = AGG_FUNCTIONS | SCALAR_FUNCTIONS
 
-_BLACKLIST_PATTERN = re.compile(
-    r"(?i)\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT)\b|;"
-)
+_BLACKLIST_PATTERN = re.compile(r"(?i)\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT)\b|;")
 
 _COMPARISON_OPERATORS = ("<=", ">=", "!=", "<>", "=", "<", ">")
 
@@ -313,8 +311,10 @@ class _Parser:
                 "SOQL_FORBIDDEN",
                 "SELECT * esta prohibido; nombra columnas explicitas (regla 7)",
             )
-        if token.kind == "IDENT" and self._tokens[self._i + 1].kind == "OP" and (
-            self._tokens[self._i + 1].text == "("
+        if (
+            token.kind == "IDENT"
+            and self._tokens[self._i + 1].kind == "OP"
+            and (self._tokens[self._i + 1].text == "(")
         ):
             return self._parse_func_call()
         return self._parse_column()
@@ -463,8 +463,10 @@ class _Parser:
         token = self._peek()
         if token.kind in {"STRING", "NUMBER", "TRUE", "FALSE"}:
             return self._parse_literal()
-        if token.kind == "IDENT" and self._tokens[self._i + 1].kind == "OP" and (
-            self._tokens[self._i + 1].text == "("
+        if (
+            token.kind == "IDENT"
+            and self._tokens[self._i + 1].kind == "OP"
+            and (self._tokens[self._i + 1].text == "(")
         ):
             func = self._parse_func_call()
             if func.name in AGG_FUNCTIONS:
@@ -511,6 +513,44 @@ def parse_soql(soql: str) -> ParsedQuery:
                 "consulta y deja solo SELECT/WHERE/GROUP BY/HAVING/ORDER BY/LIMIT/OFFSET.",
             ) from None
         raise
+
+
+def _select_item_field_name(item: SelectItem) -> str | None:
+    """Nombre de columna fuente real seleccionado por `item`, o `None` si la
+    expresion no referencia una columna real (p. ej. `count(*)`)."""
+
+    if isinstance(item.expr, Column):
+        return item.expr.name
+    if isinstance(item.expr, FuncCall):
+        for arg in item.expr.args:
+            if isinstance(arg, Column):
+                return arg.name
+        return None
+    return None
+
+
+def extract_column_field_names(soql: str) -> dict[str, str]:
+    """Reconstruye el mapeo alias de ejecucion -> nombre de columna fuente
+    real a partir del SoQL ya persistido, usando el parser SoQL vigente en
+    vez de una heuristica de texto ad-hoc (RF-212, T-617C-R1).
+
+    Cada `SelectItem` con alias declarado se traduce a su columna real
+    (`Column.name`, o el argumento columna de un `FuncCall` como
+    `sum(valor)`); las expresiones sin columna real (`count(*)`) se marcan
+    con el centinela `COUNT_FIELD_SENTINEL` para permitir una etiqueta
+    estructural fija sin inventar un nombre de columna inexistente.
+    """
+
+    from app.quality.claim_labels import COUNT_FIELD_SENTINEL
+
+    parsed = parse_soql(soql)
+    mapping: dict[str, str] = {}
+    for item in parsed.select_items:
+        if item.alias is None:
+            continue
+        field_name = _select_item_field_name(item)
+        mapping[item.alias] = field_name if field_name is not None else COUNT_FIELD_SENTINEL
+    return mapping
 
 
 # --- Validacion de complejidad y catalogo ------------------------------------

@@ -22,6 +22,7 @@ dependencies = [
     "psycopg[binary,pool]>=3.2,<4",
     "pydantic-settings>=2.10,<3",
     "pyyaml>=6,<7",
+    "rfc8785==0.1.4",
     "sqlalchemy[asyncio]>=2.0,<3",
     "uvicorn[standard]>=0.35,<1",
 ]
@@ -52,11 +53,14 @@ benchmark-embeddings = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*"]
+include = ["app*", "eval*"]
+exclude = ["tests*"]
 
 [tool.pytest.ini_options]
 markers = [
     "integration: pruebas que requieren red, PostgreSQL real o servicios externos",
+    "legacy_agent_acceptance: aceptación E2E del runtime legado congelado (app.agent.graph), solo rollback",
+    "deterministic_agent_acceptance: aceptación E2E del runtime determinista productivo (execute_deterministic_agent_run_async)",
 ]
 asyncio_mode = "auto"
 testpaths = ["tests"]

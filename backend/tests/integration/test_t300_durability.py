@@ -43,15 +43,33 @@ async def engine():
 
 @pytest.fixture(autouse=True)
 async def _clean_agent_tables(engine):
-    async def _clean() -> None:
-        async with engine.begin() as connection:
-            await connection.execute(text("DELETE FROM agent_run_events"))
-            await connection.execute(text("DELETE FROM agent_runs"))
-            await connection.execute(text("DELETE FROM worker_instances"))
-
-    await _clean()
+    async with engine.connect() as connection:
+        initial_run_ids = set(
+            (await connection.execute(text("SELECT id FROM agent_runs"))).scalars()
+        )
+        initial_worker_ids = set(
+            (await connection.execute(text("SELECT id FROM worker_instances"))).scalars()
+        )
     yield
-    await _clean()
+    async with engine.begin() as connection:
+        current_run_ids = set(
+            (await connection.execute(text("SELECT id FROM agent_runs"))).scalars()
+        )
+        created_run_ids = list(current_run_ids - initial_run_ids)
+        for run_id in created_run_ids:
+            await connection.execute(
+                text("DELETE FROM agent_runs WHERE id = :run_id"),
+                {"run_id": run_id},
+            )
+        current_worker_ids = set(
+            (await connection.execute(text("SELECT id FROM worker_instances"))).scalars()
+        )
+        created_worker_ids = list(current_worker_ids - initial_worker_ids)
+        for worker_id in created_worker_ids:
+            await connection.execute(
+                text("DELETE FROM worker_instances WHERE id = :worker_id"),
+                {"worker_id": worker_id},
+            )
 
 
 async def _insert_worker(
@@ -197,7 +215,11 @@ async def test_write_terminal_event_once_is_idempotent_on_retry(engine) -> None:
 
     events = await durability.list_events_since(engine, run_id, 0)
     assert len(events) == 1
-    assert events[0].payload == {"try": 1}
+    assert events[0].payload == {
+        "try": 1,
+        "textual_facts": [],
+        "partial_textual_facts": [],
+    }
 
 
 # --- 5. Rollback tras reservar seq no deja hueco observable -----------------

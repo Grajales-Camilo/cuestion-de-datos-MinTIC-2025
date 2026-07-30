@@ -1,0 +1,447 @@
+import inspect
+from types import SimpleNamespace
+
+import pytest
+
+from app.agent.deterministic_dependencies import (
+    PLANNER_THINKING_BUDGET_TOKENS,
+    RuntimeLLMUsage,
+    _column_type,
+    _exploration_terms,
+    _model,
+    build_real_runtime_dependencies,
+)
+from app.agent.deterministic_runtime import DeterministicToolInfrastructureError
+from app.agent.llm_contracts import (
+    EnumeratedPlanSelection,
+    FilterChoice,
+    GroundedSynthesis,
+    IntentExtraction,
+    QuantitativePlanSelection,
+)
+from app.agent.persistence import DatasetEvidenceMetadata
+from app.agent.query_plan import (
+    MAX_COLUMNS_PER_CANDIDATE,
+    ColumnDataType,
+    FilterOperator,
+    QueryOperation,
+    ScalarType,
+)
+from app.quality.grounded_facts import GroundedSynthesisPlan
+from app.tools.catalog_lookup import ColumnCatalogRow
+from tests.test_settings import settings
+
+
+@pytest.mark.parametrize(
+    ("catalog_type", "expected"),
+    [
+        ("Text", ColumnDataType.TEXT),
+        ("Number", ColumnDataType.NUMBER),
+        ("Calendar date", ColumnDataType.DATE),
+        ("Floating timestamp", ColumnDataType.DATETIME),
+        ("calendar_date", ColumnDataType.DATE),
+        ("Point", ColumnDataType.LOCATION),
+    ],
+)
+def test_column_type_normalizes_real_socrata_catalog_labels(
+    catalog_type: str,
+    expected: ColumnDataType,
+) -> None:
+    assert _column_type(catalog_type) is expected
+
+
+@pytest.mark.parametrize(
+    ("enabled", "expected"),
+    [
+        (False, QuantitativePlanSelection),
+        (True, EnumeratedPlanSelection),
+    ],
+)
+def test_feature_flag_changes_the_llm_schema_itself(
+    monkeypatch,
+    enabled: bool,
+    expected: type,
+) -> None:
+    schemas: list[type] = []
+
+    def fake_model(_settings, schema, *, thinking_budget=None):
+        schemas.append(schema)
+        return object()
+
+    monkeypatch.setattr("app.agent.deterministic_dependencies._model", fake_model)
+    build_real_runtime_dependencies(
+        settings=settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=enabled),
+        engine=object(),  # type: ignore[arg-type]
+        http_client=object(),  # type: ignore[arg-type]
+        embedding_client=object(),  # type: ignore[arg-type]
+        usage=RuntimeLLMUsage(),
+    )
+    assert schemas[1] is expected
+
+
+@pytest.mark.asyncio
+async def test_real_explorer_never_exceeds_remaining_tool_call_budget(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_model(_settings, schema, *, thinking_budget=None):
+        del schema, thinking_budget
+        return object()
+
+    async def fake_explorar_valores(payload, **_kwargs):
+        calls.append(payload["termino_busqueda"])
+        return {"ok": True, "values": ()}
+
+    monkeypatch.setattr("app.agent.deterministic_dependencies._model", fake_model)
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.explorar_valores",
+        fake_explorar_valores,
+    )
+    dependencies = build_real_runtime_dependencies(
+        settings=settings(),
+        engine=object(),  # type: ignore[arg-type]
+        http_client=object(),  # type: ignore[arg-type]
+        embedding_client=object(),  # type: ignore[arg-type]
+        usage=RuntimeLLMUsage(),
+    )
+    profile = SimpleNamespace(
+        option=SimpleNamespace(
+            dataset_id="abcd-1234",
+            columns=(SimpleNamespace(field_name="entidad"),),
+        )
+    )
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("Ministerio de Relaciones Exteriores",),
+            ),
+        ),
+        needs_value_exploration=True,
+    )
+
+    explored = await dependencies.explore(profile, selection, (), 1)
+
+    assert explored.tool_calls == 1
+    assert calls == ["Ministerio de Relaciones Exteriores"]
+
+
+def _fake_metadata(dataset_id: str) -> DatasetEvidenceMetadata:
+    return DatasetEvidenceMetadata(
+        dataset_id=dataset_id,
+        name="Dataset ancho",
+        publisher="Entidad",
+        official_publisher_id=None,
+        pii_risk_level="low",
+        eligibility_status="eligible",
+        eligibility_reasons=(),
+        data_updated_at=None,
+        column_pii={},
+        column_types={},
+    )
+
+
+def _fake_columns(count: int) -> tuple[ColumnCatalogRow, ...]:
+    return tuple(
+        ColumnCatalogRow(
+            field_name=f"columna_{index}",
+            data_type="text",
+            pii_risk_level="low",
+            eligibility_status="eligible",
+            display_name=None,
+        )
+        for index in range(count)
+    )
+
+
+@pytest.mark.asyncio
+async def test_profile_rejects_a_schema_wider_than_the_supported_maximum(monkeypatch) -> None:
+    """golden-v2 pilot-016-codigos-postales: `kg4b-vx7j` publica 317 columnas,
+    por encima de `MAX_COLUMNS_PER_CANDIDATE` (250, el máximo que admite
+    `DatasetOption.columns`). Antes de este fix, `profile()` construía las
+    317 `ColumnOption` igual y dejaba que `DatasetOption(...)` lanzara un
+    `pydantic.ValidationError` sin clasificar -- el runtime lo propagaba sin
+    capturar y el arnés de evaluación lo registraba como
+    `terminal_error_code=INTERNAL`. Ahora `profile()` rechaza el esquema con
+    un `LookupError` explícito, que el runtime traduce en un rechazo
+    controlado de candidato (`PROFILING_ERROR`)."""
+
+    async def fake_load_metadata(_engine, dataset_id):
+        return _fake_metadata(dataset_id)
+
+    async def fake_fetch_columns(_engine, _dataset_id):
+        return _fake_columns(MAX_COLUMNS_PER_CANDIDATE + 1)
+
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.load_dataset_evidence_metadata",
+        fake_load_metadata,
+    )
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.fetch_columns_catalog",
+        fake_fetch_columns,
+    )
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies._model",
+        lambda _settings, _schema, *, thinking_budget=None: object(),
+    )
+    dependencies = build_real_runtime_dependencies(
+        settings=settings(),
+        engine=object(),  # type: ignore[arg-type]
+        http_client=object(),  # type: ignore[arg-type]
+        embedding_client=object(),  # type: ignore[arg-type]
+        usage=RuntimeLLMUsage(),
+    )
+
+    with pytest.raises(LookupError):
+        await dependencies.profile("kg4b-vx7j")
+
+
+@pytest.mark.asyncio
+async def test_profile_accepts_a_schema_at_the_supported_maximum(monkeypatch) -> None:
+    """Frontera exacta: MAX_COLUMNS_PER_CANDIDATE columnas siguen siendo
+    perfilables; el rechazo solo aplica por encima del máximo."""
+
+    async def fake_load_metadata(_engine, dataset_id):
+        return _fake_metadata(dataset_id)
+
+    async def fake_fetch_columns(_engine, _dataset_id):
+        return _fake_columns(MAX_COLUMNS_PER_CANDIDATE)
+
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.load_dataset_evidence_metadata",
+        fake_load_metadata,
+    )
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.fetch_columns_catalog",
+        fake_fetch_columns,
+    )
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies._model",
+        lambda _settings, _schema, *, thinking_budget=None: object(),
+    )
+    dependencies = build_real_runtime_dependencies(
+        settings=settings(),
+        engine=object(),  # type: ignore[arg-type]
+        http_client=object(),  # type: ignore[arg-type]
+        embedding_client=object(),  # type: ignore[arg-type]
+        usage=RuntimeLLMUsage(),
+    )
+
+    profiled = await dependencies.profile("wide-dat0")
+
+    assert len(profiled.option.columns) == MAX_COLUMNS_PER_CANDIDATE
+
+
+@pytest.mark.parametrize(
+    ("proposed", "expected"),
+    [
+        ("Auditoría Regular", ("Auditoría Regular", "Auditoría", "Regular")),
+        ("Alcalá (Valle)", ("Alcalá (Valle)", "Alcalá", "Valle")),
+        ("0054050010", ("0054050010",)),
+    ],
+)
+def test_exploration_terms_prioritize_original_material_tokens(
+    proposed: str, expected: tuple[str, ...]
+) -> None:
+    assert _exploration_terms(proposed, 3) == expected
+
+
+@pytest.mark.asyncio
+async def test_real_explorer_preserves_typed_socrata_transport_failure(monkeypatch) -> None:
+    def fake_model(_settings, schema, *, thinking_budget=None):
+        del schema, thinking_budget
+        return object()
+
+    async def fake_explorar_valores(_payload, **_kwargs):
+        return {
+            "ok": False,
+            "error": {
+                "code": "SOCRATA_TIMEOUT",
+                "message": "Socrata no respondió tras 1 reintento",
+            },
+        }
+
+    monkeypatch.setattr("app.agent.deterministic_dependencies._model", fake_model)
+    monkeypatch.setattr(
+        "app.agent.deterministic_dependencies.explorar_valores",
+        fake_explorar_valores,
+    )
+    dependencies = build_real_runtime_dependencies(
+        settings=settings(),
+        engine=object(),  # type: ignore[arg-type]
+        http_client=object(),  # type: ignore[arg-type]
+        embedding_client=object(),  # type: ignore[arg-type]
+        usage=RuntimeLLMUsage(),
+    )
+    profile = SimpleNamespace(
+        option=SimpleNamespace(
+            dataset_id="abcd-1234",
+            columns=(SimpleNamespace(field_name="municipio"),),
+        )
+    )
+    selection = EnumeratedPlanSelection(
+        dataset_index=0,
+        operation=QueryOperation.LOOKUP,
+        dimension_column_indexes=(0,),
+        filters=(
+            FilterChoice(
+                column_index=0,
+                operator=FilterOperator.EQ,
+                value_type=ScalarType.TEXT,
+                values=("Alcalá (Valle)",),
+            ),
+        ),
+        needs_value_exploration=True,
+    )
+
+    with pytest.raises(DeterministicToolInfrastructureError) as captured:
+        await dependencies.explore(profile, selection, (), 3)
+    assert captured.value.code == "SOCRATA_TIMEOUT"
+
+
+# --- T-617B0-R4: presupuesto de razonamiento acotado del planificador -------
+#
+# Diagnóstico causal: backend/eval/reports/t617b-d1-pilot005-timeout-diagnosis.md.
+# build_plan sin thinking_budget respondió en ~1.4 s o agotó los dos intentos
+# de 30 s con 504; con thinking_budget=1024 respondió en ~5.2 s pero con
+# salida estructurada inválida; con thinking_budget=4096 respondió en ~2.9 s
+# con salida estructurada válida.
+
+
+@pytest.mark.parametrize("textual_facts_enabled", [False, True])
+def test_only_planner_receives_thinking_budget_with_correct_schema(
+    monkeypatch, textual_facts_enabled: bool
+) -> None:
+    """Requisitos 1, 2, 5 y 6: solo el planificador recibe thinking_budget
+    (=PLANNER_THINKING_BUDGET_TOKENS); intent, síntesis y plan de síntesis NO
+    lo reciben; cada uno de los cuatro roles conserva su schema propio; nada
+    en la llamada depende de un case_id/dataset_id/pregunta (build_real_
+    runtime_dependencies no recibe ninguno de esos parámetros)."""
+
+    calls: list[dict[str, object]] = []
+
+    def fake_model(_settings, schema, *, thinking_budget=None):
+        calls.append({"schema": schema, "thinking_budget": thinking_budget})
+        return object()
+
+    monkeypatch.setattr("app.agent.deterministic_dependencies._model", fake_model)
+    build_real_runtime_dependencies(
+        settings=settings(DETERMINISTIC_TEXTUAL_FACTS_ENABLED=textual_facts_enabled),
+        engine=object(),  # type: ignore[arg-type]
+        http_client=object(),  # type: ignore[arg-type]
+        embedding_client=object(),  # type: ignore[arg-type]
+        usage=RuntimeLLMUsage(),
+    )
+
+    by_schema = {call["schema"]: call["thinking_budget"] for call in calls}
+    planner_schema = EnumeratedPlanSelection if textual_facts_enabled else QuantitativePlanSelection
+
+    assert by_schema[IntentExtraction] is None
+    assert by_schema[planner_schema] == PLANNER_THINKING_BUDGET_TOKENS
+    assert by_schema[GroundedSynthesis] is None
+    if textual_facts_enabled:
+        assert by_schema[GroundedSynthesisPlan] is None
+    else:
+        assert GroundedSynthesisPlan not in by_schema  # no se construye si el flag está apagado
+
+    # Exactamente un rol recibió thinking_budget, sin importar el flag.
+    assert sum(1 for value in by_schema.values() if value is not None) == 1
+
+
+def test_model_signature_has_no_case_or_dataset_specific_parameter() -> None:
+    """Requisito 6 (verificable estructuralmente): `_model` no expone ningún
+    parámetro por caso/dataset/pregunta que pudiera condicionar
+    thinking_budget a `pilot-005`, `h8rs-jxum` ni ningún otro identificador;
+    solo `settings`, `schema` y el `thinking_budget` genérico."""
+
+    params = set(inspect.signature(_model).parameters)
+    assert params == {"settings", "schema", "thinking_budget"}
+
+
+@pytest.mark.parametrize(
+    ("llm_provider", "llm_model", "api_key_kwargs", "expected_thinking_budget"),
+    [
+        (
+            "google",
+            "gemini-2.5-flash",
+            {"GOOGLE_API_KEY": "fake-google-key"},
+            PLANNER_THINKING_BUDGET_TOKENS,
+        ),
+        (
+            "google",
+            "gemini-2.5-pro",
+            {"GOOGLE_API_KEY": "fake-google-key"},
+            None,
+        ),
+        (
+            "anthropic",
+            "claude-sonnet-5",
+            {"ANTHROPIC_API_KEY": "fake-anthropic-key"},
+            None,
+        ),
+    ],
+)
+def test_thinking_budget_is_scoped_to_google_gemini_2_5_flash(
+    llm_provider: str,
+    llm_model: str,
+    api_key_kwargs: dict[str, str],
+    expected_thinking_budget: int | None,
+) -> None:
+    """T-617B0-R4A, requisito 4 (parametrizada, sin mocks, claves falsas, sin
+    red): `_model()` real, pidiendo siempre `thinking_budget=4096`, solo lo
+    envía de verdad cuando `llm_provider=="google"` **y**
+    `llm_model=="gemini-2.5-flash"`. Otro modelo Google (`gemini-2.5-pro`) y
+    Anthropic quedan sin `thinking_budget`, y `timeout`/`max_retries`
+    permanecen en 30/2 en los tres casos (requisitos 1, 2 y 3)."""
+
+    model_settings = settings(LLM_PROVIDER=llm_provider, LLM_MODEL=llm_model, **api_key_kwargs)
+    structured = _model(
+        model_settings, QuantitativePlanSelection, thinking_budget=PLANNER_THINKING_BUDGET_TOKENS
+    )
+    bound = structured.first.steps__["raw"].bound
+
+    if expected_thinking_budget is None:
+        assert not hasattr(bound, "thinking_budget") or bound.thinking_budget is None
+    else:
+        assert bound.thinking_budget == expected_thinking_budget
+    if hasattr(bound, "max_retries"):
+        assert bound.max_retries == 2
+    if hasattr(bound, "timeout"):
+        assert bound.timeout == 30
+
+
+def test_intent_and_synthesis_models_have_no_thinking_budget_by_default() -> None:
+    """Requisito 2, a nivel de `_model()` directo (sin el kwarg opcional):
+    intent y síntesis se siguen construyendo exactamente como antes de
+    T-617B0-R4 -- `thinking_budget=None` por defecto no agrega nada al
+    modelo de Google."""
+
+    google_settings = settings(LLM_PROVIDER="google", GOOGLE_API_KEY="fake-google-key")
+    intent_structured = _model(google_settings, IntentExtraction)
+    synthesis_structured = _model(google_settings, GroundedSynthesis)
+
+    assert intent_structured.first.steps__["raw"].bound.thinking_budget is None
+    assert synthesis_structured.first.steps__["raw"].bound.thinking_budget is None
+
+
+# Requisito 7 (no duplicar cobertura existente): el flujo productivo aplica
+# `normalize_system_owned_operation` sobre CADA selección devuelta por
+# `dependencies.plan` (el planner_model construido arriba), incondicionalmente
+# y antes de cualquier otra normalización/materialización/validación --
+# `app/agent/deterministic_runtime.py:463`, inmediatamente después de
+# `selection = await dependencies.plan(...)` en el nodo `BUILD_PLAN`. Este
+# archivo no cambia esa llamada ni su ubicación (solo agrega thinking_budget
+# a la construcción del modelo, no al post-procesamiento de su salida). La
+# normalización en sí ya tiene cobertura unitaria directa y suficiente en
+# `tests/test_llm_contracts.py`:
+# `test_count_operation_is_owned_by_system_and_always_becomes_count_star` y
+# `test_lookup_preserves_metric_columns_as_enumerated_output_dimensions`;
+# el punto de integración (que se invoque tras CADA `dependencies.plan` real)
+# se ejercita implícitamente en cualquier prueba de
+# `tests/test_deterministic_runtime.py` que alcance `BUILD_PLAN` (la llamada
+# es incondicional en el nodo, no está detrás de ninguna rama que estas
+# pruebas nuevas puedan afectar).

@@ -52,7 +52,16 @@ DATASET_ALTA = "t402-alta"
 DATASET_BAJA = "t402-baja"
 DATASET_NO_RECOMENDADA = "t402-no-recomendada"
 DATASET_DIAGNOSTIC = "t402-diagnostic-only"
-ALL_DATASET_IDS = (DATASET_ALTA, DATASET_BAJA, DATASET_NO_RECOMENDADA, DATASET_DIAGNOSTIC)
+DATASET_MULTI_A = "t402-multi-a"
+DATASET_MULTI_B = "t402-multi-b"
+ALL_DATASET_IDS = (
+    DATASET_ALTA,
+    DATASET_BAJA,
+    DATASET_NO_RECOMENDADA,
+    DATASET_DIAGNOSTIC,
+    DATASET_MULTI_A,
+    DATASET_MULTI_B,
+)
 
 
 class StaticModel:
@@ -378,6 +387,52 @@ async def _quality_validator_step_count(engine, run_id: uuid.UUID) -> int:
         ).scalar_one()
 
 
+async def _evidence_quality_counts(engine, run_id: uuid.UUID) -> tuple[int, int]:
+    """Devuelve (evidence_results, quality_reports) de la corrida. La igualdad
+    de ambos conteos es la comprobación 1:1 del contrato (Art. I.4: ninguna
+    evidencia entregable sin calidad)."""
+    async with engine.connect() as connection:
+        evidence_count = (
+            await connection.execute(
+                text("SELECT count(*) FROM evidence_results WHERE run_id = :run_id"),
+                {"run_id": run_id},
+            )
+        ).scalar_one()
+        quality_count = (
+            await connection.execute(
+                text(
+                    "SELECT count(*) FROM quality_reports q "
+                    "JOIN evidence_results e ON e.id = q.evidence_id "
+                    "WHERE e.run_id = :run_id"
+                ),
+                {"run_id": run_id},
+            )
+        ).scalar_one()
+        return evidence_count, quality_count
+
+
+async def _evidence_ids_without_exactly_one_quality(engine, run_id: uuid.UUID) -> list:
+    """FK inversa: evidencias de la corrida cuyo número de quality_reports != 1.
+    Debe ser vacío -- cada evidence_results tiene exactamente un quality_reports
+    asociado por evidence_id."""
+    async with engine.connect() as connection:
+        return (
+            (
+                await connection.execute(
+                    text(
+                        "SELECT e.id FROM evidence_results e "
+                        "LEFT JOIN quality_reports q ON q.evidence_id = e.id "
+                        "WHERE e.run_id = :run_id "
+                        "GROUP BY e.id HAVING count(q.evidence_id) <> 1"
+                    ),
+                    {"run_id": run_id},
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+
 async def _quality_report_row(engine, run_id: uuid.UUID):
     async with engine.connect() as connection:
         return (
@@ -509,7 +564,29 @@ async def test_evidencia_baja_conserva_advertencia_y_llega_al_sintetizador(engin
     assert "limitaciones de calidad" in state["final_answer"]["narrative"]
     assert "limitaciones de calidad" in state["final_answer"]["evidence"][0]["narrative"]
 
+    # Invariante D/G (contracts/validacion-calidad.md §6.2 punto 3): en la
+    # respuesta FINAL entregable la advertencia de la evidencia baja sigue
+    # asociada al claim que la usa como sustento, vía la cadena
+    # claim.evidence_id -> evidence.evidence_id -> evidence.quality.warnings_user.
+    # El contrato NO define un campo nuevo en el claim: la herencia se resuelve
+    # por ese vínculo y la evidencia pública que porta `quality`. Aquí se
+    # demuestra el vínculo explícitamente sobre `final_answer`, no solo sobre el
+    # payload interno del sintetizador.
+    final = state["final_answer"]
+    final_claim = final["claims"][0]
+    assert final_claim["evidence_id"] == state["evidences"][0]["evidence_id"]
+    source_evidence = next(
+        item for item in final["evidence"] if item["evidence_id"] == final_claim["evidence_id"]
+    )
+    assert source_evidence["quality"]["classification"] == "baja"
+    assert source_evidence["quality"]["warnings_user"] == list(quality["warnings_user"])
+    assert source_evidence["quality"]["warnings_user"], (
+        "el claim derivado de evidencia baja debe poder recuperar las "
+        "advertencias de su evidencia fuente en la respuesta final"
+    )
+
     assert await _quality_validator_step_count(engine, run_id) == 1
+    assert await _evidence_quality_counts(engine, run_id) == (1, 1)
     quality_row = await _quality_report_row(engine, run_id)
     assert quality_row.classification == "baja"
 
@@ -606,3 +683,196 @@ async def test_evidencia_diagnostic_only_no_sustenta_claims(engine):
     assert await _quality_validator_step_count(engine, run_id) == 1
     quality_row = await _quality_report_row(engine, run_id)
     assert quality_row.eligibility_status == "diagnostic_only"
+
+
+# ---------------------------------------------------------------------------
+# Invariante A (T5 -> T6 obligatorio) con MÚLTIPLES consultas en UNA corrida.
+# La matriz de arriba prueba 4 corridas independientes de un solo T5; esto no
+# basta para demostrar que el paso T6 se dispara una vez POR CADA T5 dentro de
+# la misma corrida. `_after_t5` es una arista condicional fija del grafo
+# (graph.py): tras `tool__ejecutar_soql`, si hay `pending_t5`, la única
+# transición posible es a `quality_validator`; el LLM/router no participa en
+# esa decisión y no puede saltarla. Esta prueba lo ejerce end-to-end: dos T5
+# exitosos deben producir exactamente dos pasos `quality_validator`, dos
+# evidencias y persistencia 1:1 evidence_results/quality_reports.
+# ---------------------------------------------------------------------------
+
+
+class ScriptedMultiT5Router:
+    """Ubica el catálogo, ejecuta DOS `ejecutar_soql` (uno por dataset) y luego
+    termina. No propone claims en `finish`: eso lo hace `claim_planner`."""
+
+    def __init__(self, *, dataset_a: str, soql_a: str, dataset_b: str, soql_b: str):
+        self.dataset_a = dataset_a
+        self.soql_a = soql_a
+        self.dataset_b = dataset_b
+        self.soql_b = soql_b
+        self.calls = 0
+
+    async def ainvoke(self, _messages, **_kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            return RouterOutput(
+                action="buscar_catalogo",
+                reasoning_summary="Ubicar fuentes",
+                tool_input={"query": "cooperación", "k": 5},
+            )
+        if self.calls == 2:
+            return RouterOutput(
+                action="ejecutar_soql",
+                reasoning_summary="Consultar la primera fuente",
+                tool_input={
+                    "dataset_id": self.dataset_a,
+                    "soql": self.soql_a,
+                    "purpose": "Verificación T-402 multi A",
+                },
+            )
+        if self.calls == 3:
+            return RouterOutput(
+                action="ejecutar_soql",
+                reasoning_summary="Consultar la segunda fuente",
+                tool_input={
+                    "dataset_id": self.dataset_b,
+                    "soql": self.soql_b,
+                    "purpose": "Verificación T-402 multi B",
+                },
+            )
+        return RouterOutput(
+            action="finish",
+            reasoning_summary="Cerrar la investigación con las dos evidencias",
+            tool_input={},
+        )
+
+
+class ScriptedMultiClaimPlanner:
+    """Planifica un claim `direct` sobre la columna `total` de CADA evidencia
+    elegible/utilizable de la corrida (una por T5)."""
+
+    async def ainvoke(self, messages, **_kwargs):
+        payload = json.loads(messages[-1].content)
+        plans = [
+            {
+                "evidence_id": evidence["evidence_id"],
+                "claim_specs": [
+                    {
+                        "claim_type": "direct",
+                        "description": "Cifra bajo verificación T-402",
+                        "source_row_indexes": [0],
+                        "columns": ["total"],
+                        "unit": "COP",
+                        "rounding": 0,
+                    }
+                ],
+            }
+            for evidence in payload.get("evidences", [])
+        ]
+        return ClaimPlannerOutput.model_validate(
+            {
+                "reasoning_summary": "Planificar una cifra por evidencia",
+                "claim_specs_by_evidence": plans,
+            }
+        )
+
+
+def _multi_t5_tool(rows_by_dataset: dict[str, list[dict]]):
+    """Herramienta T5 que despacha filas/SoQL según el `dataset_id` del input,
+    para poder ejecutar dos T5 distintos en la misma corrida."""
+
+    async def _tool(raw_input):
+        dataset_id = raw_input["dataset_id"]
+        return {
+            "ok": True,
+            "canonical_soql": raw_input["soql"],
+            "rows": rows_by_dataset[dataset_id],
+            "row_count": len(rows_by_dataset[dataset_id]),
+            "executed_at": datetime.now(UTC).isoformat(),
+            "source_url": f"https://www.datos.gov.co/d/{dataset_id}",
+            "llm_view": {"rows_shown": len(rows_by_dataset[dataset_id])},
+        }
+
+    return _tool
+
+
+async def test_dos_t5_en_una_corrida_producen_dos_t6_y_persistencia_1a1(engine):
+    soql_a = "SELECT sector, sum(monto) AS total GROUP BY sector LIMIT 50"
+    soql_b = "SELECT sector, sum(monto) AS total GROUP BY sector LIMIT 50"
+    run_id_a = await seed_run(
+        engine,
+        question="integracion T-402 multi (A)",
+        dataset_id=DATASET_MULTI_A,
+        publisher_verification_status="verified",
+        eligibility_status="eligible",
+        eligibility_reasons=[],
+        data_updated_at=datetime.now(UTC),
+        columns=["sector", "monto"],
+    )
+    await seed_run(
+        engine,
+        question="integracion T-402 multi (B)",
+        dataset_id=DATASET_MULTI_B,
+        publisher_verification_status="verified",
+        eligibility_status="eligible",
+        eligibility_reasons=[],
+        data_updated_at=datetime.now(UTC),
+        columns=["sector", "monto"],
+    )
+    # Una sola corrida (run_id_a) que consulta AMBOS datasets con dos T5.
+    tool = _multi_t5_tool(
+        {
+            DATASET_MULTI_A: [{"sector": "Educación", "total": "100"}],
+            DATASET_MULTI_B: [{"sector": "Salud", "total": "200"}],
+        }
+    )
+    deps = GraphDependencies(
+        engine=engine,
+        planner_model=StaticModel(
+            PlannerOutput(
+                intention="Verificar dos T5 en una corrida",
+                subqueries=["Consultar A", "Consultar B"],
+                recommended_next_action="Buscar catálogo",
+            )
+        ),
+        router_model=ScriptedMultiT5Router(
+            dataset_a=DATASET_MULTI_A, soql_a=soql_a, dataset_b=DATASET_MULTI_B, soql_b=soql_b
+        ),
+        synthesizer_model=ScriptedSynthesizer(),
+        claim_model=ScriptedMultiClaimPlanner(),
+        tools={
+            "buscar_catalogo": _catalog_tool_stub,
+            "perfilar_dataset": _unused_tool,
+            "resolver_geografia": _unused_tool,
+            "explorar_valores": _unused_tool,
+            "ejecutar_soql": tool,
+        },
+        llm_provider="google",
+        llm_model="gemini-2.5-flash",
+        max_steps=14,
+        persist=True,
+    )
+    graph = build_graph(deps, interrupt=False)
+
+    state = await graph.ainvoke(
+        initial_state(run_id_a, "integracion T-402 multi (A)", max_steps=14)
+    )
+
+    assert state.get("terminal_error") is None
+
+    # Invariante A: exactamente dos evidencias y dos pasos T6, uno por cada T5.
+    assert len(state["evidences"]) == 2
+    assert {ev["dataset_id"] for ev in state["evidences"]} == {DATASET_MULTI_A, DATASET_MULTI_B}
+    for ev in state["evidences"]:
+        assert ev["quality"]["eligibility_status"] == "eligible"
+        assert ev["quality"]["classification"] == "alta"
+    assert await _quality_validator_step_count(engine, run_id_a) == 2
+
+    # Invariante B: persistencia 1:1 evidence_results/quality_reports y ninguna
+    # evidencia sin exactamente un reporte de calidad asociado por evidence_id.
+    assert await _evidence_quality_counts(engine, run_id_a) == (2, 2)
+    assert await _evidence_ids_without_exactly_one_quality(engine, run_id_a) == []
+
+    # Cada evidencia sustenta su propio claim, referenciando la evidencia
+    # correcta (claim.evidence_id -> evidence.evidence_id).
+    assert len(state["claims"]) == 2
+    evidence_ids = {ev["evidence_id"] for ev in state["evidences"]}
+    assert {claim["evidence_id"] for claim in state["claims"]} == evidence_ids
+    assert state["final_answer"]["status"] == "completed"

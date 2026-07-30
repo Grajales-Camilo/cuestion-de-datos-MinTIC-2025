@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
@@ -48,6 +48,7 @@ class CatalogSearchItem:
     metadata_synced_at: datetime
     index_stale: bool
     columns_preview: list[str]
+    columns_all: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -155,9 +156,25 @@ async def search_catalog(
               AND e.model = :model
             ORDER BY e.embedding <=> :query_embedding
             LIMIT :candidate_limit
-        )
-        SELECT *
-        FROM (
+        ),
+        lexical_candidates AS (
+            SELECT d.id AS dataset_id
+            FROM catalog_datasets d
+            WHERE d.api_active = true
+              AND :text_query <> ''
+              AND d.lexical_search_vector @@ to_tsquery('spanish', :text_query)
+            ORDER BY ts_rank_cd(
+                d.lexical_search_vector,
+                to_tsquery('spanish', :text_query)
+            ) DESC
+            LIMIT 100
+        ),
+        candidate_ids AS (
+            SELECT dataset_id FROM vector_candidates
+            UNION
+            SELECT dataset_id FROM lexical_candidates
+        ),
+        ranked AS (
         SELECT
             d.id AS dataset_id,
             d.name,
@@ -173,26 +190,33 @@ async def search_catalog(
             d.latest_observed_cutoff_at,
             d.metadata_synced_at,
             d.metadata_synced_at < :stale_threshold AS index_stale,
-            COALESCE(c.columns_preview, ARRAY[]::text[]) AS columns_preview,
             CASE
                 WHEN :text_query = '' THEN 0
                 ELSE ts_rank_cd(
-                    to_tsvector(
-                        'spanish',
-                        concat_ws(
-                            ' ',
-                            d.name,
-                            d.publisher,
-                            d.category,
-                            d.description,
-                            COALESCE(c.columns_text, '')
-                        )
-                    ),
+                    d.lexical_rank_vector,
                     to_tsquery('spanish', :text_query)
                 )
             END AS lexical_rank
-        FROM vector_candidates vc
-        JOIN catalog_datasets d ON d.id = vc.dataset_id
+        FROM candidate_ids candidates
+        JOIN catalog_datasets d ON d.id = candidates.dataset_id
+        JOIN catalog_embeddings e ON e.dataset_id = d.id AND e.model = :model
+        CROSS JOIN LATERAL (
+            SELECT e.embedding <=> :query_embedding AS distance
+        ) vc
+        ),
+        ranked_top AS (
+            SELECT *
+            FROM ranked
+            ORDER BY
+                similarity + LEAST(0.25, lexical_rank * 0.02) DESC,
+                similarity DESC
+            LIMIT :k
+        )
+        SELECT
+            ranked_top.*,
+            COALESCE(c.columns_preview, ARRAY[]::text[]) AS columns_preview,
+            COALESCE(c.columns_all, ARRAY[]::text[]) AS columns_all
+        FROM ranked_top
         LEFT JOIN LATERAL (
             SELECT
                 (
@@ -200,26 +224,20 @@ async def search_catalog(
                     FROM (
                         SELECT field_name
                         FROM catalog_columns
-                        WHERE dataset_id = d.id
+                        WHERE dataset_id = ranked_top.dataset_id
                         ORDER BY field_name
                         LIMIT 5
                     ) column_subset
                 ) AS columns_preview,
                 (
-                    SELECT string_agg(
-                        concat_ws(' ', field_name, display_name, description),
-                        ' '
-                        ORDER BY field_name
-                    )
+                    SELECT array_agg(field_name ORDER BY field_name)
                     FROM catalog_columns
-                    WHERE dataset_id = d.id
-                ) AS columns_text
+                    WHERE dataset_id = ranked_top.dataset_id
+                ) AS columns_all
         ) c ON true
-        ) ranked
         ORDER BY
             similarity + LEAST(0.25, lexical_rank * 0.02) DESC,
             similarity DESC
-        LIMIT :k
         """
     ).bindparams(bindparam("query_embedding", type_=Vector(EMBEDDING_DIMENSION)))
 
@@ -255,6 +273,7 @@ async def search_catalog(
             metadata_synced_at=row.metadata_synced_at,
             index_stale=bool(row.index_stale),
             columns_preview=list(row.columns_preview or []),
+            columns_all=list(row.columns_all or []),
         )
         for row in rows
     ]

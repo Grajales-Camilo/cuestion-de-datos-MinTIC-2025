@@ -175,6 +175,13 @@ cuestion-de-datos/
 3c. **Publicador oficial:** normalizar el publicador del catálogo contra `official_publishers` y `official_publisher_aliases` (fixture versionado cargado en T-106). Guardar `official_publisher_id` y `publisher_verification_status` (`verified` | `unknown` | `private_or_non_official`). Los alias no únicos se registran con `ambiguous=true`, pero el dataset queda `unknown` y no elegible. Los datasets no verificados pueden indexarse para diagnóstico, pero no son elegibles como evidencia hasta resolver el publicador.
 3d. **Estado de elegibilidad:** calcular `eligibility_status` y `eligibility_reasons` por dataset y columna antes de permitir T5. `eligible` significa que puede consultarse como evidencia; `diagnostic_only` significa que puede aparecer en búsqueda con advertencia pero no ejecutarse; `blocked` significa que el agente debe descartarlo y buscar alternativa.
 4. **Texto de embedding por dataset:** `título + descripción + entidad + categoría + nombres de columnas` (estrategia de compensación de metadatos pobres: si la descripción < 100 caracteres, se pesa más el título y las columnas).
+4b. **Texto lexical materializado (T-614R2, RF-301/RF-302/RNF-010):**
+`catalog_datasets.lexical_search_vector` usa configuración `spanish` e incluye
+nombre, descripción, publicador, categoría, `embedding_text` y nombre técnico,
+nombre visible y descripción de todas las columnas. Se mantiene
+transaccionalmente con triggers de dataset y triggers por sentencia para
+cambios de `catalog_columns`, y se indexa con GIN según la decisión medida en
+`research.md` §26. La ingesta no reconstruye el vector fuera de su transacción.
 5. **Embeddings por lotes** → upsert en `catalog_datasets` + `catalog_embeddings` (idempotencia por `dataset_id`, RF-304).
 6. **Reporte:** filas nuevas/actualizadas/fallidas → tabla `ingest_runs` (RF-701).
 7. **Programación:** GitHub Actions cron semanal + ejecución manual por CLI.
@@ -321,3 +328,249 @@ Estas variables son la fuente para construir `backend/.env.example`. No se fijan
 | `CORS_ALLOWED_ORIGINS` | Orígenes frontend permitidos | lista CSV de URLs | `http://localhost:3000` | Sí | dev/prod | Sin `*`; previews Vercel solo origen exacto temporal | RF-204, RNF-011 |
 | `ADMIN_TOKEN` | Token para endpoints administrativos | string secreto | ninguno | Sí en prod; opcional en dev local | dev/prod/eval | Longitud mínima 32 bytes aleatorios; header `X-Admin-Token` | RF-701, RF-702 |
 | `EVAL_MODE` | Habilita overrides de modelo y corridas `eval` | boolean | `false` | Sí | dev/prod/eval | `true` solo en entorno controlado de evaluación | RF-601, RF-603 |
+
+## 13. Enmienda: arquitectura dual y migración al núcleo determinista
+
+**Implementa:** RF-201…209, RF-601…603 · **Verifica:** RNF-002…005 · **Decisión:** `research.md` §25.
+
+Durante el rediseño existen dos rutas deliberadamente separadas:
+
+| Ruta | Responsabilidad | Estado durante la migración |
+|---|---|---|
+| `legacy` | Grafo histórico de `app.agent.graph`, con router LLM iterativo, claim planner y guardas acumuladas. | Rollback obligatorio; no se retira ni se reinterpreta como determinista. |
+| `deterministic` | Máquina de etapas que controla recuperación, candidatos, perfilado, `QueryPlan`, validación, exploración, renderizado SoQL, ejecución, calidad, claims y terminación. | Núcleo nuevo en validación; no sustituye al legado hasta superar las puertas. |
+
+La selección se hace mediante `AGENT_RUNTIME=legacy|deterministic`. Mientras no se haya superado la puerta normativa, los entornos de usuario/producción deben fijar explícitamente `AGENT_RUNTIME=legacy`. Al superarla, `deterministic` queda certificado como default técnico y T-701 lo activa explícitamente en el entorno desplegado; desde ese canary `legacy` queda disponible solo como rollback de emergencia durante una versión. El default actual de `backend/app/config.py` (`deterministic`) sigue siendo una desviación mientras la puerta esté abierta y debe registrarse en T-610; esta enmienda no modifica código. El valor elegido al iniciar la corrida queda en el `config_snapshot` de evaluación. No existe fallback automático entre runtimes: si falla el determinista, la corrida termina con estado y código controlados; ejecutar el legado requiere una nueva corrida configurada explícitamente.
+
+### 13.1 Pipeline del runtime determinista
+
+```text
+pregunta
+  → intención estructurada
+  → recuperación multiquery
+  → candidatos ordenados
+  → perfilado/esquema
+  → QueryPlan estructurado
+  → validación determinista del plan
+  → exploración categórica acotada, si aplica
+  → renderizado SoQL determinista
+  → ejecución Socrata
+  → calidad T6
+  → claims T7
+  → síntesis fundamentada o fallback seguro
+  → persistencia y evento terminal único
+```
+
+Las transiciones, presupuestos y motivos de rechazo pertenecen al código. El LLM solo puede producir objetos dentro de los contratos estructurados que se le asignen y redactar desde evidencia/claims aceptados. No puede elegir una consulta SoQL libre, saltar la validación, reactivar un candidato rechazado ni convertir un fallo determinista en éxito narrativo.
+
+### 13.1a Frontera terminal textual antes de T-615H
+
+T-615G expone hechos textuales verificados sin anticipar la síntesis de T-615H:
+
+- `completed` exige al menos un claim cuantitativo o hecho textual persistido y
+  reverificado.
+- Si la corrida es solo textual, usa el resumen fijo
+  `Se encontraron hechos textuales verificables.`, `narrative=null`,
+  `claims=[]`, `textual_facts` poblado y `no_evidence_report=null`.
+- En resultados mixtos, la narrativa vigente solo cubre claims cuantitativos;
+  los hechos textuales viajan en su campo raíz separado.
+- `no_evidence` nunca contiene hechos textuales ni evidencia.
+- `interrupted` puede entregar como parciales únicamente hechos ya persistidos
+  y reverificados; `failed` no entrega hechos textuales.
+- Apagar el flag detiene nuevas emisiones y lecturas dinámicas de la tabla, sin
+  reescribir payloads históricos. Un campo histórico ausente se lee como `[]`.
+
+### 13.2 Límites de compatibilidad
+
+- Los contratos de `contracts/`, el modelo de datos vigente y `golden-v1.yaml` no cambian como parte de la validación inicial del runtime.
+- Los componentes compartidos —PostgreSQL, Socrata, calidad, claims cuantitativos, API y durabilidad— deben demostrar compatibilidad con ambos runtimes.
+- Los hechos textuales de primera clase son una evolución posterior. Antes de implementarlos deben enmendarse, en este orden, `spec.md` si cambia el QUÉ, `research.md`, `plan.md`, contratos y `data-model.md`.
+- `golden-v2` solo puede crearse después de la auditoría de derivabilidad de los 50 casos y de una autorización expresa en el SDD. `GOLDEN_V2_PROPOSAL.md` no tiene rango normativo.
+
+### 13.3 Secuencia y puertas
+
+La ruta ejecutable es T-610 → T-611 → T-612 → T-613 → T-614 → T-615 → T-616 → T-617. El primer incremento modifica exclusivamente pruebas y clasificación de suites. Las mejoras de recuperación empiezan únicamente después de disponer de aceptación E2E, matriz diagnóstica y smoke reproducible.
+
+Cuando el determinista cumpla simultáneamente aceptación E2E verde, integraciones compartidas verdes, negativos 100%, `golden-v2` ≥ 80%, cero fabricaciones, cero cifras huérfanas, persistencia/durabilidad verificadas y límites de latencia/costo satisfechos, queda certificado como default técnico y autorizado para el canary de T-701. Las corridas controladas de T-617 no se presentan como tráfico real.
+
+T-701 hace efectivo `AGENT_RUNTIME=deterministic` en el entorno desplegado, comprueba el rollback explícito a `legacy` y el retorno al determinista, y da inicio a la ventana de una versión durante la cual el legado permanece congelado como emergencia. T-703 verifica RNF-001/RNF-009 sobre los primeros siete días consecutivos de tráfico real, separando y excluyendo las corridas sintéticas de evaluación y canary. Una muestra incompleta produce `INSUFFICIENT_EVIDENCE` y extiende la observación; no autoriza a mezclar tráfico controlado con tráfico de usuarios. Solo después de cerrar esa validación operativa se eliminan el selector y el código legado mediante una fase independiente y reversible.
+
+### 13.4 Política de suficiencia y optimización
+
+El runtime implementa RF-211 para operar sobre el catálogo completo sin
+convertir la búsqueda de una consulta ideal en una condición de entrega. El
+pipeline conserva esta prioridad:
+
+1. seguridad, elegibilidad, procedencia y ausencia de fabricación;
+2. correspondencia material entre pregunta, evidencia y respuesta;
+3. transparencia sobre límites, ambigüedad y cobertura;
+4. optimización de dataset, filtros, temporalidad, agregación y precisión.
+
+Los niveles 1 y 2 contienen condiciones bloqueantes. Las oportunidades del
+nivel 4 son advertencias cuando no cambian materialmente el resultado y la
+limitación queda visible. Una mejora de consulta no justifica añadir reglas por
+`case_id`, `dataset_id` o pregunta, ni impedir una respuesta verificable. Si la
+limitación cambia la conclusión, usa una fuente distinta a la afirmada o deja
+la respuesta sin sustento, deja de ser una mejora y pasa a ser un bloqueo.
+
+## 14. Enmienda T-615 aprobada: arquitectura de hechos fundamentados
+
+> **IMPLEMENTACIÓN INCREMENTAL.** T-615A fue aprobada y T-615B…T-615F están
+> cerradas. T-615G queda reautorizada por la matriz terminal de §13.1a; cada
+> tarea posterior conserva su propia puerta. Ver decisión y alternativas en
+> `research.md` §27 y diseño completo en `proposals/textual-claims.md`.
+
+### 14.1 Pipeline objetivo
+
+La extensión propuesta se inserta después de calidad y antes de síntesis, sin
+alterar el flujo cuantitativo vigente:
+
+```text
+evidencia elegible
+  ├── especificaciones cuantitativas
+  │     → constructor QuantitativeClaim
+  │     → verificador RNF-003
+  └── especificaciones textuales
+        → constructor TextualFact
+        → normalización text-es-v1
+        → verificador RF-210/RNF-013
+             ↓
+     persistencia separada y campos API textuales aditivos
+             ↓
+     selección de IDs + conectores cerrados por el LLM
+             ↓
+     renderizado factual determinista
+```
+
+Una falla de un constructor no puede transformarse en éxito narrativo. Si la
+respuesta solicitada depende del hecho rechazado, el pipeline intenta otro
+candidato dentro del presupuesto o termina con rechazo/ausencia controlada.
+Nunca sustituye texto con `count=1`.
+
+### 14.2 Componentes y orden de entrega
+
+1. **Contrato y modelos tipados:** unión `GroundedFact`, enums y perfiles;
+   guardas cuantitativas intactas.
+2. **Persistencia:** migración aislada para `textual_facts`, repositorio,
+   retención y rollback.
+3. **Constructor y verificador:** operaciones puras, normalización, desempate
+   por rechazo, hash y plantillas.
+4. **Integración del pipeline:** planificación textual separada, persistencia
+   transaccional y terminación tipada.
+5. **API y síntesis:** frontera aditiva, compatibilidad histórica, segmentos
+   factuales por identificador y conectores cerrados.
+6. **Evaluación:** métricas separadas, fingerprints sin contenido y pruebas de
+   regresión cuantitativa.
+7. **Aceptación y cierre:** historias E2E, borrado/retención, rollback y acta
+   de gate antes de desbloquear T-616.
+
+La secuencia exacta T-615A…T-615J, con archivos, dependencias, pruebas,
+aceptación, rollback y gate por incremento, está en `tasks.md`.
+
+### 14.2a Orden obligatorio de T-615H
+
+La síntesis no puede consumir objetos preparados ni confiar en persistencia
+futura. El orden productivo es:
+
+```text
+ejecución y calidad
+  → persistencia y reverificación de evidencia, claims y hechos
+  → conjunto permitido de IDs de la corrida
+  → grounded-synthesis-plan-v1 o grounded-synthesis-fallback-v1
+  → validación completa
+  → grounded-synthesis-renderer-v1
+  → persistencia de final_answer
+  → evento terminal
+```
+
+El renderer aplica exclusivamente las cadenas literales de
+`contracts/agent-tools.md`. `comparison_pair` solo agrupa dos objetos distintos
+de la misma evidencia elegible y no expresa aritmética. El fallback usa como
+máximo ocho objetos en orden canónico, nunca `comparison_pair` y atraviesa las
+mismas guardas. Una falla posterior a persistir objetos operacionales no los
+convierte en contenido público: sin plan validado y renderizado, no hay
+`narrative` factual entregable.
+
+### 14.3 Compatibilidad
+
+- `quantitative_claims`, RF-208 y RNF-003 no cambian de significado.
+- `RespuestaFinal.claims` y `partial_claims` conservan exactamente la lista
+  cuantitativa vigente, sin `claim_kind`.
+- `textual_facts` y `partial_textual_facts` son campos raíz optativos y
+  aditivos; un histórico que no los tenga equivale a listas vacías.
+- El dominio interno usa `fact_kind`; la persistencia mantiene tablas
+  separadas. No encontrar consumidores no sustituye snapshots, OpenAPI diff,
+  clientes estrictos y pruebas de contrato/SSE.
+- El runtime legado sigue disponible como rollback. T-615 no cambia defaults
+  ni autoriza su retiro.
+
+### 14.4 Rollback y puertas
+
+Cada incremento debe poder revertirse de forma aislada. Antes de activar la
+emisión textual deben estar verdes: modelos y contrato, migración
+up/down, retención, constructor, hash, síntesis estricta, API histórica,
+métricas, no integración, aceptación determinista y aceptación legacy. La
+regla de secuencia exigía cerrar y aprobar T-615 antes de iniciar T-616, y
+cerrar T-616 antes de T-617. Ambas dependencias quedaron satisfechas el
+2026-07-18; T-617 conserva únicamente sus puertas propias de §13.3 y
+`pruebas.md` §4.4.
+
+## 15. Enmienda T-617C-A aprobada: contrato de etiquetado semántico y advertencias de presentación
+
+> **CONTRATO APROBADO, IMPLEMENTACIÓN PENDIENTE.** Esta sección documenta
+> únicamente la forma y ubicación de los campos públicos aprobados en
+> `research.md` §29. T-617C (código, pruebas, corrección de `columns_used`)
+> permanece abierta; T-617 sigue bloqueada hasta que T-617C se audite y
+> cierre.
+
+### 15.1 Flujo de etiquetas objetivo
+
+El flujo real trazado en `backend/eval/reports/t617c-semantic-claim-labels.md`
+pierde la etiqueta humana en dos puntos: (a) el renderer SoQL sustituye el
+nombre de columna real por un alias posicional (`dim_N`/`metric_N`) sin
+persistir el mapeo, y (b) el constructor de claims
+(`deterministic_pipeline._claim_specs`) itera solo sobre esos alias, sin
+`zip` contra el `field_name` del plan validado. El flujo objetivo que
+T-617C debe implementar es:
+
+```text
+ValidatedQueryPlan (field_name real por dimensión/métrica)
+  → RenderedQuery (alias dim_N/metric_N, mapeo alias→field_name conservado)
+  → EvidenceResult (filas indexadas por alias, Socrata)
+  → constructor de claims: zip(alias, field_name/display_name) por fila
+       → BuiltClaim.columns_used = field_name real (nunca el alias)
+       → etiqueta candidata = display_name (si el plan/candidato lo conserva)
+                                o field_name humanizado determinista
+  → clasificador de relevancia semántica (genérico, sin condicionar por
+    case_id/dataset_id/pregunta literal): claims que responden la intención
+    vs. identificadores/dimensiones auxiliares no solicitados
+  → si la etiqueta no puede vincularse de forma inequívoca:
+       label=null, label_status="ambiguous", presentation_warnings += entrada
+       (la cifra se conserva si sigue siendo útil y verificable, RF-211)
+  → AllowedGroundedFacts / GroundedSynthesisPlan / fallback determinista
+       (deben cubrir también etiquetado y advertencias — ninguna ruta,
+       incluido el fallback sin LLM, puede volver a enumerar cifras sin
+       significado)
+  → final_answer.claims[].label/label_status
+    + final_answer.presentation_warnings[]
+```
+
+### 15.2 Persistencia sin migración
+
+`label`, `label_status` y `presentation_warnings` viven exclusivamente
+dentro de `agent_runs.final_answer` (JSONB ya existente, plan.md §11/§12) y
+en la serialización de `RespuestaFinal` (`contracts/api-rest.md` §4c). No se
+añade ninguna columna a `quantitative_claims` ni a ninguna otra tabla
+relacional; no hay migración de Alembic asociada a esta enmienda. Un
+histórico sin estos campos equivale a `label=null`/`label_status` ausente en
+cada claim y `presentation_warnings=[]` a nivel raíz — mismo patrón aditivo
+ya usado por T-615 para `textual_facts`/`partial_textual_facts` (§14.3).
+
+### 15.3 Relación con la calidad de evidencia
+
+`presentation_warnings` (etiquetado de una cifra individual) y
+`evidence[].quality.warnings_user` (calidad de la evidencia como conjunto,
+`contracts/validacion-calidad.md`) son capas independientes que pueden
+coexistir sobre el mismo claim/evidencia sin fusionarse ni sustituirse. La
+implementación de T-617C no debe modificar `app/quality/validator.py` ni el
+contrato de calidad de evidencia para producir `presentation_warnings`.

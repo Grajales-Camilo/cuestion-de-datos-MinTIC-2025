@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PostgresScheme = Literal["postgresql", "postgres"]
 LLMProvider = Literal["google", "anthropic"]
+AgentRuntime = Literal["deterministic", "legacy"]
 
 
 class Settings(BaseSettings):
@@ -20,6 +21,11 @@ class Settings(BaseSettings):
     socrata_app_token: SecretStr | None = Field(default=None, alias="SOCRATA_APP_TOKEN")
     llm_provider: LLMProvider = Field(default="google", alias="LLM_PROVIDER")
     llm_model: str = Field(default="gemini-2.5-flash", alias="LLM_MODEL")
+    agent_runtime: AgentRuntime = Field(default="deterministic", alias="AGENT_RUNTIME")
+    deterministic_textual_facts_enabled: bool = Field(
+        default=False,
+        alias="DETERMINISTIC_TEXTUAL_FACTS_ENABLED",
+    )
     embedding_model: str | None = Field(default=None, alias="EMBEDDING_MODEL")
     # research.md §19 (2026-07-12): el camino feliz sin errores consume
     # exactamente 10 pasos, dejando 0 margen para el retry de claim_builder
@@ -52,9 +58,7 @@ class Settings(BaseSettings):
         default=0.30, alias="PLACEHOLDER_MIN_RATIO"
     )
     max_concurrent_runs: Annotated[int, Field(gt=0)] = Field(default=3, alias="MAX_CONCURRENT_RUNS")
-    cors_allowed_origins: str = Field(
-        default="http://localhost:3000", alias="CORS_ALLOWED_ORIGINS"
-    )
+    cors_allowed_origins: str = Field(default="http://localhost:3000", alias="CORS_ALLOWED_ORIGINS")
     admin_token: SecretStr | None = Field(default=None, alias="ADMIN_TOKEN")
     eval_mode: bool = Field(default=False, alias="EVAL_MODE")
 

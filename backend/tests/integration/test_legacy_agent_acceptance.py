@@ -1,4 +1,10 @@
-"""Puerta 8: aceptación integrada del rediseño del agente.
+"""Puerta 8: aceptación integrada del runtime LEGADO (T-612, research.md §25).
+
+Renombrado desde `test_agent_redesign_acceptance.py`: su nombre original
+sugería el nuevo núcleo determinista, pero importa `app.agent.graph`
+(`build_graph`/`initial_state`), el grafo histórico congelado — pertenece
+al rollback, no al runtime productivo. Ver `test_deterministic_agent_acceptance.py`
+para la aceptación E2E del runtime determinista (`execute_deterministic_agent_run_async`).
 
 Esta suite no reemplaza las pruebas unitarias que diagnostican cada mecanismo.
 Las reúne como historias de aceptación y añade una verificación persistente del
@@ -32,7 +38,7 @@ from tests.test_agent_tool_recovery import (
     test_non_text_column_error_causes_direct_soql_strategy as _non_text_pivot_story,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.legacy_agent_acceptance]
 
 
 @pytest.fixture

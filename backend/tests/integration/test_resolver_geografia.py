@@ -5,13 +5,11 @@ real contra Postgres (contracts/agent-tools.md §T3, pruebas.md §2.1).
 import os
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import normalize_database_url_for_sqlalchemy
 from app.db.divipola import rows_to_entries, upsert_divipola_entries
 from app.tools.resolver_geografia import resolver_geografia
-from tests.integration._snapshot import backup_tables, restore_tables
 
 pytestmark = pytest.mark.integration
 
@@ -34,7 +32,7 @@ _SYNTHETIC_ROWS = [
 
 
 @pytest.fixture
-async def engine():
+async def engine(isolated_database_url):
     database_url = normalize_database_url_for_sqlalchemy(os.environ["DATABASE_URL"])
     engine = create_async_engine(database_url, pool_pre_ping=True)
     yield engine
@@ -43,17 +41,8 @@ async def engine():
 
 @pytest.fixture
 async def seeded_divipola(engine):
-    # territorio_tipologia (T-207/T-404) tiene FK a divipola_entries.code; hay que
-    # vaciarla primero o el DELETE de abajo falla si quedaron filas reales cargadas.
-    tables = ("divipola_entries", "territorio_tipologia")
-    async with engine.begin() as connection:
-        await backup_tables(connection, *tables)
-        await connection.execute(text("DELETE FROM territorio_tipologia"))
-        await connection.execute(text("DELETE FROM divipola_entries"))
     await upsert_divipola_entries(engine, rows_to_entries(_SYNTHETIC_ROWS))
     yield
-    async with engine.begin() as connection:
-        await restore_tables(connection, *tables)
 
 
 @pytest.mark.parametrize("termino", ["Bogotá", "bogota", "Bogotá D.C.", "Santafé de Bogotá"])
