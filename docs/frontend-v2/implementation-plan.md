@@ -642,7 +642,7 @@ La exportación ocurre **100 % en el cliente** (`Packer.toBlob` + descarga por `
 
 ### 9.3 Plantillas (RF-101)
 
-Mínimo normativo: **libre**, **MGA**, **plan de desarrollo**. Se conservan CONPES y Policy Brief del legacy como extras opcionales. La plantilla "plan de desarrollo" **no existe** y hay que redactarla — es contenido de dominio: **decisión abierta D-6** (requiere criterio del responsable, politólogo).
+Mínimo normativo: **libre**, **MGA**, **plan de desarrollo**. Se conservan CONPES y Policy Brief del legacy como extras opcionales. La plantilla legacy "MGA" (`frontend/data/policyTemplates.js`) cubre solo contenidos del módulo de Identificación de la Metodología General Ajustada del DNP — **no constituye una plantilla MGA completa y aprobada para v2**; su estructura para v2 ya está aprobada — ver `docs/frontend-v2/adr/ADR-0005-plantilla-mga.md` (implementación pendiente). La plantilla "plan de desarrollo" **no existía** y su estructura ya se decidió: **D-6, cerrada — ver `docs/frontend-v2/adr/ADR-0004-plantilla-plan-de-desarrollo.md`** (implementación aún pendiente).
 
 ---
 
@@ -1013,7 +1013,7 @@ Se conserva el orden propuesto por el usuario con **dos ajustes derivados de dep
 | **D-3** | **H1 — alias `dim_N`**: ¿parcheo solo en el cliente, o se pide un campo aditivo al backend (`columns: [{alias, field_name, display_name}]`)? | Cambiar el backend exige enmendar `contracts/api-rest.md` §5 y coordinar con T-617 | **Ambas**: cliente ya (no bloquea), y **proponer** la tarea backend para retirar el parseo después | F4 (parcialmente) |
 | **D-4** | **H4 — RF-503 sin `chart_suggestion`**: ¿el cliente deriva la gráfica o se difiere RF-503? | RF-503 es un requisito de spec.md; derivar en cliente roza la frontera de Art. I | Derivar **solo** con 1 dimensión + 1 métrica + ≥3 filas, replicando valores sin calcular nada nuevo; y abrir tarea backend | F4 |
 | **D-5** | **H5 — `datasets_reviewed` y `external_sources` vacíos** en el determinista: ESC-03 queda incompleto y T-506 pierde el prellenado | Es una brecha funcional del backend, no del frontend | Frontend degrada con elegancia y **no inventa**; abrir tarea backend con prioridad, porque ESC-03 es un escenario normativo | F4/F7 (degradado) |
-| **D-6** | **Contenido de la plantilla "plan de desarrollo"** (RF-101) | Requiere criterio de politólogo (mismo caso que T-601) | El humano redacta las secciones; el agente las cablea | F5 |
+| **D-6** | **Contenido de la plantilla "plan de desarrollo"** (RF-101) | Requiere criterio de politólogo (mismo caso que T-601) | **Cerrada 2026-07-30 — ver `docs/frontend-v2/adr/ADR-0004-plantilla-plan-de-desarrollo.md`.** Estructura híbrida de 5 secciones aprobada; implementación aún pendiente (requiere además la plantilla MGA para declarar RF-101 cumplido). | F5 |
 | **D-7** | **Ruta del app v2**: `/app` nueva vs. reemplazar `/` | Afecta a usuarios actuales de cuestiondedatos.com | `/app` hasta T-704; luego decidir el cambio de landing | F3 |
 | **D-8** | **Alcance del explorador de catálogo (F10)** | No lo exige ningún RF de frontend | Fuera del alcance mínimo de v2.0 | — |
 | **D-9** | **Texto exacto del consentimiento RF-802** | Tiene efectos legales/de privacidad | Borrador del agente, **aprobación literal del humano** | F3 |

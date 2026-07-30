@@ -26,7 +26,7 @@ la fabricación de evidencia y una prueba esencial no reproducible.
 | D-ENV-04 | Git local | P3 | Abierta | El archivo global de exclusiones y `.pytest_cache` generan avisos de permisos. |
 | D-ENV-05 | Navegador MCP | P3 | Abierta | El panel MCP no siempre compone capturas; Playwright es el respaldo reproducible. |
 | D-PERF-01 | Arnés E2E | P3 | Mitigada | RNF-008 puede ser inestable bajo paralelismo alto; tiene suite aislada de 1 worker. |
-| D-DOC-01 | Decisión de producto | P2 | Pendiente humana | D-6: contenido de la plantilla de plan de desarrollo no está aprobado. |
+| D-DOC-01 | Decisión de producto | P2 | Estructuras aprobadas 2026-07-30; implementación pendiente | D-6: estructuras de las plantillas plan de desarrollo (ADR-0004) y MGA (ADR-0005) aprobadas; código aún no escrito, y RF-101 sigue sin cumplirse hasta que libre, MGA y plan de desarrollo estén implementadas y verificadas. |
 
 ## Detalle y condición de cierre
 
@@ -143,13 +143,29 @@ cuando se actualiza la base de avisos de npm.
 - **Cierre:** mantener diez corridas consecutivas verdes en el hardware de CI;
   si reaparece, diagnosticar presupuesto causal antes de cambiar el umbral.
 
-### D-DOC-01 — Plantilla de plan de desarrollo (D-6)
+### D-DOC-01 — Plantillas MGA y plan de desarrollo (RF-101)
 
-- **Estado:** decisión humana pendiente; no se fabricó contenido institucional.
-- **Impacto:** bloquea únicamente esa plantilla, no el documento libre ni las
-  funciones cerradas hasta F8.
-- **Cierre:** aprobación explícita del contenido por una persona con criterio de
-  política pública y registro mediante ADR antes de implementarla.
+- **Estado:** estructura de contenido aprobada por Juan Camilo Grajales B. el
+  2026-07-30 y registrada en
+  `docs/frontend-v2/adr/ADR-0004-plantilla-plan-de-desarrollo.md` (cinco
+  secciones: Diagnóstico, Visión y articulación estratégica, Programas
+  indicadores y metas, PPI, Seguimiento y evaluación). **No se ha escrito
+  ningún código todavía** — la condición de cierre exigía aprobación humana
+  explícita + registro mediante ADR *antes* de implementar, y eso ya ocurrió;
+  lo pendiente ahora es el incremento de implementación, no la decisión.
+- **Impacto:** bloqueaba únicamente esta plantilla, no el documento libre ni
+  las funciones cerradas hasta F8. Sigue bloqueando que RF-101 se declare
+  cumplido: RF-101 exige libre + MGA + plan de desarrollo, y ninguna de las
+  dos últimas está implementada ni verificada todavía. La estructura de la
+  plantilla MGA para v2 también fue auditada y aprobada por separado
+  (`docs/frontend-v2/adr/ADR-0005-plantilla-mga.md`, siete secciones); la
+  plantilla legacy de MGA cubría solo contenidos del módulo de
+  Identificación, así que no se reutilizó automáticamente.
+- **Cierre definitivo de esta entrada de deuda:** implementar y verificar
+  (pruebas + revisión visual) las tres plantillas de RF-101 — libre (ya
+  existe), MGA (estructura aprobada, ADR-0005; implementación pendiente) y
+  plan de desarrollo (estructura aprobada, ADR-0004; implementación
+  pendiente).
 
 ## Deudas cerradas o absorbidas por el diseño vigente
 
