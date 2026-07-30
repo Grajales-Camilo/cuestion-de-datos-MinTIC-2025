@@ -195,6 +195,16 @@ describe("DocumentEditor — F5-02, RF-103/RNF-007", () => {
     const citationBeforeTyping = nodesOfType(ref.current.getJSON(), "evidenceCitation")[0];
     expect(citationBeforeTyping.attrs.citationId).toBe(citationId);
 
+    // `insertEvidenceCitation` deja la selección de ProseMirror en el
+    // párrafo final de forma síncrona, pero Tiptap difiere el foco DOM real
+    // a un `requestAnimationFrame` (`@tiptap/core/commands/focus.ts`, "For
+    // React we have to focus asynchronously"). Si `userEvent.type` escribe
+    // antes de que ese foco aterrice, sintetiza su propio clic sobre un
+    // `contenteditable` sin geometría real (jsdom) y puede reubicar el
+    // cursor de forma impredecible. Se espera el foco real observable, no
+    // un tiempo fijo.
+    await waitFor(() => expect(document.activeElement).toBe(textbox));
+
     const typedText = "Texto escrito justo despues de insertar la cita.";
     await user.type(textbox, typedText);
 
@@ -225,6 +235,12 @@ describe("DocumentEditor — F5-02, RF-103/RNF-007", () => {
     ).toBe(true);
     await waitFor(() => expect(nodesOfType(ref.current.getJSON(), "manualEntry")).toHaveLength(1));
     const manualBeforeTyping = nodesOfType(ref.current.getJSON(), "manualEntry")[0];
+
+    // Ver comentario equivalente en el caso D-5 de EvidenceCitation: el
+    // foco DOM real llega en un `requestAnimationFrame` posterior a la
+    // selección de ProseMirror. Se espera esa condición observable antes
+    // de escribir, no un tiempo fijo.
+    await waitFor(() => expect(document.activeElement).toBe(textbox));
 
     const typedText = "Texto escrito justo despues del aporte manual.";
     await user.type(textbox, typedText);
