@@ -162,6 +162,14 @@ cuando se actualiza la base de avisos de npm.
   permanece en seguimiento como D-PERF-01, no como fallo abierto del producto.
 - D-ENV-06 se cerró al eliminar los dos índices duplicados y reconstruir uno
   solo desde cero: 12.646 nodos, 43.590 aristas y símbolos F7/F8 verificables.
+- TEST-01, el timeout observado en
+  `tests/unit/document/DocumentSections.test.jsx`, se cerró como
+  `NOT_REPRODUCED`: 83 corridas de comandos (caso aislado, archivo, suite
+  documental, suite completa y contención moderada) terminaron sin fallos. Los
+  dos timeouts previos coincidieron con una saturación artificial de cinco
+  procesos Vitest pesados ejecutados simultáneamente. No se modificaron código,
+  pruebas, timeouts ni retries. Se reabrirá únicamente si reaparece durante un
+  `npm run test` normal, sin carga externa, o en CI real.
 
 ## Regla de mantenimiento
 
