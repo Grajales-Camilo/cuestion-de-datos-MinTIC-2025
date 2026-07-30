@@ -1,0 +1,3 @@
+# Los streams SSE son capturas HTTP byte a byte. No normalizar finales de
+# linea y permitir el separador de evento vacio al final del archivo.
+frontend/tests/fixtures/*.sse.txt -text whitespace=-blank-at-eof

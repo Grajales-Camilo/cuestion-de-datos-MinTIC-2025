@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-27T22:00:00.000Z",
+  "title": "Design System: Cuestión de Datos — Pulso por lo Público",
+  "extensions": {
+    "colorMeta": {
+      "blue-900": { "role": "primary", "displayName": "Azul profundo", "canonical": "#0C2D57" },
+      "blue-700": { "role": "primary", "displayName": "Azul medio", "canonical": "#1D4E89" },
+      "blue-500": { "role": "accent", "displayName": "Azul acento (foco/actividad, nunca texto)", "canonical": "#2E7CD6" },
+      "blue-100": { "role": "neutral", "displayName": "Fondo tarjeta de evidencia", "canonical": "#DBEAFE" },
+      "blue-50": { "role": "neutral", "displayName": "Fondo de sección", "canonical": "#EFF6FF" },
+      "white": { "role": "neutral", "displayName": "Blanco base", "canonical": "#FFFFFF" },
+      "slate-900": { "role": "neutral", "displayName": "Texto principal", "canonical": "#0F172A" },
+      "slate-600": { "role": "neutral", "displayName": "Texto secundario", "canonical": "#475569" },
+      "slate-400": { "role": "neutral", "displayName": "Deshabilitado/decorativo (no cumple AA como texto)", "canonical": "#94A3B8" },
+      "success": { "role": "semantic", "displayName": "Éxito — evidencia verificada", "canonical": "#15803D" },
+      "warning": { "role": "semantic", "displayName": "Advertencia — cobertura parcial/interrumpido", "canonical": "#B45309" },
+      "error": { "role": "semantic", "displayName": "Error — fallo real, nunca ausencia de evidencia", "canonical": "#B91C1C" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display (26px/700)", "purpose": "Título de página (h1)." },
+      "title": { "displayName": "Title (20px/700)", "purpose": "Título de sección (h2)." },
+      "body": { "displayName": "Body (15px/400)", "purpose": "Cuerpo de párrafo, el más usado." },
+      "label": { "displayName": "Label (13px/700)", "purpose": "Etiquetas, botones, pestañas." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "duration-fast", "value": "120ms", "purpose": "Transiciones de estado cortas (hover/active)." },
+      { "name": "duration-base", "value": "200ms", "purpose": "Transiciones de color estándar (Button, Disclosure)." },
+      { "name": "ease-standard", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Curva única del sistema." }
+    ],
+    "breakpoints": [
+      { "name": "reflow-min", "value": "320px" },
+      { "name": "sm", "value": "640px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Button — primaria",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Acción principal de una pantalla.",
+      "html": "<button class=\"ds-btn ds-btn-primary\" type=\"button\">Insertar en el documento</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 6px; padding: 0 16px; min-height: 44px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; font-weight: 700; transition: background-color 200ms cubic-bezier(0.4,0,0.2,1); } .ds-btn-primary { background: #1D4E89; color: #FFFFFF; } .ds-btn-primary:hover { background: #0C2D57; } .ds-btn-primary:focus-visible { outline: 2px solid #2E7CD6; outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Button — destructiva",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Acción destructiva o de alto riesgo (p. ej. eliminar corrida).",
+      "html": "<button class=\"ds-btn ds-btn-destructive\" type=\"button\">Eliminar corrida</button>",
+      "css": ".ds-btn-destructive { background: #B91C1C; color: #FFFFFF; border-radius: 6px; padding: 0 16px; min-height: 44px; font-size: 13px; font-weight: 700; } .ds-btn-destructive:hover { filter: brightness(0.9); }"
+    },
+    {
+      "name": "Badge — verificado",
+      "kind": "chip",
+      "refersTo": "badge-verified",
+      "description": "Estado de evidencia validada; icono + texto, nunca solo color.",
+      "html": "<span class=\"ds-badge ds-badge-verified\"><svg aria-hidden=\"true\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M9 11l3 3L22 4\"/><path d=\"M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11\"/></svg>Verificado</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 9999px; padding: 4px 12px; font-size: 12px; font-weight: 700; } .ds-badge-verified { background: #15803D; color: #FFFFFF; }"
+    },
+    {
+      "name": "Badge — sin evidencia (neutral)",
+      "kind": "chip",
+      "refersTo": "badge-no-evidence",
+      "description": "Ausencia de evidencia elegible: resultado honesto, tratamiento neutral azul — nunca rojo.",
+      "html": "<span class=\"ds-badge ds-badge-no-evidence\">Sin evidencia elegible</span>",
+      "css": ".ds-badge-no-evidence { background: #EFF6FF; color: #0C2D57; border-radius: 9999px; padding: 4px 12px; font-size: 12px; font-weight: 700; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Contenedor base, sin sombra dura ni degradado.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-body\">Contenido</div></div>",
+      "css": ".ds-card { background: #FFFFFF; border: 1px solid #DBEAFE; border-radius: 10px; } .ds-card-body { padding: 16px; }"
+    },
+    {
+      "name": "Modal",
+      "kind": "custom",
+      "refersTo": "modal",
+      "description": "Diálogo accesible con velo, trampa de foco y sin sombra dura (borde de 1px).",
+      "html": "<div class=\"ds-modal-overlay\"><div class=\"ds-modal\" role=\"dialog\" aria-modal=\"true\"><h2>Confirmar inserción</h2></div></div>",
+      "css": ".ds-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; } .ds-modal { width: 100%; max-width: 28rem; background: #FFFFFF; border: 1px solid #DBEAFE; border-radius: 10px; padding: 24px; }"
+    },
+    {
+      "name": "Tabs",
+      "kind": "custom",
+      "refersTo": "tabs",
+      "description": "Pestaña activa marcada por borde inferior azul, no por fondo.",
+      "html": "<div role=\"tablist\"><button role=\"tab\" aria-selected=\"true\" class=\"ds-tab ds-tab-active\">Resumen</button><button role=\"tab\" aria-selected=\"false\" class=\"ds-tab\">Detalle</button></div>",
+      "css": ".ds-tab { min-height: 44px; padding: 0 16px; font-size: 13px; font-weight: 700; color: #475569; border-bottom: 2px solid transparent; } .ds-tab-active { color: #0C2D57; border-bottom-color: #1D4E89; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Pulso por lo Público",
+    "overview": "Cuestión de Datos no es un chatbot que responde preguntas: es una sala de seguimiento de políticas públicas con un sistema de orientación cívica integrado. El funcionario o el analista ciudadano no abre una conversación, abre una investigación — y esa investigación se muestra como una ruta verificable: un recorrido con pasos observables, cada uno respaldado por una fuente que se puede auditar, no un intercambio de mensajes con una inteligencia que \"sabe cosas\". El modo es Operate: la expresión nunca puede oscurecer la tarea, el estado o la afordancia conocida.",
+    "keyCharacteristics": [
+      "Investigación como ruta recorrible con pasos observables, no como hilo de chat.",
+      "Evidencia como destino del recorrido, no como adorno lateral.",
+      "Calma en reposo: la interfaz no reclama atención cuando no está trabajando.",
+      "Cadena de confianza visible en cada cifra: dataset → entidad → consulta → validación → cifra.",
+      "Paleta monocromática de azules ya fijada por la constitución; la exploración vive en la estructura, no en el color."
+    ],
+    "rules": [
+      { "name": "La Regla del Acento Escaso", "body": "blue-500 marca exactamente una cosa a la vez — el paso activo del agente o el elemento con foco de teclado. Nunca es color de texto normal.", "section": "colors" },
+      { "name": "La Regla de los Semánticos Cerrados", "body": "Verde/ámbar/rojo existen únicamente para estado de validación de evidencia. Nunca decorativos.", "section": "colors" },
+      { "name": "La Regla del no_evidence Neutral", "body": "La ausencia de evidencia elegible se representa en azul profundo sobre fondo azul claro, nunca en rojo — es un resultado honesto, no un error.", "section": "colors" },
+      { "name": "La Regla de los Dos Pesos", "body": "Ninguna pantalla usa más de dos pesos de fuente: 400 y 700.", "section": "typography" },
+      { "name": "La Regla Anti-Glass", "body": "Ningún panel usa backdrop-filter, transparencia translúcida sobre contenido, ni bordes brillantes.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do presentar cada paso del agente como un punto verificable en una ruta, nunca como un mensaje de chat entrante.",
+      "Do mostrar la cadena dataset → entidad → consulta → validación → cifra de forma visible y citable.",
+      "Do dejar la interfaz visualmente en reposo cuando no hay investigación activa.",
+      "Do usar aria-live=\"polite\" agrupado para el progreso del agente.",
+      "Do representar no_evidence en azul profundo/neutral, nunca en rojo."
+    ],
+    "donts": [
+      "Don't usar burbujas de chat, avatares conversacionales ni un input de \"escribe tu mensaje\".",
+      "Don't introducir gamificación.",
+      "Don't usar un grid de dashboard genérico e intercambiable.",
+      "Don't usar estética futurista, neón, glassmorphism o cualquier señal de \"magia de IA\".",
+      "Don't caer en rigidez burocrática.",
+      "Don't tratar la ausencia de evidencia como un fallo (rojo)."
+    ]
+  }
+}

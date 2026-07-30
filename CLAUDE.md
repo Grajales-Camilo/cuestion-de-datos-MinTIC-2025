@@ -1,120 +1,116 @@
-# Instrucciones para agentes
+# Guía estable para Claude Code
 
-Antes de escribir o modificar código, leer en este orden:
+Este archivo es una puerta de entrada operativa para Claude Code. **No define
+una misión, fase, rama, commit ni corrida de evaluación permanentes.** El
+alcance vigente siempre proviene del encargo más reciente del usuario.
 
-1. `specs/constitution.md`
-2. `specs/README.md`
-3. `specs/001-cuestion-de-datos-v2/spec.md`
-4. `specs/001-cuestion-de-datos-v2/research.md`
-5. `specs/001-cuestion-de-datos-v2/plan.md`
-6. `specs/001-cuestion-de-datos-v2/contracts/`
-7. `specs/001-cuestion-de-datos-v2/data-model.md`
-8. `specs/001-cuestion-de-datos-v2/pruebas.md`
-9. `specs/001-cuestion-de-datos-v2/tasks.md`
-10. `specs/001-cuestion-de-datos-v2/quickstart.md`
-11. `specs/001-cuestion-de-datos-v2/checklists/requirements.md`, si existe
+## Fuente de instrucciones
 
-Este archivo refleja instrucciones operativas del repositorio. No altera la
-jerarquía normativa definida por `specs/constitution.md`.
+1. Lee y aplica `AGENTS.md` de la raíz.
+2. Respeta la jerarquía normativa y el orden de lectura definidos allí.
+3. Si el trabajo toca `frontend/`, continúa con `frontend/AGENTS.md` y el
+   enrutamiento documental que ese archivo establece.
+4. Este `CLAUDE.md` no sustituye `AGENTS.md`, la constitución, la
+   especificación, los contratos ni `tasks.md`.
 
-## Jerarquía
+Ante una contradicción:
 
-`constitution.md` > `spec.md` > `research.md` > `plan.md` >
-`contracts/` > `data-model.md` > `pruebas.md` > `tasks.md` >
-`quickstart.md` > código.
+- la jerarquía normativa de `AGENTS.md` gobierna requisitos y contratos;
+- el encargo explícito más reciente del usuario gobierna el alcance de la
+  sesión;
+- el worktree real gobierna rama, commit y archivos existentes;
+- una descripción histórica incluida en informes o conversaciones anteriores
+  no reemplaza ninguna de las anteriores.
 
-Si dos documentos se contradicen:
+No detengas el trabajo solo porque una sesión anterior trató otra fase o rama.
+Detente y consulta únicamente si la discrepancia actual implica pérdida de
+datos, incumplimiento contractual, seguridad, privacidad, fabricación de
+evidencia o una prueba esencial no reproducible para el incremento concreto.
 
-1. No asumir.
-2. No modificar silenciosamente la especificación.
-3. Reportar el conflicto.
-4. Aplicar el documento de mayor jerarquía.
+## Estado Git y propiedad de cambios
 
-## Navegación del repositorio con MCP
+- No existe una rama ni un `HEAD` fijados por este archivo. Comprueba al inicio
+  `git status --short --branch` y trabaja sobre la rama real, salvo que el
+  usuario ordene cambiarla.
+- El repositorio puede contener muchos cambios rastreados y archivos
+  `untracked` de otros incrementos o agentes. Presérvalos.
+- No limpies el worktree para hacerlo coincidir con una descripción antigua.
+- No hagas `git add`, commit, amend, push, merge, PR ni despliegue sin
+  autorización explícita del usuario para esa acción.
+- Nunca uses `git add -A` sobre un worktree compartido.
 
-- Este repositorio debe navegarse primero con `codebase-memory-mcp`.
-- Antes de leer archivos de forma amplia, hacer búsquedas recursivas o inspeccionar directorios completos, consultar el grafo MCP para ubicar módulos, símbolos, rutas, dependencias, pruebas y hotspots relacionados.
-- Abrir solo los archivos necesarios para verificar, implementar o probar el cambio solicitado.
-- Si el índice MCP no existe, está desactualizado o no responde, indexar o actualizar el repositorio antes de continuar.
-- Si el resultado del MCP contradice el contenido real de los archivos, prevalece el contenido real y se debe reportar la discrepancia.
-- No usar el MCP para alterar la jerarquía documental definida en este archivo.
+## Descubrimiento y uso de contexto
 
-## Desarrollo
+- Usa primero `codebase-memory-mcp` con el proyecto canónico:
+  `D-Usuario-AppWebs-cuestion-de-datos-MinTIC`.
+- Prioriza `search_graph`, `trace_path` y `get_code_snippet`.
+- Consulta el estado del índice y actualízalo solamente si está
+  desactualizado.
+- El worktree prevalece si el índice no contiene archivos nuevos o contradice
+  el código real. Registra esa limitación una sola vez y usa lectura directa
+  focalizada.
+- Lee la documentación obligatoria una sola vez por sesión; después consulta
+  solo las secciones pertinentes. No releas capturas o documentos ya
+  inspeccionados sin una razón concreta.
 
-- Toda implementación debe mencionar los requisitos `RF-###` o `RNF-###`
-  que satisface.
-- Los contratos son la fuente de verdad de las interfaces.
-- Las decisiones marcadas como `PENDIENTE` en `research.md` bloquean las
-  tareas dependientes; no se deben resolver implícitamente en código.
-- No cambiar contratos para adaptar código existente sin autorización.
-- Ejecutar las pruebas relacionadas después de cada cambio.
-- No marcar una tarea de `tasks.md` como terminada hasta verificar sus
-  criterios de aceptación.
-- No incluir secretos ni archivos `.env` reales.
-- Trabajar en incrementos pequeños y revisables.
+## Trabajo en frontend v2
 
-## Rediseño del núcleo determinista
+- El frontend v2 se desarrolla de forma incremental en `/app`; la ruta `/` y
+  el frontend legacy permanecen intactos hasta la tarea que autorice su
+  retirada.
+- El backend determinista FastAPI es el único modelo funcional y de
+  aceptación. El frontend legacy puede orientar un inventario, pero no es un
+  fallback funcional.
+- No modifiques backend, contratos, fixtures reales, golden suites ni
+  documentos normativos durante un incremento frontend salvo autorización
+  expresa.
+- Las decisiones marcadas `PENDIENTE` bloquean únicamente el trabajo que
+  dependa de ellas. No deben paralizar incrementos independientes.
+- Si la tarea modifica UI, interacción, responsive o accesibilidad, usa la
+  skill Impeccable instalada en el repositorio sin permitir que contradiga los
+  requisitos normativos.
+- El puerto `3000` está reservado para el usuario. Usa `3101` o, si está
+  ocupado, `3100`, y libera los procesos propios al terminar.
 
-La migración vigente está definida en:
+## Seguridad y evidencia
 
-- `specs/001-cuestion-de-datos-v2/research.md` §25.
-- `specs/001-cuestion-de-datos-v2/plan.md` §13.
-- `specs/001-cuestion-de-datos-v2/pruebas.md` §4.4.
-- `specs/001-cuestion-de-datos-v2/tasks.md` T-610…T-617.
+- Nunca imprimas ni introduzcas secretos, tokens de corrida, credenciales,
+  archivos `.env` reales o datos personales.
+- No pongas tokens en URL, DOM, logs, mensajes de error, telemetría ni estado
+  serializable.
+- No inventes fixtures, payloads, resultados, capturas, métricas ni evidencia
+  de ejecución. Distingue expresamente los dobles sintéticos de los datos
+  reales.
+- No cambies contratos, golden data, `expected_facts`, preguntas, umbrales,
+  cardinalidades o presupuestos para hacer pasar una implementación.
+- Una deuda ambiental o documental reconocida no bloquea trabajo
+  independiente. Sí bloquean pérdida de datos, incumplimiento contractual,
+  seguridad, privacidad, fabricación de evidencia y pruebas esenciales no
+  reproducibles.
 
-Reglas obligatorias:
+## Ejecución y reporte
 
-- `legacy` y `deterministic` son runtimes, no proveedores o modelos LLM.
-- El runtime legado está congelado: puede recibir cambios mínimos de
-  clasificación, nombres, fixtures o compatibilidad necesarios para conservar
-  el rollback, pero no nuevas heurísticas, prompts ni comportamiento.
-- No atribuir al determinista pruebas que importen o ejecuten
-  `app.agent.graph`, `build_graph` o `initial_state`.
-- No modificar `backend/eval/golden/golden-v1.yaml`.
-- `backend/eval/golden/GOLDEN_V2_PROPOSAL.md` es informativo y no autoriza
-  crear `golden-v2.yaml`.
-- No relajar `backend/eval/metrics.py` ni introducir IDs, cifras, filtros o
-  respuestas de casos golden en runtime, prompts, fixtures de producción o
-  ranking.
-- Respetar estrictamente T-610 → T-611 → T-612 → T-613 → T-614 → T-615 →
-  T-616 → T-617. No iniciar una tarea si la puerta anterior no tiene evidencia.
-- T-611/T-612 son un incremento exclusivamente de pruebas y clasificación:
-  no cambian recuperación, planificación, síntesis ni comportamiento
-  productivo.
-- Los cambios de contratos, modelo de datos, semántica de claims o suite
-  normativa requieren aprobación previa de Juan Camilo y del agente
-  coordinador; Claude Code no los decide ni implementa por iniciativa propia.
-- Al superar la puerta final, `deterministic` pasa inmediatamente a ser el
-  default; `legacy` queda solo como rollback administrativo durante una versión
-  y después se elimina en una tarea independiente.
+- Trabaja en incrementos pequeños y respeta literalmente lo que queda fuera de
+  alcance.
+- Durante el desarrollo ejecuta pruebas focalizadas. Deja lint, suite completa
+  y build para una sola validación final, en proporción al riesgo del cambio.
+- No repitas automáticamente corridas reales costosas ni suites completas por
+  un flake ambiental ya aislado y documentado.
+- El reporte final debe resumir resultados y archivos tocados; no reproduzcas
+  salidas completas de comandos.
+- No declares cerrada una fase completa cuando solo quedó cerrado un
+  incremento. Indica un único siguiente incremento concreto y no lo empieces
+  sin autorización.
 
-## Herramientas y evidencia
+## Orientación para el inicio de una sesión
 
-- Usar primero `codebase-memory-mcp`: indexar o actualizar, `search_graph`,
-  `trace_path`, `get_code_snippet`, `query_graph` y arquitectura. Usar búsqueda
-  textual solo para literales, configuración y documentación.
-- Verificar el worktree antes y después de cada incremento. Preservar cambios y
-  archivos ajenos; no usar `git reset --hard`, `git checkout --` ni borrar
-  trabajo no reconocido.
-- En Windows usar PowerShell 7 y los comandos documentados por el proyecto.
-- Antes de instalar algo, comprobar `backend/pyproject.toml`, el entorno virtual
-  y las herramientas ya disponibles. No agregar dependencias para resolver
-  trabajo que puede hacerse con el stack existente.
-- Para pruebas de integración comprobar Docker/PostgreSQL local y distinguir
-  claramente “no ejecutada por ambiente” de “falló por código”.
-- Empezar con la prueba dirigida, después el subconjunto relacionado y
-  finalmente la puerta completa correspondiente.
-- Todo cierre debe informar: archivos modificados, comandos exactos, resultados,
-  pruebas no ejecutadas, limitaciones ambientales, riesgos y diff pendiente.
+Antes de actuar, responde internamente estas preguntas con evidencia actual:
 
-## Coordinación
+1. ¿Cuál es el último encargo explícito del usuario?
+2. ¿Qué fase, incremento y requisitos `RF-###`/`RNF-###` cubre?
+3. ¿Cuál es la rama y el estado real del worktree?
+4. ¿Qué decisiones pendientes bloquean realmente este alcance y cuáles no?
+5. ¿Qué archivos pertenecen al incremento y cuáles deben preservarse?
 
-Claude Code implementa la carpintería técnica y reúne evidencia. Juan Camilo y
-el agente coordinador revisan arquitectura, alcance, resultados y autorización
-de la siguiente puerta.
-
-- Detenerse al completar el incremento autorizado y entregar el reporte.
-- No continuar automáticamente a la siguiente tarea de `tasks.md`.
-- Si aparece una contradicción normativa, un cambio de contrato, una mutación
-  de `golden-v1`, una necesidad de relajar métricas o una decisión metodológica,
-  detenerse y reportarla sin implementar una solución implícita.
+Si esas respuestas son coherentes, continúa. No solicites una confirmación
+adicional solo porque `CLAUDE.md` anteriormente describía otro trabajo.

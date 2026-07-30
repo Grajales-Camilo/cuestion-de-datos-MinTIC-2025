@@ -1,0 +1,1461 @@
+{
+  "run_id": "41f11aa2-56d0-403c-81a2-6f80551c5d72",
+  "status": "completed",
+  "answer": {
+    "usage": {
+      "latency_ms": 22592,
+      "steps_used": 14,
+      "input_tokens": 17585,
+      "output_tokens": 3224,
+      "estimated_cost_usd": 0.013335,
+      "termination_reason": null
+    },
+    "claims": [
+      {
+        "unit": null,
+        "claim": "lookup: ¿Qué códigos NUECA corresponden a la empresa 78, EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.? (dim_4, fila 0): 2.368.705.607",
+        "label": "Nueca",
+        "columns": [
+          "nueca"
+        ],
+        "formula": null,
+        "claim_id": "d04218b9-d00e-4308-adae-7e3640cecb0c",
+        "rounding": 0,
+        "raw_value": 2368705607,
+        "claim_type": "direct",
+        "dataset_id": "y97c-tfd9",
+        "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+        "source_hash": "sha256:a2afcf4f3fa0b61621832ba92616581a7a075b67a49f768fa18e4918b3d3160e",
+        "label_status": "verified",
+        "display_value": "2.368.705.607",
+        "source_row_indexes": [
+          0
+        ]
+      },
+      {
+        "unit": null,
+        "claim": "lookup: ¿Qué códigos NUECA corresponden a la empresa 78, EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.? (dim_4, fila 1): 3.375.205.607",
+        "label": "Nueca",
+        "columns": [
+          "nueca"
+        ],
+        "formula": null,
+        "claim_id": "9420d9ea-4398-4edf-b9a1-33b677c53182",
+        "rounding": 0,
+        "raw_value": 3375205607,
+        "claim_type": "direct",
+        "dataset_id": "y97c-tfd9",
+        "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+        "source_hash": "sha256:aa811aa05f4c27eb21a916bb19ca5c3545209da607702bd4464d3bf9c629ee4f",
+        "label_status": "verified",
+        "display_value": "3.375.205.607",
+        "source_row_indexes": [
+          1
+        ]
+      }
+    ],
+    "run_id": "41f11aa2-56d0-403c-81a2-6f80551c5d72",
+    "status": "completed",
+    "summary": "Nueca: 2.368.705.607. Además, Nueca: 3.375.205.607. Además, El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.. Además, El valor observado es EN OPERACION. Además, El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.. Además, El valor observado es EN OPERACION.",
+    "evidence": [
+      {
+        "rows": [
+          {
+            "dim_1": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+            "dim_2": "78",
+            "dim_3": "EN OPERACION",
+            "dim_4": "2368705607",
+            "dim_5": "ANTIOQUIA",
+            "dim_6": "2021-08-15T12:19:33.000",
+            "dim_7": "2016-11-01T00:00:00.000",
+            "dim_8": "2016-11-01T00:00:00.000"
+          },
+          {
+            "dim_1": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+            "dim_2": "78",
+            "dim_3": "EN OPERACION",
+            "dim_4": "3375205607",
+            "dim_5": "ANTIOQUIA",
+            "dim_6": "2023-01-24T09:26:52.000",
+            "dim_7": "2016-11-01T00:00:00.000",
+            "dim_8": "2016-11-01T00:00:00.000"
+          }
+        ],
+        "columns": [
+          "dim_1",
+          "dim_2",
+          "dim_3",
+          "dim_4",
+          "dim_5",
+          "dim_6",
+          "dim_7",
+          "dim_8"
+        ],
+        "quality": {
+          "dimensions": {
+            "schema": {
+              "score": 100,
+              "checks": [
+                {
+                  "basis": null,
+                  "check": "schema.columns_present",
+                  "detail": "8/8 columnas presentes",
+                  "passed": true
+                },
+                {
+                  "basis": null,
+                  "check": "schema.types_coherent",
+                  "detail": "Sin columnas de uso numérico que validar",
+                  "passed": true
+                },
+                {
+                  "basis": null,
+                  "check": "schema.non_empty_result",
+                  "detail": "2 filas devueltas",
+                  "passed": true
+                }
+              ]
+            },
+            "timeliness": {
+              "score": 70,
+              "checks": [
+                {
+                  "basis": "data_updated_at_fallback",
+                  "check": "timeliness.data_age",
+                  "detail": "Corte de actualización: 2024-10-17 (~21 meses)",
+                  "passed": true
+                }
+              ]
+            },
+            "completeness": {
+              "score": 100,
+              "checks": [
+                {
+                  "basis": null,
+                  "check": "completeness.null_ratio",
+                  "detail": "0% de celdas vacías en las columnas citadas",
+                  "passed": true
+                },
+                {
+                  "basis": null,
+                  "check": "completeness.placeholder_values",
+                  "detail": "Sin placeholders detectados",
+                  "passed": true
+                }
+              ]
+            },
+            "traceability": {
+              "score": 100,
+              "checks": [
+                {
+                  "basis": null,
+                  "check": "traceability.source_complete",
+                  "detail": "",
+                  "passed": true
+                },
+                {
+                  "basis": null,
+                  "check": "traceability.query_reproducible",
+                  "detail": "",
+                  "passed": true
+                }
+              ]
+            }
+          },
+          "score_total": 91,
+          "warnings_user": [
+            "El portal actualizó este dataset en octubre de 2024, pero no fue posible inferir el corte estadístico de las filas consultadas."
+          ],
+          "classification": "alta",
+          "eligibility_status": "eligible",
+          "eligibility_reasons": []
+        },
+        "citation": {
+          "publisher": "Superintendencia de Servicios Públicos Domiciliarios - AAA",
+          "dataset_id": "y97c-tfd9",
+          "soql_query": "SELECT nombre_empresa AS dim_1, id_de_la_empresa AS dim_2, estado_nueca AS dim_3, nueca AS dim_4, departamento AS dim_5, fecha_de_certificaci_n AS dim_6, fecha_estado AS dim_7, fecha_inicio_de_operaci_n AS dim_8 WHERE nombre_empresa = 'EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.' AND id_de_la_empresa = 78 LIMIT 100 OFFSET 0",
+          "source_url": "https://www.datos.gov.co/resource/y97c-tfd9.json?%24select=nombre_empresa+AS+dim_1%2C+id_de_la_empresa+AS+dim_2%2C+estado_nueca+AS+dim_3%2C+nueca+AS+dim_4%2C+departamento+AS+dim_5%2C+fecha_de_certificaci_n+AS+dim_6%2C+fecha_estado+AS+dim_7%2C+fecha_inicio_de_operaci_n+AS+dim_8&%24where=nombre_empresa+%3D+%27EMPRESA+DE+SERVICIOS+DE+EL+RETIRO+-+RETIRAR+S.A.+E.S.P.%27+AND+id_de_la_empresa+%3D+78&%24limit=100&%24offset=0",
+          "executed_at": "2026-07-24T22:48:43.991383+00:00",
+          "dataset_name": "Superservicios - Registro de Estaciones de Clasificación y Aprovechamiento-ECA",
+          "data_cutoff_at": "2024-10-17T19:36:28+00:00",
+          "data_updated_at": "2024-10-17T19:36:28+00:00",
+          "official_publisher_id": "sspd"
+        },
+        "narrative": null,
+        "publisher": "Superintendencia de Servicios Públicos Domiciliarios - AAA",
+        "row_count": 2,
+        "dataset_id": "y97c-tfd9",
+        "soql_query": "SELECT nombre_empresa AS dim_1, id_de_la_empresa AS dim_2, estado_nueca AS dim_3, nueca AS dim_4, departamento AS dim_5, fecha_de_certificaci_n AS dim_6, fecha_estado AS dim_7, fecha_inicio_de_operaci_n AS dim_8 WHERE nombre_empresa = 'EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.' AND id_de_la_empresa = 78 LIMIT 100 OFFSET 0",
+        "source_url": "https://www.datos.gov.co/resource/y97c-tfd9.json?%24select=nombre_empresa+AS+dim_1%2C+id_de_la_empresa+AS+dim_2%2C+estado_nueca+AS+dim_3%2C+nueca+AS+dim_4%2C+departamento+AS+dim_5%2C+fecha_de_certificaci_n+AS+dim_6%2C+fecha_estado+AS+dim_7%2C+fecha_inicio_de_operaci_n+AS+dim_8&%24where=nombre_empresa+%3D+%27EMPRESA+DE+SERVICIOS+DE+EL+RETIRO+-+RETIRAR+S.A.+E.S.P.%27+AND+id_de_la_empresa+%3D+78&%24limit=100&%24offset=0",
+        "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+        "executed_at": "2026-07-24T22:48:43.991383+00:00",
+        "dataset_name": "Superservicios - Registro de Estaciones de Clasificación y Aprovechamiento-ECA",
+        "data_cutoff_at": "2024-10-17T19:36:28+00:00",
+        "data_updated_at": "2024-10-17T19:36:28+00:00",
+        "chart_suggestion": null,
+        "data_cutoff_basis": "data_updated_at_fallback",
+        "data_cutoff_column": null,
+        "data_cutoff_method": null,
+        "data_cutoff_confidence": null,
+        "data_cutoff_inferred_at": "2026-07-24T22:48:43.991383+00:00"
+      }
+    ],
+    "intention": {
+      "topic": "¿Qué códigos NUECA corresponden a la empresa 78, EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.?",
+      "entity": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P. (78)",
+      "period": null,
+      "operation": "lookup",
+      "territory": null,
+      "administrative_terms": []
+    },
+    "narrative": "Nueca: 2.368.705.607. Además, Nueca: 3.375.205.607. Además, El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.. Además, El valor observado es EN OPERACION. Además, El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.. Además, El valor observado es EN OPERACION.",
+    "textual_facts": [
+      {
+        "fact_id": "0d95db7d-2638-4966-8603-938a2b7171b4",
+        "fact_kind": "textual",
+        "fact": "El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P..",
+        "operation": "direct_text",
+        "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+        "dataset_id": "y97c-tfd9",
+        "source_row_indexes": [
+          0
+        ],
+        "columns": [
+          "dim_1"
+        ],
+        "raw_values": [
+          "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P."
+        ],
+        "normalized_values": [
+          "empresa de servicios de el retiro - retirar s.a. e.s.p."
+        ],
+        "display_value": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+        "normalization_profile": "text-es-v1",
+        "operation_params": {},
+        "algorithm_version": "textual-fact-v1",
+        "source_hash": "sha256-jcs-v1:4e6dabaf24051c4c6e35c7e1f31c89aefbeca2531a78d740cc47c4cd99730fea"
+      },
+      {
+        "fact_id": "fee4a416-5a0a-48ee-97e3-a7aec5d8021c",
+        "fact_kind": "textual",
+        "fact": "El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P..",
+        "operation": "direct_text",
+        "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+        "dataset_id": "y97c-tfd9",
+        "source_row_indexes": [
+          1
+        ],
+        "columns": [
+          "dim_1"
+        ],
+        "raw_values": [
+          "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P."
+        ],
+        "normalized_values": [
+          "empresa de servicios de el retiro - retirar s.a. e.s.p."
+        ],
+        "display_value": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+        "normalization_profile": "text-es-v1",
+        "operation_params": {},
+        "algorithm_version": "textual-fact-v1",
+        "source_hash": "sha256-jcs-v1:aeeaa01879d1e25239d398e85887f8d48664b4888521c640adcf8eab8ea55373"
+      },
+      {
+        "fact_id": "228c6ec0-3e45-455f-a5a1-d951c4f123a6",
+        "fact_kind": "textual",
+        "fact": "El valor observado es EN OPERACION.",
+        "operation": "direct_text",
+        "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+        "dataset_id": "y97c-tfd9",
+        "source_row_indexes": [
+          0
+        ],
+        "columns": [
+          "dim_3"
+        ],
+        "raw_values": [
+          "EN OPERACION"
+        ],
+        "normalized_values": [
+          "en operacion"
+        ],
+        "display_value": "EN OPERACION",
+        "normalization_profile": "text-es-v1",
+        "operation_params": {},
+        "algorithm_version": "textual-fact-v1",
+        "source_hash": "sha256-jcs-v1:6a6a5ad310c116aff6453cf2f5c325fdabdeea09834aaa5cc5473eb7f3dd260c"
+      },
+      {
+        "fact_id": "19686647-799a-4511-87bd-86336a86ab68",
+        "fact_kind": "textual",
+        "fact": "El valor observado es EN OPERACION.",
+        "operation": "direct_text",
+        "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+        "dataset_id": "y97c-tfd9",
+        "source_row_indexes": [
+          1
+        ],
+        "columns": [
+          "dim_3"
+        ],
+        "raw_values": [
+          "EN OPERACION"
+        ],
+        "normalized_values": [
+          "en operacion"
+        ],
+        "display_value": "EN OPERACION",
+        "normalization_profile": "text-es-v1",
+        "operation_params": {},
+        "algorithm_version": "textual-fact-v1",
+        "source_hash": "sha256-jcs-v1:12b9a70d18d75dc0a3c75843884aa68ed5dd1f3b7b7d6378ed7d861213130650"
+      }
+    ],
+    "no_evidence_report": null,
+    "partial_textual_facts": [],
+    "presentation_warnings": []
+  },
+  "textual_facts": [
+    {
+      "fact_id": "0d95db7d-2638-4966-8603-938a2b7171b4",
+      "fact_kind": "textual",
+      "fact": "El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P..",
+      "operation": "direct_text",
+      "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+      "dataset_id": "y97c-tfd9",
+      "source_row_indexes": [
+        0
+      ],
+      "columns": [
+        "dim_1"
+      ],
+      "raw_values": [
+        "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P."
+      ],
+      "normalized_values": [
+        "empresa de servicios de el retiro - retirar s.a. e.s.p."
+      ],
+      "display_value": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+      "normalization_profile": "text-es-v1",
+      "operation_params": {},
+      "algorithm_version": "textual-fact-v1",
+      "source_hash": "sha256-jcs-v1:4e6dabaf24051c4c6e35c7e1f31c89aefbeca2531a78d740cc47c4cd99730fea"
+    },
+    {
+      "fact_id": "fee4a416-5a0a-48ee-97e3-a7aec5d8021c",
+      "fact_kind": "textual",
+      "fact": "El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P..",
+      "operation": "direct_text",
+      "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+      "dataset_id": "y97c-tfd9",
+      "source_row_indexes": [
+        1
+      ],
+      "columns": [
+        "dim_1"
+      ],
+      "raw_values": [
+        "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P."
+      ],
+      "normalized_values": [
+        "empresa de servicios de el retiro - retirar s.a. e.s.p."
+      ],
+      "display_value": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+      "normalization_profile": "text-es-v1",
+      "operation_params": {},
+      "algorithm_version": "textual-fact-v1",
+      "source_hash": "sha256-jcs-v1:aeeaa01879d1e25239d398e85887f8d48664b4888521c640adcf8eab8ea55373"
+    },
+    {
+      "fact_id": "228c6ec0-3e45-455f-a5a1-d951c4f123a6",
+      "fact_kind": "textual",
+      "fact": "El valor observado es EN OPERACION.",
+      "operation": "direct_text",
+      "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+      "dataset_id": "y97c-tfd9",
+      "source_row_indexes": [
+        0
+      ],
+      "columns": [
+        "dim_3"
+      ],
+      "raw_values": [
+        "EN OPERACION"
+      ],
+      "normalized_values": [
+        "en operacion"
+      ],
+      "display_value": "EN OPERACION",
+      "normalization_profile": "text-es-v1",
+      "operation_params": {},
+      "algorithm_version": "textual-fact-v1",
+      "source_hash": "sha256-jcs-v1:6a6a5ad310c116aff6453cf2f5c325fdabdeea09834aaa5cc5473eb7f3dd260c"
+    },
+    {
+      "fact_id": "19686647-799a-4511-87bd-86336a86ab68",
+      "fact_kind": "textual",
+      "fact": "El valor observado es EN OPERACION.",
+      "operation": "direct_text",
+      "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+      "dataset_id": "y97c-tfd9",
+      "source_row_indexes": [
+        1
+      ],
+      "columns": [
+        "dim_3"
+      ],
+      "raw_values": [
+        "EN OPERACION"
+      ],
+      "normalized_values": [
+        "en operacion"
+      ],
+      "display_value": "EN OPERACION",
+      "normalization_profile": "text-es-v1",
+      "operation_params": {},
+      "algorithm_version": "textual-fact-v1",
+      "source_hash": "sha256-jcs-v1:12b9a70d18d75dc0a3c75843884aa68ed5dd1f3b7b7d6378ed7d861213130650"
+    }
+  ],
+  "partial_textual_facts": [],
+  "steps": [
+    {
+      "step_number": 1,
+      "node": "select_candidate",
+      "display_message": "hay candidato no intentado",
+      "detail": null
+    },
+    {
+      "step_number": 2,
+      "node": "profile_dataset",
+      "display_message": "falta esquema observado",
+      "detail": {}
+    },
+    {
+      "step_number": 3,
+      "node": "build_plan",
+      "display_message": "falta plan tipado",
+      "detail": {}
+    },
+    {
+      "step_number": 4,
+      "node": "explore_value",
+      "display_message": "falta resolver valor categórico",
+      "detail": {
+        "ok": true,
+        "tool": "explorar_valores",
+        "values": [
+          "ASEO CALDAS EMPRESA DE SERVICIOS PUBLICOS S.A.S. E.S.P.",
+          "BIOAGRICOLA DEL LLANO S.A ESP BIC  EMPRESA DE SERVICIOS PUBLICOS",
+          "CAFUCHES EMPRESA DE SERVICIOS PÚBLICOS DOMICILIARIOS DE SAN MARTÍN DE LOS LLANOS S.A E.S.P",
+          "EMPRESA ASOCIATIVA DE TRABAJO MUCAF E.S.P.",
+          "EMPRESA COMUNITARIA DE ACUEDUCTO, ALCANTARILLADO Y ASEO DE SARAVENA",
+          "EMPRESA DE ACUEDUCTO, ALCANTARILLADO Y ASEO DE CAMPOALEGRE SOCIEDAD ANONIMA EMPRESA DE SERVICIOS PUBLICOS",
+          "EMPRESA DE ACUEDUCTO, ALCANTARILLADO Y ASEO DE MADRID E.S.P.",
+          "EMPRESA DE ACUEDUCTO ALCANTARILLADO Y ASEO DE PUERTO ASIS E.S.P.",
+          "EMPRESA DE ACUEDUCTO, ALCANTARILLADO Y ASEO DE YOPAL  EICE - ESP",
+          "EMPRESA DE ACUEDUCTO Y ALCANTARILLADO DE BOGOTÁ E.S.P",
+          "EMPRESA DE ASEO DE BUCARAMANGA S.A. E.S.P.",
+          "EMPRESA DE ASEO DE CAREPA S.A.S . E.S.P.",
+          "EMPRESA DE ASEO DE COPACABANA S.A. E.S.P.",
+          "EMPRESA DE ASEO RIOGRANDE S.A.S. E.S.P.",
+          "EMPRESA DE OBRAS SANITARIAS DE SANTA ROSA DE CABAL EMPOCABAL",
+          "EMPRESA DE SERVICIOS AMBIENTALES DEL CAQUETA SOCIEDAD ANONIMA EMPRESA DE SERVICIOS PUBLICOS",
+          "EMPRESA DE SERVICIOS PÚBLICOS DE ACACIAS ESP",
+          "EMPRESA DE SERVICIOS PUBLICOS DE ACUEDUCTO ALCANTARILLADO Y ASEO DEL LIBANO E.S.P.",
+          "EMPRESA DE SERVICIOS PUBLICOS DE AGUAZUL S.A. E.S.P.",
+          "EMPRESA DE SERVICIOS PUBLICOS DE ANDES S.A E.S.P"
+        ],
+        "tool_calls": 2,
+        "search_term": "EMPRESA"
+      }
+    },
+    {
+      "step_number": 5,
+      "node": "build_plan",
+      "display_message": "falta plan tipado",
+      "detail": {}
+    },
+    {
+      "step_number": 6,
+      "node": "build_plan",
+      "display_message": "reparar plan inválido: UNKNOWN_REFERENCE: valores no observados para column_index 5: ['EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.']",
+      "detail": {}
+    },
+    {
+      "step_number": 7,
+      "node": "select_candidate",
+      "display_message": "hay candidato no intentado",
+      "detail": null
+    },
+    {
+      "step_number": 8,
+      "node": "profile_dataset",
+      "display_message": "falta esquema observado",
+      "detail": {}
+    },
+    {
+      "step_number": 9,
+      "node": "build_plan",
+      "display_message": "falta plan tipado",
+      "detail": {}
+    },
+    {
+      "step_number": 10,
+      "node": "explore_value",
+      "display_message": "falta resolver valor categórico",
+      "detail": {
+        "ok": true,
+        "tool": "explorar_valores",
+        "values": [
+          "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P."
+        ],
+        "tool_calls": 1,
+        "search_term": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P."
+      }
+    },
+    {
+      "step_number": 11,
+      "node": "build_plan",
+      "display_message": "falta plan tipado",
+      "detail": {}
+    },
+    {
+      "step_number": 12,
+      "node": "execute_query",
+      "display_message": "plan validado listo para T5",
+      "detail": {
+        "ok": true,
+        "rows": [
+          {
+            "dim_1": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+            "dim_2": "78",
+            "dim_3": "EN OPERACION",
+            "dim_4": "2368705607",
+            "dim_5": "ANTIOQUIA",
+            "dim_6": "2021-08-15T12:19:33.000",
+            "dim_7": "2016-11-01T00:00:00.000",
+            "dim_8": "2016-11-01T00:00:00.000"
+          },
+          {
+            "dim_1": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+            "dim_2": "78",
+            "dim_3": "EN OPERACION",
+            "dim_4": "3375205607",
+            "dim_5": "ANTIOQUIA",
+            "dim_6": "2023-01-24T09:26:52.000",
+            "dim_7": "2016-11-01T00:00:00.000",
+            "dim_8": "2016-11-01T00:00:00.000"
+          }
+        ],
+        "llm_view": {
+          "note": "al contexto del LLM entran max. 50 filas; el resto viaja directo a la Evidencia",
+          "rows_shown": 2
+        },
+        "row_count": 2,
+        "source_url": "https://www.datos.gov.co/resource/y97c-tfd9.json?%24select=nombre_empresa+AS+dim_1%2C+id_de_la_empresa+AS+dim_2%2C+estado_nueca+AS+dim_3%2C+nueca+AS+dim_4%2C+departamento+AS+dim_5%2C+fecha_de_certificaci_n+AS+dim_6%2C+fecha_estado+AS+dim_7%2C+fecha_inicio_de_operaci_n+AS+dim_8&%24where=nombre_empresa+%3D+%27EMPRESA+DE+SERVICIOS+DE+EL+RETIRO+-+RETIRAR+S.A.+E.S.P.%27+AND+id_de_la_empresa+%3D+78&%24limit=100&%24offset=0",
+        "executed_at": "2026-07-24T22:48:43.991338+00:00",
+        "canonical_soql": "SELECT nombre_empresa AS dim_1, id_de_la_empresa AS dim_2, estado_nueca AS dim_3, nueca AS dim_4, departamento AS dim_5, fecha_de_certificaci_n AS dim_6, fecha_estado AS dim_7, fecha_inicio_de_operaci_n AS dim_8 WHERE nombre_empresa = 'EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.' AND id_de_la_empresa = 78 LIMIT 100 OFFSET 0"
+      }
+    },
+    {
+      "step_number": 13,
+      "node": "persist_facts",
+      "display_message": "claims derivados listos para persistencia y reverificación",
+      "detail": null
+    },
+    {
+      "step_number": 14,
+      "node": "synthesize",
+      "display_message": "síntesis literal validada desde hechos persistidos",
+      "detail": null
+    }
+  ],
+  "events": [
+    {
+      "seq": 1,
+      "event": "step",
+      "data": {
+        "node": "select_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 1,
+            "candidates": 0,
+            "elapsed_ms": 2483,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": null,
+          "candidate_index": null,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 1,
+        "display_message": "hay candidato no intentado"
+      }
+    },
+    {
+      "seq": 2,
+      "event": "step",
+      "data": {
+        "node": "profile_dataset",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 1,
+            "candidates": 1,
+            "elapsed_ms": 2509,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "d7pt-p5fi",
+          "candidate_index": 0,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 2,
+        "display_message": "falta esquema observado"
+      }
+    },
+    {
+      "seq": 3,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 1,
+            "candidates": 1,
+            "elapsed_ms": 2553,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "d7pt-p5fi",
+          "candidate_index": 0,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 3,
+        "display_message": "falta plan tipado"
+      }
+    },
+    {
+      "seq": 4,
+      "event": "step",
+      "data": {
+        "node": "explore_value",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 2,
+            "candidates": 1,
+            "elapsed_ms": 6488,
+            "explorations": 0,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "d7pt-p5fi",
+          "candidate_index": 0,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 4,
+        "display_message": "falta resolver valor categórico"
+      }
+    },
+    {
+      "seq": 5,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 2,
+            "candidates": 1,
+            "elapsed_ms": 7324,
+            "explorations": 2,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "d7pt-p5fi",
+          "candidate_index": 0,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 5,
+        "display_message": "falta plan tipado"
+      }
+    },
+    {
+      "seq": 6,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 3,
+            "candidates": 1,
+            "elapsed_ms": 8869,
+            "explorations": 2,
+            "plan_repairs": 1
+          },
+          "runtime": "deterministic",
+          "dataset_id": "d7pt-p5fi",
+          "candidate_index": 0,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": [
+            "UNKNOWN_REFERENCE"
+          ]
+        },
+        "step_number": 6,
+        "display_message": "reparar plan inválido: UNKNOWN_REFERENCE: valores no observados para column_index 5: ['EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.']"
+      }
+    },
+    {
+      "seq": 7,
+      "event": "step",
+      "data": {
+        "node": "select_candidate",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 4,
+            "candidates": 1,
+            "elapsed_ms": 14194,
+            "explorations": 2,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": null,
+          "candidate_index": null,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": [
+            "REQUESTED_OUTPUT_SEMANTICS_MISMATCH"
+          ]
+        },
+        "step_number": 7,
+        "display_message": "hay candidato no intentado"
+      }
+    },
+    {
+      "seq": 8,
+      "event": "step",
+      "data": {
+        "node": "profile_dataset",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 4,
+            "candidates": 2,
+            "elapsed_ms": 14211,
+            "explorations": 2,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "y97c-tfd9",
+          "candidate_index": 1,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 8,
+        "display_message": "falta esquema observado"
+      }
+    },
+    {
+      "seq": 9,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 4,
+            "candidates": 2,
+            "elapsed_ms": 14238,
+            "explorations": 2,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "y97c-tfd9",
+          "candidate_index": 1,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 9,
+        "display_message": "falta plan tipado"
+      }
+    },
+    {
+      "seq": 10,
+      "event": "step",
+      "data": {
+        "node": "explore_value",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 5,
+            "candidates": 2,
+            "elapsed_ms": 17533,
+            "explorations": 2,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "y97c-tfd9",
+          "candidate_index": 1,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 10,
+        "display_message": "falta resolver valor categórico"
+      }
+    },
+    {
+      "seq": 11,
+      "event": "step",
+      "data": {
+        "node": "build_plan",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 5,
+            "candidates": 2,
+            "elapsed_ms": 18649,
+            "explorations": 3,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "y97c-tfd9",
+          "candidate_index": 1,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 11,
+        "display_message": "falta plan tipado"
+      }
+    },
+    {
+      "seq": 12,
+      "event": "step",
+      "data": {
+        "node": "execute_query",
+        "detail": {
+          "usage": {
+            "queries": 0,
+            "llm_calls": 6,
+            "candidates": 2,
+            "elapsed_ms": 22103,
+            "explorations": 3,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "y97c-tfd9",
+          "candidate_index": 1,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 12,
+        "display_message": "plan validado listo para T5"
+      }
+    },
+    {
+      "seq": 13,
+      "event": "step",
+      "data": {
+        "node": "persist_facts",
+        "detail": {
+          "usage": {
+            "queries": 1,
+            "llm_calls": 6,
+            "candidates": 2,
+            "elapsed_ms": 22301,
+            "explorations": 3,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "dataset_id": "y97c-tfd9",
+          "candidate_index": 1,
+          "attempted_dataset_ids": [],
+          "retrieved_dataset_ids": [
+            "d7pt-p5fi",
+            "y97c-tfd9",
+            "w4s2-pcg3",
+            "kg4b-vx7j",
+            "84tn-nnhf",
+            "fr9y-tiqk",
+            "m8rc-9fba",
+            "76s2-arsv",
+            "cue8-zarw",
+            "cmw5-nt78"
+          ],
+          "plan_validation_errors": []
+        },
+        "step_number": 13,
+        "display_message": "claims derivados listos para persistencia y reverificación"
+      }
+    },
+    {
+      "seq": 14,
+      "event": "step",
+      "data": {
+        "node": "synthesize",
+        "detail": {
+          "usage": {
+            "queries": 1,
+            "llm_calls": 7,
+            "candidates": 2,
+            "elapsed_ms": 22301,
+            "explorations": 3,
+            "plan_repairs": 0
+          },
+          "runtime": "deterministic",
+          "schema_version": "grounded-synthesis-plan-v1",
+          "allowed_fact_count": 6,
+          "grounded_synthesis_plan": {
+            "closing": "sin_cierre",
+            "segments": [
+              {
+                "template": "fact_statement",
+                "connector": "sin_conector",
+                "fact_refs": [
+                  {
+                    "id": "d04218b9-d00e-4308-adae-7e3640cecb0c",
+                    "fact_kind": "quantitative"
+                  }
+                ],
+                "segment_id": "fallback-1"
+              },
+              {
+                "template": "fact_statement",
+                "connector": "ademas",
+                "fact_refs": [
+                  {
+                    "id": "9420d9ea-4398-4edf-b9a1-33b677c53182",
+                    "fact_kind": "quantitative"
+                  }
+                ],
+                "segment_id": "fallback-2"
+              },
+              {
+                "template": "fact_statement",
+                "connector": "ademas",
+                "fact_refs": [
+                  {
+                    "id": "0d95db7d-2638-4966-8603-938a2b7171b4",
+                    "fact_kind": "textual"
+                  }
+                ],
+                "segment_id": "fallback-3"
+              },
+              {
+                "template": "fact_statement",
+                "connector": "ademas",
+                "fact_refs": [
+                  {
+                    "id": "228c6ec0-3e45-455f-a5a1-d951c4f123a6",
+                    "fact_kind": "textual"
+                  }
+                ],
+                "segment_id": "fallback-4"
+              },
+              {
+                "template": "fact_statement",
+                "connector": "ademas",
+                "fact_refs": [
+                  {
+                    "id": "fee4a416-5a0a-48ee-97e3-a7aec5d8021c",
+                    "fact_kind": "textual"
+                  }
+                ],
+                "segment_id": "fallback-5"
+              },
+              {
+                "template": "fact_statement",
+                "connector": "ademas",
+                "fact_refs": [
+                  {
+                    "id": "19686647-799a-4511-87bd-86336a86ab68",
+                    "fact_kind": "textual"
+                  }
+                ],
+                "segment_id": "fallback-6"
+              }
+            ],
+            "schema_version": "grounded-synthesis-plan-v1"
+          }
+        },
+        "step_number": 14,
+        "display_message": "síntesis literal validada desde hechos persistidos"
+      }
+    },
+    {
+      "seq": 15,
+      "event": "answer",
+      "data": {
+        "usage": {
+          "latency_ms": 22592,
+          "steps_used": 14,
+          "input_tokens": 17585,
+          "output_tokens": 3224,
+          "estimated_cost_usd": 0.013335,
+          "termination_reason": null
+        },
+        "claims": [
+          {
+            "unit": null,
+            "claim": "lookup: ¿Qué códigos NUECA corresponden a la empresa 78, EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.? (dim_4, fila 0): 2.368.705.607",
+            "label": "Nueca",
+            "columns": [
+              "nueca"
+            ],
+            "formula": null,
+            "claim_id": "d04218b9-d00e-4308-adae-7e3640cecb0c",
+            "rounding": 0,
+            "raw_value": 2368705607,
+            "claim_type": "direct",
+            "dataset_id": "y97c-tfd9",
+            "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+            "source_hash": "sha256:a2afcf4f3fa0b61621832ba92616581a7a075b67a49f768fa18e4918b3d3160e",
+            "label_status": "verified",
+            "display_value": "2.368.705.607",
+            "source_row_indexes": [
+              0
+            ]
+          },
+          {
+            "unit": null,
+            "claim": "lookup: ¿Qué códigos NUECA corresponden a la empresa 78, EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.? (dim_4, fila 1): 3.375.205.607",
+            "label": "Nueca",
+            "columns": [
+              "nueca"
+            ],
+            "formula": null,
+            "claim_id": "9420d9ea-4398-4edf-b9a1-33b677c53182",
+            "rounding": 0,
+            "raw_value": 3375205607,
+            "claim_type": "direct",
+            "dataset_id": "y97c-tfd9",
+            "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+            "source_hash": "sha256:aa811aa05f4c27eb21a916bb19ca5c3545209da607702bd4464d3bf9c629ee4f",
+            "label_status": "verified",
+            "display_value": "3.375.205.607",
+            "source_row_indexes": [
+              1
+            ]
+          }
+        ],
+        "run_id": "41f11aa2-56d0-403c-81a2-6f80551c5d72",
+        "status": "completed",
+        "summary": "Nueca: 2.368.705.607. Además, Nueca: 3.375.205.607. Además, El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.. Además, El valor observado es EN OPERACION. Además, El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.. Además, El valor observado es EN OPERACION.",
+        "evidence": [
+          {
+            "rows": [
+              {
+                "dim_1": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+                "dim_2": "78",
+                "dim_3": "EN OPERACION",
+                "dim_4": "2368705607",
+                "dim_5": "ANTIOQUIA",
+                "dim_6": "2021-08-15T12:19:33.000",
+                "dim_7": "2016-11-01T00:00:00.000",
+                "dim_8": "2016-11-01T00:00:00.000"
+              },
+              {
+                "dim_1": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+                "dim_2": "78",
+                "dim_3": "EN OPERACION",
+                "dim_4": "3375205607",
+                "dim_5": "ANTIOQUIA",
+                "dim_6": "2023-01-24T09:26:52.000",
+                "dim_7": "2016-11-01T00:00:00.000",
+                "dim_8": "2016-11-01T00:00:00.000"
+              }
+            ],
+            "columns": [
+              "dim_1",
+              "dim_2",
+              "dim_3",
+              "dim_4",
+              "dim_5",
+              "dim_6",
+              "dim_7",
+              "dim_8"
+            ],
+            "quality": {
+              "dimensions": {
+                "schema": {
+                  "score": 100,
+                  "checks": [
+                    {
+                      "basis": null,
+                      "check": "schema.columns_present",
+                      "detail": "8/8 columnas presentes",
+                      "passed": true
+                    },
+                    {
+                      "basis": null,
+                      "check": "schema.types_coherent",
+                      "detail": "Sin columnas de uso numérico que validar",
+                      "passed": true
+                    },
+                    {
+                      "basis": null,
+                      "check": "schema.non_empty_result",
+                      "detail": "2 filas devueltas",
+                      "passed": true
+                    }
+                  ]
+                },
+                "timeliness": {
+                  "score": 70,
+                  "checks": [
+                    {
+                      "basis": "data_updated_at_fallback",
+                      "check": "timeliness.data_age",
+                      "detail": "Corte de actualización: 2024-10-17 (~21 meses)",
+                      "passed": true
+                    }
+                  ]
+                },
+                "completeness": {
+                  "score": 100,
+                  "checks": [
+                    {
+                      "basis": null,
+                      "check": "completeness.null_ratio",
+                      "detail": "0% de celdas vacías en las columnas citadas",
+                      "passed": true
+                    },
+                    {
+                      "basis": null,
+                      "check": "completeness.placeholder_values",
+                      "detail": "Sin placeholders detectados",
+                      "passed": true
+                    }
+                  ]
+                },
+                "traceability": {
+                  "score": 100,
+                  "checks": [
+                    {
+                      "basis": null,
+                      "check": "traceability.source_complete",
+                      "detail": "",
+                      "passed": true
+                    },
+                    {
+                      "basis": null,
+                      "check": "traceability.query_reproducible",
+                      "detail": "",
+                      "passed": true
+                    }
+                  ]
+                }
+              },
+              "score_total": 91,
+              "warnings_user": [
+                "El portal actualizó este dataset en octubre de 2024, pero no fue posible inferir el corte estadístico de las filas consultadas."
+              ],
+              "classification": "alta",
+              "eligibility_status": "eligible",
+              "eligibility_reasons": []
+            },
+            "citation": {
+              "publisher": "Superintendencia de Servicios Públicos Domiciliarios - AAA",
+              "dataset_id": "y97c-tfd9",
+              "soql_query": "SELECT nombre_empresa AS dim_1, id_de_la_empresa AS dim_2, estado_nueca AS dim_3, nueca AS dim_4, departamento AS dim_5, fecha_de_certificaci_n AS dim_6, fecha_estado AS dim_7, fecha_inicio_de_operaci_n AS dim_8 WHERE nombre_empresa = 'EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.' AND id_de_la_empresa = 78 LIMIT 100 OFFSET 0",
+              "source_url": "https://www.datos.gov.co/resource/y97c-tfd9.json?%24select=nombre_empresa+AS+dim_1%2C+id_de_la_empresa+AS+dim_2%2C+estado_nueca+AS+dim_3%2C+nueca+AS+dim_4%2C+departamento+AS+dim_5%2C+fecha_de_certificaci_n+AS+dim_6%2C+fecha_estado+AS+dim_7%2C+fecha_inicio_de_operaci_n+AS+dim_8&%24where=nombre_empresa+%3D+%27EMPRESA+DE+SERVICIOS+DE+EL+RETIRO+-+RETIRAR+S.A.+E.S.P.%27+AND+id_de_la_empresa+%3D+78&%24limit=100&%24offset=0",
+              "executed_at": "2026-07-24T22:48:43.991383+00:00",
+              "dataset_name": "Superservicios - Registro de Estaciones de Clasificación y Aprovechamiento-ECA",
+              "data_cutoff_at": "2024-10-17T19:36:28+00:00",
+              "data_updated_at": "2024-10-17T19:36:28+00:00",
+              "official_publisher_id": "sspd"
+            },
+            "narrative": null,
+            "publisher": "Superintendencia de Servicios Públicos Domiciliarios - AAA",
+            "row_count": 2,
+            "dataset_id": "y97c-tfd9",
+            "soql_query": "SELECT nombre_empresa AS dim_1, id_de_la_empresa AS dim_2, estado_nueca AS dim_3, nueca AS dim_4, departamento AS dim_5, fecha_de_certificaci_n AS dim_6, fecha_estado AS dim_7, fecha_inicio_de_operaci_n AS dim_8 WHERE nombre_empresa = 'EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.' AND id_de_la_empresa = 78 LIMIT 100 OFFSET 0",
+            "source_url": "https://www.datos.gov.co/resource/y97c-tfd9.json?%24select=nombre_empresa+AS+dim_1%2C+id_de_la_empresa+AS+dim_2%2C+estado_nueca+AS+dim_3%2C+nueca+AS+dim_4%2C+departamento+AS+dim_5%2C+fecha_de_certificaci_n+AS+dim_6%2C+fecha_estado+AS+dim_7%2C+fecha_inicio_de_operaci_n+AS+dim_8&%24where=nombre_empresa+%3D+%27EMPRESA+DE+SERVICIOS+DE+EL+RETIRO+-+RETIRAR+S.A.+E.S.P.%27+AND+id_de_la_empresa+%3D+78&%24limit=100&%24offset=0",
+            "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+            "executed_at": "2026-07-24T22:48:43.991383+00:00",
+            "dataset_name": "Superservicios - Registro de Estaciones de Clasificación y Aprovechamiento-ECA",
+            "data_cutoff_at": "2024-10-17T19:36:28+00:00",
+            "data_updated_at": "2024-10-17T19:36:28+00:00",
+            "chart_suggestion": null,
+            "data_cutoff_basis": "data_updated_at_fallback",
+            "data_cutoff_column": null,
+            "data_cutoff_method": null,
+            "data_cutoff_confidence": null,
+            "data_cutoff_inferred_at": "2026-07-24T22:48:43.991383+00:00"
+          }
+        ],
+        "intention": {
+          "topic": "¿Qué códigos NUECA corresponden a la empresa 78, EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.?",
+          "entity": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P. (78)",
+          "period": null,
+          "operation": "lookup",
+          "territory": null,
+          "administrative_terms": []
+        },
+        "narrative": "Nueca: 2.368.705.607. Además, Nueca: 3.375.205.607. Además, El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.. Además, El valor observado es EN OPERACION. Además, El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.. Además, El valor observado es EN OPERACION.",
+        "textual_facts": [
+          {
+            "fact_id": "0d95db7d-2638-4966-8603-938a2b7171b4",
+            "fact_kind": "textual",
+            "fact": "El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P..",
+            "operation": "direct_text",
+            "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+            "dataset_id": "y97c-tfd9",
+            "source_row_indexes": [
+              0
+            ],
+            "columns": [
+              "dim_1"
+            ],
+            "raw_values": [
+              "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P."
+            ],
+            "normalized_values": [
+              "empresa de servicios de el retiro - retirar s.a. e.s.p."
+            ],
+            "display_value": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+            "normalization_profile": "text-es-v1",
+            "operation_params": {},
+            "algorithm_version": "textual-fact-v1",
+            "source_hash": "sha256-jcs-v1:4e6dabaf24051c4c6e35c7e1f31c89aefbeca2531a78d740cc47c4cd99730fea"
+          },
+          {
+            "fact_id": "fee4a416-5a0a-48ee-97e3-a7aec5d8021c",
+            "fact_kind": "textual",
+            "fact": "El valor observado es EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P..",
+            "operation": "direct_text",
+            "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+            "dataset_id": "y97c-tfd9",
+            "source_row_indexes": [
+              1
+            ],
+            "columns": [
+              "dim_1"
+            ],
+            "raw_values": [
+              "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P."
+            ],
+            "normalized_values": [
+              "empresa de servicios de el retiro - retirar s.a. e.s.p."
+            ],
+            "display_value": "EMPRESA DE SERVICIOS DE EL RETIRO - RETIRAR S.A. E.S.P.",
+            "normalization_profile": "text-es-v1",
+            "operation_params": {},
+            "algorithm_version": "textual-fact-v1",
+            "source_hash": "sha256-jcs-v1:aeeaa01879d1e25239d398e85887f8d48664b4888521c640adcf8eab8ea55373"
+          },
+          {
+            "fact_id": "228c6ec0-3e45-455f-a5a1-d951c4f123a6",
+            "fact_kind": "textual",
+            "fact": "El valor observado es EN OPERACION.",
+            "operation": "direct_text",
+            "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+            "dataset_id": "y97c-tfd9",
+            "source_row_indexes": [
+              0
+            ],
+            "columns": [
+              "dim_3"
+            ],
+            "raw_values": [
+              "EN OPERACION"
+            ],
+            "normalized_values": [
+              "en operacion"
+            ],
+            "display_value": "EN OPERACION",
+            "normalization_profile": "text-es-v1",
+            "operation_params": {},
+            "algorithm_version": "textual-fact-v1",
+            "source_hash": "sha256-jcs-v1:6a6a5ad310c116aff6453cf2f5c325fdabdeea09834aaa5cc5473eb7f3dd260c"
+          },
+          {
+            "fact_id": "19686647-799a-4511-87bd-86336a86ab68",
+            "fact_kind": "textual",
+            "fact": "El valor observado es EN OPERACION.",
+            "operation": "direct_text",
+            "evidence_id": "c701b495-7d7c-49c3-9874-1554adc62c8f",
+            "dataset_id": "y97c-tfd9",
+            "source_row_indexes": [
+              1
+            ],
+            "columns": [
+              "dim_3"
+            ],
+            "raw_values": [
+              "EN OPERACION"
+            ],
+            "normalized_values": [
+              "en operacion"
+            ],
+            "display_value": "EN OPERACION",
+            "normalization_profile": "text-es-v1",
+            "operation_params": {},
+            "algorithm_version": "textual-fact-v1",
+            "source_hash": "sha256-jcs-v1:12b9a70d18d75dc0a3c75843884aa68ed5dd1f3b7b7d6378ed7d861213130650"
+          }
+        ],
+        "no_evidence_report": null,
+        "partial_textual_facts": [],
+        "presentation_warnings": []
+      }
+    }
+  ],
+  "last_event_seq": 15
+}
