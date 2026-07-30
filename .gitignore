@@ -44,3 +44,12 @@ dist/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Playwright (efímero, F0)
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+
+# Configuracion y caches locales de agentes
+.claude/settings.local.json
+.impeccable/hook.cache.json
