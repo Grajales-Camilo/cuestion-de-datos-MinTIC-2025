@@ -166,11 +166,16 @@ test.describe("/app — interrupted (F8-01)", () => {
     await runToInterrupted(page);
 
     await expect(page.getByText("Interrumpido")).toBeVisible();
-    const steps = page.getByRole("list", { name: "Pasos de la investigación" }).getByRole("listitem");
-    // `fixture.steps` es el resumen final del servidor y NO incluye el
-    // evento `start` (step_number 0) que sí llega por SSE y sí se
-    // renderiza; el conteo real de listitems se deriva de los eventos
+    // RF-105-02: los pasos parciales ya no viven en una lista siempre
+    // visible, sino en el modal "Ver detalle técnico" de la tarjeta
+    // condensada. `fixture.steps` es el resumen final del servidor y NO
+    // incluye el evento `start` (step_number 0) que sí llega por SSE y sí
+    // se renderiza; el conteo real de pasos se deriva de los eventos
     // `step` reconstruidos, no del resumen.
+    await page.getByRole("button", { name: "Ver detalle técnico", exact: true }).click();
+    const steps = page
+      .getByRole("dialog", { name: "Detalle técnico de la investigación" })
+      .getByRole("listitem");
     const stepEventCount = fixture.events.filter((entry) => entry.event === "step").length;
     await expect(steps).toHaveCount(stepEventCount);
 
@@ -223,7 +228,10 @@ test.describe("/app — failed (F8-01)", () => {
     await runToFailed(page);
 
     await expect(page.getByText("Fallido")).toBeVisible();
-    const steps = page.getByRole("list", { name: "Pasos de la investigación" }).getByRole("listitem");
+    await page.getByRole("button", { name: "Ver detalle técnico", exact: true }).click();
+    const steps = page
+      .getByRole("dialog", { name: "Detalle técnico de la investigación" })
+      .getByRole("listitem");
     const stepEventCount = fixture.events.filter((entry) => entry.event === "step").length;
     await expect(steps).toHaveCount(stepEventCount);
 

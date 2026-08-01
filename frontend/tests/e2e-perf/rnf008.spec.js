@@ -40,7 +40,10 @@ for (let repetition = 1; repetition <= REPETITIONS; repetition += 1) {
     await expect(page.getByLabel("Copiloto — muestra F3-7A").getByText("Preparando la investigación…")).toBeVisible();
     const feedbackMs = Date.now() - t0;
 
-    await expect(page.getByRole("list", { name: "Pasos de la investigación" }).getByRole("listitem").first()).toBeVisible({
+    // RF-105-02: el primer paso ya no aparece como un <li> en una lista
+    // siempre visible, sino como el mensaje de la tarjeta condensada de
+    // `RunTimeline` — señalada por el botón que abre su detalle técnico.
+    await expect(page.getByRole("button", { name: "Ver detalle técnico", exact: true })).toBeVisible({
       timeout: 2000,
     });
     const firstStepMs = Date.now() - t0;

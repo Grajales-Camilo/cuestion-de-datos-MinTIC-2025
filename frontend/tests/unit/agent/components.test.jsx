@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConnectionStatus } from "../../../components/agent/ConnectionStatus";
 import { IntentSummary } from "../../../components/agent/IntentSummary";
@@ -56,8 +56,8 @@ describe("IntentSummary", () => {
   });
 });
 
-describe("RunTimeline — sin duplicados, cualquier cantidad de pasos", () => {
-  it("renderiza exactamente un <li> por seq único, sin importar la cantidad", () => {
+describe("RunTimeline — tarjeta única con el último paso (RF-105-02)", () => {
+  it("muestra solo el mensaje del ÚLTIMO paso, sin importar cuántos hay", () => {
     const steps = Array.from({ length: 13 }, (_, i) => ({
       seq: i + 1,
       node: "select_candidate",
@@ -65,7 +65,8 @@ describe("RunTimeline — sin duplicados, cualquier cantidad de pasos", () => {
       detail: null,
     }));
     render(<RunTimeline steps={steps} status={RUN_STATUS.STREAMING} />);
-    expect(screen.getAllByRole("listitem")).toHaveLength(13);
+    expect(screen.getByText("Paso 13")).toBeInTheDocument();
+    expect(screen.queryByText("Paso 1")).not.toBeInTheDocument();
   });
 
   it("no fija 9 pasos: funciona igual con 2 pasos", () => {
@@ -74,12 +75,47 @@ describe("RunTimeline — sin duplicados, cualquier cantidad de pasos", () => {
       { seq: 2, node: "execute_query", displayMessage: "Dos", detail: null },
     ];
     render(<RunTimeline steps={steps} status={RUN_STATUS.STREAMING} />);
-    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByText("Dos")).toBeInTheDocument();
+    expect(screen.queryByText("Uno")).not.toBeInTheDocument();
   });
 
   it("sin pasos: no renderiza nada", () => {
     const { container } = render(<RunTimeline steps={[]} status={RUN_STATUS.IDLE} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("'Ver detalle técnico' abre un modal con TODOS los pasos, sin duplicados", async () => {
+    const user = userEvent.setup();
+    const steps = Array.from({ length: 13 }, (_, i) => ({
+      seq: i + 1,
+      node: "select_candidate",
+      displayMessage: `Paso ${i + 1}`,
+      detail: null,
+    }));
+    render(<RunTimeline steps={steps} status={RUN_STATUS.STREAMING} />);
+
+    await user.click(screen.getByRole("button", { name: "Ver detalle técnico" }));
+    const modal = screen.getByRole("dialog", { name: "Detalle técnico de la investigación" });
+    expect(within(modal).getAllByRole("listitem")).toHaveLength(13);
+    expect(within(modal).getByText("Paso 1")).toBeInTheDocument();
+    expect(within(modal).getByText("Paso 13")).toBeInTheDocument();
+  });
+
+  it("el modal refleja pasos nuevos que lleguen mientras está abierto (en vivo)", async () => {
+    const user = userEvent.setup();
+    const initialSteps = [{ seq: 1, node: "select_candidate", displayMessage: "Uno", detail: null }];
+    const { rerender } = render(<RunTimeline steps={initialSteps} status={RUN_STATUS.STREAMING} />);
+
+    await user.click(screen.getByRole("button", { name: "Ver detalle técnico" }));
+    const modal = screen.getByRole("dialog", { name: "Detalle técnico de la investigación" });
+    expect(within(modal).getAllByRole("listitem")).toHaveLength(1);
+
+    const grownSteps = [
+      ...initialSteps,
+      { seq: 2, node: "execute_query", displayMessage: "Dos", detail: null },
+    ];
+    rerender(<RunTimeline steps={grownSteps} status={RUN_STATUS.STREAMING} />);
+    expect(within(modal).getAllByRole("listitem")).toHaveLength(2);
   });
 });
 

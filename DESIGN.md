@@ -192,13 +192,28 @@ escalera de grosores.
 ## Layout
 
 Layout de 3 zonas, ya fijado por `plan.md` §7: navegación mínima superior,
-lienzo central (documento de política), copiloto lateral colapsable
-(investigación en curso). La Variante A — Ruta central (aprobada en
-DESIGN-01) organiza la investigación dentro del copiloto como un recorrido
-vertical continuo con línea conectora, donde la evidencia final se funde
-como el último punto de la ruta. Responsive y reflujo sin scroll horizontal
-a 320 px son invariantes de aceptación, verificadas en F1-01 sobre la
-galería de primitivas (`frontend/pages/_dev/ui.js`).
+lienzo central (documento de política), copiloto lateral (investigación en
+curso). El límite entre lienzo y copiloto es un divisor arrastrable y
+operable por teclado (`CopilotPanel.jsx`, RF-105-02) — el ancho del
+copiloto ya no es fijo. Responsive y reflujo sin scroll horizontal a 320 px
+son invariantes de aceptación, verificadas en F1-01 sobre la galería de
+primitivas (`frontend/pages/_dev/ui.js`).
+
+**Revisión RF-105-02 sobre DESIGN-01 (Variante A — Ruta central):** la
+implementación original organizaba los pasos como un recorrido vertical
+continuo con línea conectora, un `<li>` por paso. Con investigaciones
+largas obligaba a desplazarse hasta el final para ver el estado actual.
+Ahora `RunTimeline` muestra una sola tarjeta condensada con el ÚLTIMO paso
+recibido (icono de actividad sutil, sin contador de pasos ni porcentaje
+inventado); el historial completo con su detalle técnico sigue disponible,
+sin perder nada, en `StepDetailModal` ("Ver detalle técnico") — un
+selector donde el usuario elige QUÉ paso desplegar, actualizado en vivo
+mientras la investigación sigue corriendo. La evidencia final ya no se
+funde como último punto de la ruta: es un bloque propio (`TerminalPanel`)
+debajo de la tarjeta de estado. La idea de "investigación como ruta
+verificable" se conserva a nivel de producto (cada paso sigue siendo
+observable y auditable); lo que cambia es que la ruta completa se consulta
+bajo demanda en vez de estar siempre expandida.
 
 Espaciado: escala 4/8 px (`--cdt-space-1` … `--cdt-space-16`, de 4px a
 64px). Tamaño táctil mínimo: 44×44 px (`--cdt-tap-min`), aplicado a todo
@@ -315,9 +330,10 @@ legacy).
 ## Do's and Don'ts
 
 ### Do:
-- **Do** presentar cada paso del agente como un punto verificable en una
-  ruta (texto de estado en español claro + posibilidad de expandir detalle
-  técnico), nunca como un mensaje de chat entrante.
+- **Do** presentar el paso actual del agente en español claro, con acceso a
+  su historial completo y detalle técnico bajo demanda (`StepDetailModal`),
+  nunca como un mensaje de chat entrante ni como una lista que obligue a
+  desplazarse para ver el estado más reciente.
 - **Do** mostrar la cadena dataset → entidad → consulta → validación → cifra
   de forma visible y citable en cada pieza de evidencia.
 - **Do** dejar la interfaz visualmente en reposo cuando no hay investigación

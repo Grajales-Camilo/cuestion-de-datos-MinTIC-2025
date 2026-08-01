@@ -67,15 +67,22 @@ Aprobada explícitamente por Juan Camilo Grajales B. (2026-07-27) entre las
 (`docs/frontend-v2/design/design-01/variant-a-ruta-central.html`,
 capturas en `docs/frontend-v2/design/design-01/screenshots/`).
 
-**Patrón estructural vigente en la implementación funcional de
-`RunTimeline`:** los pasos de la
-investigación forman una ruta vertical continua con línea conectora dentro
-del copiloto; cada paso es un punto de esa ruta (icono de verificación +
-mensaje en español claro + tiempo transcurrido); la tarjeta de evidencia
-final se funde como el último punto de la ruta — el destino, no un bloque
-aparte. La ruta y la evidencia comparten un solo eje visual continuo de
-arriba a abajo. La implementación usa las primitivas `Card`, `Badge` y los
-tokens de espaciado/color construidos desde F1-01.
+**Patrón estructural original (F1-01–F1-05):** los pasos de la
+investigación formaban una ruta vertical continua con línea conectora
+dentro del copiloto; cada paso era un punto de esa ruta (icono de
+verificación + mensaje en español claro + tiempo transcurrido); la tarjeta
+de evidencia final se fundía como el último punto de la ruta.
+
+**Revisión RF-105-02 (posterior, aprobada explícitamente por el usuario):**
+con investigaciones largas, desplazarse hasta el final para ver el estado
+actual dejó de ser usable. `RunTimeline` ahora muestra una sola tarjeta
+condensada con el ÚLTIMO paso; el historial completo con su detalle
+técnico vive en `StepDetailModal` ("Ver detalle técnico"), un selector que
+se actualiza en vivo. La evidencia (`TerminalPanel`) ya no se funde como
+último punto de la ruta: es un bloque propio debajo de la tarjeta de
+estado. Ver DESIGN.md, sección Layout, para el detalle completo — este
+brief ya no describe el layout vigente del copiloto en ese punto
+específico.
 
 **Reglas que la implementación debe preservar frente al comp estático:**
 - El contenido (pregunta, 8 pasos concretos, cifra `3,9660000000000000`,
