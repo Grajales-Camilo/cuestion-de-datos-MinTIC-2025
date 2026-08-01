@@ -200,11 +200,12 @@ function collectUnsupportedWarnings(zip, documentXml, unsafeLinkCount) {
       countMatches(documentXml, /<(?:w:drawing|w:pict)\b/giu) +
       names.filter((name) => /^word\/media\//iu.test(name)).length,
     headersFooters: names.filter((name) => /^word\/(?:header|footer)\d*\.xml$/iu.test(name)).length,
-    comments:
-      names.filter((name) => /^word\/comments(?:Extended)?\.xml$/iu.test(name)).length +
-      countMatches(documentXml, /<w:comment(?:RangeStart|RangeEnd|Reference)\b/giu),
+    // `docx` y Word pueden incluir parts vacíos de comments/footnotes como
+    // infraestructura del paquete. Solo advertimos cuando el documento
+    // principal contiene una referencia real, para no fabricar descartes.
+    comments: countMatches(documentXml, /<w:comment(?:RangeStart|RangeEnd|Reference)\b/giu),
     trackedChanges: countMatches(documentXml, /<w:(?:ins|del|moveFrom|moveTo)\b/giu),
-    notes: names.filter((name) => /^word\/(?:footnotes|endnotes)\.xml$/iu.test(name)).length,
+    notes: countMatches(documentXml, /<w:(?:footnoteReference|endnoteReference)\b/giu),
     equations: countMatches(documentXml, /<m:oMath(?:Para)?\b/giu),
     fields: countMatches(documentXml, /<w:(?:fldSimple|instrText)\b/giu),
     embeddedObjects:

@@ -111,9 +111,18 @@ export async function addUnsupportedSyntheticParts(buffer) {
   return mutateSyntheticDocx(buffer, async (zip) => {
     zip.file("word/header1.xml", "<w:hdr/>");
     zip.file("word/footer1.xml", "<w:ftr/>");
-    zip.file("word/comments.xml", "<w:comments/>");
-    zip.file("word/footnotes.xml", "<w:footnotes/>");
-    zip.file("word/endnotes.xml", "<w:endnotes/>");
+    zip.file(
+      "word/comments.xml",
+      '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="1"><w:p><w:r><w:t>Comentario sintético</w:t></w:r></w:p></w:comment></w:comments>',
+    );
+    zip.file(
+      "word/footnotes.xml",
+      '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="1"><w:p><w:r><w:t>Nota sintética</w:t></w:r></w:p></w:footnote></w:footnotes>',
+    );
+    zip.file(
+      "word/endnotes.xml",
+      '<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="1"><w:p><w:r><w:t>Nota final sintética</w:t></w:r></w:p></w:endnote></w:endnotes>',
+    );
     zip.file("word/embeddings/object1.bin", new Uint8Array([1, 2, 3]));
     const path = "word/document.xml";
     const xml = await zip.file(path).async("string");
@@ -121,7 +130,7 @@ export async function addUnsupportedSyntheticParts(buffer) {
       path,
       xml.replace(
         "</w:body>",
-        '<w:p><w:ins><w:r><w:t>Cambio sintético</w:t></w:r></w:ins><w:fldSimple w:instr="DATE"><w:r><w:t>Campo</w:t></w:r></w:fldSimple><m:oMath/></w:p></w:body>',
+        '<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>Texto comentado</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r><w:r><w:footnoteReference w:id="1"/><w:endnoteReference w:id="1"/></w:r><w:ins><w:r><w:t>Cambio sintético</w:t></w:r></w:ins><w:fldSimple w:instr="DATE"><w:r><w:t>Campo</w:t></w:r></w:fldSimple><m:oMath/></w:p></w:body>',
       ),
     );
   });

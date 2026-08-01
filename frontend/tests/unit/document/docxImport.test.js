@@ -62,6 +62,7 @@ describe("DOCX-IMPORT-01 — parser/conversor local", () => {
     expect(JSON.stringify(result.model)).not.toContain("evidenceCitation");
     expect(JSON.stringify(result.model)).not.toContain("manualEntry");
     expect(JSON.stringify(result.model)).not.toContain("datasetId");
+    expect(result.warnings).toEqual([]);
   });
 
   it("admite enlace HTTP/HTTPS y descarta protocolos inseguros conservando el texto", async () => {

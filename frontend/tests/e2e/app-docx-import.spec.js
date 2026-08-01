@@ -59,6 +59,7 @@ test.describe("/app — DOCX-IMPORT-01 local y controlado", () => {
     await expect(summary.getByText(/encabezados/)).toBeVisible();
     await expect(summary.getByText(/párrafos/)).toBeVisible();
     await expect(summary.getByText(/enlaces seguros/)).toBeVisible();
+    await expect(summary.getByText("No se detectaron elementos que deban descartarse o simplificarse.")).toBeVisible();
     await expect(summary.getByText(/no se convertirá en evidencia verificada/i)).toBeVisible();
 
     // Cancelar desde el resumen no toca el editor actual y devuelve el foco
