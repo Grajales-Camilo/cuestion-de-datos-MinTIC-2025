@@ -1,217 +1,189 @@
-import React, { useState } from 'react';
-import Head from 'next/head';
-import { motion, AnimatePresence } from 'framer-motion';
-import IntroStep from '../components/wizard/IntroStep';
-import ApiStep from '../components/wizard/ApiStep';
-import DatabaseStep from '../components/wizard/DatabaseStep';
-import PolicyCanvasMain from '../components/canvas/PolicyCanvasMain';
-import HelpStep from '../components/wizard/HelpStep';
+import Head from "next/head";
+import {
+  Search,
+  ShieldCheck,
+  FileCheck2,
+  Quote,
+  ChevronRight,
+} from "lucide-react";
+import { Button, Card, CardBody } from "../components/ui";
+
+const CONFIANZA_CHAIN = ["Dataset", "Entidad", "Consulta", "Validación", "Cifra"];
+
+const PASOS = [
+  {
+    icon: Search,
+    titulo: "Preguntas o señalas una sección",
+    texto:
+      "Escribes una pregunta libre o disparas la investigación desde una sección de tu documento de política pública.",
+  },
+  {
+    icon: FileCheck2,
+    titulo: "El agente investiga el catálogo",
+    texto:
+      "Un agente de varios pasos busca en el catálogo completo de datos.gov.co y ejecuta la consulta necesaria, nunca sobre una lista fija de datasets.",
+  },
+  {
+    icon: ShieldCheck,
+    titulo: "Cada dato pasa validación de calidad",
+    texto:
+      "Esquema, completitud, temporalidad y trazabilidad se verifican antes de que cualquier evidencia se muestre.",
+  },
+  {
+    icon: Quote,
+    titulo: "Insertas la evidencia con su cita",
+    texto:
+      "Tabla, narrativa citable y cita completa (dataset, entidad, consulta, fecha) se insertan en tu documento, listo para exportar a Word.",
+  },
+];
 
 export default function Home() {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [direction, setDirection] = useState(0); // 1 for next, -1 for prev
-
-  const nextStep = () => {
-    setDirection(1);
-    setCurrentStep(prev => prev + 1);
-  };
-
-  const prevStep = () => {
-    setDirection(-1);
-    setCurrentStep(prev => Math.max(0, prev - 1));
-  };
-
-  const goToStep = (step) => {
-    if (step === currentStep) return;
-    setDirection(step > currentStep ? 1 : -1);
-    setCurrentStep(step);
-  };
-
-  // Variants for slide animation
-  const variants = {
-    enter: (direction) => ({
-      x: direction > 0 ? 1000 : -1000,
-      opacity: 0
-    }),
-    center: {
-      zIndex: 1,
-      x: 0,
-      opacity: 1
-    },
-    exit: (direction) => ({
-      zIndex: 0,
-      x: direction < 0 ? 1000 : -1000,
-      opacity: 0
-    })
-  };
-
   return (
-    <div className="min-h-screen bg-slate-950 font-sans text-slate-50 overflow-hidden relative selection:bg-cyan-500 selection:text-slate-900">
+    <div className="cdt-v2 flex min-h-screen flex-col bg-cdt-white">
       <Head>
-        <title>Cuestión de Datos | AI Policy Lab</title>
-        <meta name="description" content="Plataforma de formulación de políticas públicas basada en evidencia." />
+        <title>Cuestión de Datos — Evidencia trazable para política pública</title>
+        <meta
+          name="description"
+          content="Encuentra, consulta y valida evidencia cuantitativa del catálogo de datos abiertos del Estado colombiano, con trazabilidad completa: dataset, entidad, consulta y fecha."
+        />
       </Head>
 
-      {/* Background Effects */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/20 rounded-full blur-[120px] animate-pulse-slow"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600/20 rounded-full blur-[120px] animate-pulse-slow delay-1000"></div>
-      </div>
+      <a
+        href="#contenido"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-cdt-4 focus:top-cdt-4 focus:z-50 focus:rounded-cdt-md focus:bg-cdt-blue-900 focus:px-cdt-4 focus:py-cdt-2 focus:text-cdt-white"
+      >
+        Saltar al contenido
+      </a>
 
-      {/* Wizard Header / Progress */}
-      <header className="fixed top-0 left-0 right-0 bg-slate-900/80 backdrop-blur-md border-b border-white/10 z-50 h-20 flex items-center justify-between px-8 shadow-2xl">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => goToStep(0)}>
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-cyan-500 rounded-xl flex items-center justify-center text-white font-bold shadow-lg shadow-blue-500/20">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
-          </div>
-          <div>
-            <h1 className="font-bold text-lg tracking-tight text-white">Cuestión de Datos</h1>
-            <p className="text-[10px] text-cyan-400 font-mono tracking-widest uppercase">MinTIC • ActRAG para políticas públicas</p>
-          </div>
-        </div>
-
-        {/* Navigation Dots */}
-        <div className="flex items-center gap-4">
-          {[0, 1, 2, 3, 4].map((step) => (
-            <button
-              key={step}
-              onClick={() => goToStep(step)}
-              className="group relative flex flex-col items-center gap-2 focus:outline-none"
-            >
-              <div
-                className={`w-3 h-3 rounded-full transition-all duration-500 z-10 ${step === currentStep
-                  ? 'bg-cyan-400 scale-125 shadow-[0_0_10px_rgba(34,211,238,0.8)]'
-                  : step < currentStep
-                    ? 'bg-blue-600'
-                    : 'bg-slate-700 group-hover:bg-slate-600'
-                  }`}
-              />
-              {step < 4 && (
-                <div
-                  className={`absolute top-1.5 left-[50%] w-[calc(100%+1rem)] h-0.5 -z-0 transition-colors duration-500 ${step < currentStep ? 'bg-blue-600' : 'bg-slate-800'
-                    }`}
-                />
-              )}
-              <span className={`text-[10px] font-medium transition-colors ${step === currentStep ? 'text-cyan-400' : 'text-slate-500'
-                }`}>
-                {['Intro', 'Motores', 'Datos', 'Lienzo', 'Ayuda'][step]}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-4">
-          {currentStep > 0 && (
-            <button
-              onClick={prevStep}
-              className="text-slate-400 hover:text-white transition-colors text-sm font-medium px-4 py-2"
-            >
-              Atrás
-            </button>
-          )}
-          <div className="text-xs text-slate-500 font-mono border border-slate-800 px-2 py-1 rounded bg-slate-900">
-            v0.1.1-beta
-          </div>
-        </div>
+      <header className="flex items-center justify-between border-b border-cdt-blue-100 px-cdt-4 py-cdt-3 sm:px-cdt-8">
+        <h1 className="text-cdt-lg font-cdt-bold text-cdt-blue-900">Cuestión de Datos</h1>
+        <Button as="a" href="/app" variant="primary">
+          Abrir el lienzo
+        </Button>
       </header>
 
-      {/* Main Content Area */}
-      <main className={`pt-24 pb-12 px-6 min-h-screen flex flex-col relative z-10 ${currentStep === 3 ? '' : 'justify-center'}`}>
-        <AnimatePresence initial={false} custom={direction} mode="wait">
-          {currentStep === 0 && (
-            <motion.div
-              key="step0"
-              custom={direction}
-              variants={variants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                x: { type: "spring", stiffness: 300, damping: 30 },
-                opacity: { duration: 0.2 }
-              }}
-              className="w-full"
-            >
-              <IntroStep onNext={nextStep} />
-            </motion.div>
-          )}
+      <main id="contenido" tabIndex={-1} className="flex-1">
+        {/* Hero */}
+        <section className="px-cdt-4 py-cdt-16 sm:px-cdt-8">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-cdt-sm font-cdt-bold uppercase tracking-wide text-cdt-blue-700">
+              Copiloto de evidencia para política pública
+            </p>
+            <h2 className="mt-cdt-4 text-cdt-2xl font-cdt-bold leading-cdt-tight text-cdt-slate-900">
+              Cada cifra de tu documento, con su fuente a la vista
+            </h2>
+            <p className="mx-auto mt-cdt-4 max-w-2xl text-cdt-base leading-cdt-relaxed text-cdt-slate-600">
+              Cuestión de Datos investiga el catálogo de datos abiertos del Estado
+              colombiano y entrega cada cifra con su cadena de trazabilidad
+              completa. Cuando no hay evidencia elegible, lo dice explícitamente
+              en vez de estimar.
+            </p>
+            <div className="mt-cdt-8 flex flex-col items-center justify-center gap-cdt-3 sm:flex-row">
+              <Button as="a" href="/app" variant="primary" className="w-full sm:w-auto">
+                Abrir el lienzo de políticas
+              </Button>
+              <Button
+                as="a"
+                href="#como-funciona"
+                variant="quiet"
+                className="w-full sm:w-auto"
+              >
+                Ver cómo funciona
+              </Button>
+            </div>
 
-          {currentStep === 1 && (
-            <motion.div
-              key="step1"
-              custom={direction}
-              variants={variants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                x: { type: "spring", stiffness: 300, damping: 30 },
-                opacity: { duration: 0.2 }
-              }}
-              className="w-full h-full"
-            >
-              <ApiStep onNext={nextStep} onPrev={prevStep} />
-            </motion.div>
-          )}
+            <Card className="mx-auto mt-cdt-12 max-w-xl bg-cdt-blue-50/60">
+              <CardBody>
+                <p className="text-cdt-xs font-cdt-bold uppercase tracking-wide text-cdt-blue-900">
+                  La cadena de confianza detrás de cada cifra
+                </p>
+                <div className="mt-cdt-3 flex flex-wrap items-center justify-center gap-cdt-2">
+                  {CONFIANZA_CHAIN.map((eslabon, index) => (
+                    <span key={eslabon} className="flex items-center gap-cdt-2">
+                      <span className="rounded-cdt-full bg-cdt-blue-100 px-cdt-3 py-cdt-1 text-cdt-xs font-cdt-bold text-cdt-blue-900">
+                        {eslabon}
+                      </span>
+                      {index < CONFIANZA_CHAIN.length - 1 ? (
+                        <ChevronRight
+                          className="h-4 w-4 text-cdt-blue-500"
+                          aria-hidden="true"
+                          focusable="false"
+                        />
+                      ) : null}
+                    </span>
+                  ))}
+                </div>
+              </CardBody>
+            </Card>
+          </div>
+        </section>
 
-          {currentStep === 2 && (
-            <motion.div
-              key="step2"
-              custom={direction}
-              variants={variants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                x: { type: "spring", stiffness: 300, damping: 30 },
-                opacity: { duration: 0.2 }
-              }}
-              className="w-full h-full"
-            >
-              <DatabaseStep onNext={nextStep} onPrev={prevStep} />
-            </motion.div>
-          )}
+        {/* Cómo funciona */}
+        <section
+          id="como-funciona"
+          className="border-t border-cdt-blue-100 bg-cdt-blue-50 px-cdt-4 py-cdt-16 sm:px-cdt-8"
+        >
+          <div className="mx-auto max-w-3xl">
+            <h2 className="text-center text-cdt-xl font-cdt-bold text-cdt-slate-900">
+              Cómo funciona
+            </h2>
+            <ol className="relative mt-cdt-10 flex flex-col gap-cdt-8 border-l border-cdt-blue-100 pl-cdt-6">
+              {PASOS.map((paso, index) => {
+                const Icon = paso.icon;
+                return (
+                  <li key={paso.titulo} className="relative">
+                    <span
+                      className="absolute -left-[calc(1.5rem+9px)] flex h-cdt-6 w-cdt-6 items-center justify-center rounded-cdt-full bg-cdt-blue-700 text-cdt-white"
+                      aria-hidden="true"
+                    >
+                      <Icon className="h-3.5 w-3.5" focusable="false" />
+                    </span>
+                    <p className="text-cdt-sm font-cdt-bold text-cdt-blue-900">
+                      {index + 1}. {paso.titulo}
+                    </p>
+                    <p className="mt-cdt-1 text-cdt-base leading-cdt-relaxed text-cdt-slate-600">
+                      {paso.texto}
+                    </p>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        </section>
 
-          {currentStep === 3 && (
-            <motion.div
-              key="step3"
-              custom={direction}
-              variants={variants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                x: { type: "spring", stiffness: 300, damping: 30 },
-                opacity: { duration: 0.2 }
-              }}
-              className="w-full h-full"
-            >
-              {/* Renderizamos el Canvas dentro del layout del Wizard pero ajustando su altura */}
-              <div className="h-[calc(100vh-8rem)] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
-                <PolicyCanvasMain onBack={prevStep} />
-              </div>
-            </motion.div>
-          )}
-
-          {currentStep === 4 && (
-            <motion.div
-              key="step4"
-              custom={direction}
-              variants={variants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{
-                x: { type: "spring", stiffness: 300, damping: 30 },
-                opacity: { duration: 0.2 }
-              }}
-              className="w-full h-full"
-            >
-              <HelpStep onPrev={() => goToStep(3)} />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Confianza y honestidad */}
+        <section className="px-cdt-4 py-cdt-16 sm:px-cdt-8">
+          <div className="mx-auto grid max-w-3xl gap-cdt-6 sm:grid-cols-2">
+            <Card>
+              <CardBody>
+                <p className="text-cdt-sm font-cdt-bold text-cdt-blue-900">Cero fabricación</p>
+                <p className="mt-cdt-2 text-cdt-base leading-cdt-relaxed text-cdt-slate-600">
+                  Ninguna cifra se presenta sin evidencia trazable. Si no hay
+                  evidencia elegible en el catálogo, el sistema lo dice
+                  explícitamente en vez de estimar.
+                </p>
+              </CardBody>
+            </Card>
+            <Card>
+              <CardBody>
+                <p className="text-cdt-sm font-cdt-bold text-cdt-blue-900">
+                  Sin cuentas de usuario
+                </p>
+                <p className="mt-cdt-2 text-cdt-base leading-cdt-relaxed text-cdt-slate-600">
+                  El acceso a una investigación guardada usa un token de alcance
+                  mínimo y expirable por corrida. Antes de tu primera
+                  investigación te decimos qué se guarda, para qué, por cuánto
+                  tiempo y cómo borrarlo.
+                </p>
+              </CardBody>
+            </Card>
+          </div>
+        </section>
       </main>
+
+      <footer className="border-t border-cdt-blue-100 px-cdt-4 py-cdt-6 text-center sm:px-cdt-8">
+        <p className="text-cdt-xs text-cdt-slate-400">Cuestión de Datos</p>
+      </footer>
     </div>
   );
 }

@@ -19,6 +19,7 @@ const VARIANT_CLASSES = {
 
 export const Button = forwardRef(function Button(
   {
+    as: Component = "button",
     variant = "primary",
     loading = false,
     disabled = false,
@@ -30,11 +31,13 @@ export const Button = forwardRef(function Button(
   ref
 ) {
   const isDisabled = disabled || loading;
+  const isButtonElement = Component === "button";
   return (
-    <button
+    <Component
       ref={ref}
-      type={type}
-      disabled={isDisabled}
+      type={isButtonElement ? type : undefined}
+      disabled={isButtonElement ? isDisabled : undefined}
+      aria-disabled={!isButtonElement && isDisabled ? true : undefined}
       aria-busy={loading || undefined}
       className={cx(
         "inline-flex items-center justify-center gap-cdt-2 rounded-cdt-md px-cdt-4",
@@ -50,7 +53,7 @@ export const Button = forwardRef(function Button(
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" focusable="false" />
       ) : null}
       {children}
-    </button>
+    </Component>
   );
 });
 
