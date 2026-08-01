@@ -139,10 +139,20 @@ export default function AppPage() {
   // usuario) puede sacar a `documentModel` de `null` en ese caso.
   const [documentModel, setDocumentModel] = useState(null);
   const autosave = useDocumentAutosave();
+  // La restauración inicial desde `localStorage` debe sembrar `documentModel`
+  // como MUCHO una vez por carga de página. Sin esta guarda, "Cerrar"
+  // (RF-105) volvería a traer el documento restaurado de inmediato: al
+  // poner `documentModel` en `null`, este mismo efecto se re-ejecuta (está
+  // en sus dependencias) y `autosave.restoredDocument` sigue siendo el
+  // mismo objeto no nulo de la restauración original (ese estado nunca se
+  // limpia después del montaje).
+  const hasSeededDocumentRef = useRef(false);
 
   useEffect(() => {
+    if (hasSeededDocumentRef.current) return;
     if (documentModel !== null || autosave.isRestoring) return;
     if (autosave.restoredDocument === null) return; // awaiting-template: espera selección del usuario
+    hasSeededDocumentRef.current = true;
     setDocumentModel(autosave.restoredDocument);
   }, [documentModel, autosave.isRestoring, autosave.restoredDocument]);
 
@@ -153,7 +163,17 @@ export default function AppPage() {
   // (`notifyChange`, más abajo) — esta función nunca escribe en
   // `localStorage` directamente.
   const handleCreateDocument = useCallback((templateId) => {
+    hasSeededDocumentRef.current = true;
     setDocumentModel(createTemplateDocument(templateId));
+  }, []);
+
+  // Archivo > Cerrar (RF-105): vuelve al selector de plantillas. NO borra
+  // nada de `localStorage` — el documento actual sigue autoguardado tal
+  // cual y reaparece si el usuario recarga la página; solo deja de
+  // mostrarse en esta pestaña hasta que se elija (y confirme, ver
+  // `DocumentMenuBar`) una plantilla nueva.
+  const handleCloseDocument = useCallback(() => {
+    setDocumentModel(null);
   }, []);
 
   useEffect(() => {
@@ -420,6 +440,7 @@ export default function AppPage() {
                 editorActivityTick={editorActivityTick}
                 exportButtonRef={exportButtonRef}
                 onCreateDocument={handleCreateDocument}
+                onCloseDocument={handleCloseDocument}
                 onFeedback={setDocumentFeedback}
               />
             </div>

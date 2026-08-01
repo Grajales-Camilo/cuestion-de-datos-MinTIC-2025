@@ -96,6 +96,26 @@ test.describe("Menú del documento (RF-105)", () => {
     await expect(page.getByRole("textbox", { name: "Documento de trabajo: Problemática" })).toBeVisible();
   });
 
+  test("Archivo > Cerrar vuelve al selector de plantillas sin borrar el autoguardado", async ({ page }) => {
+    await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page);
+
+    const editor = page.getByRole("textbox", { name: "Documento de trabajo: Sección 1" });
+    await editor.click();
+    await page.keyboard.type("Contenido que debe sobrevivir");
+    // Debounce de autoguardado (`DEFAULT_DEBOUNCE_MS`, ver useDocumentAutosave.js).
+    await page.waitForTimeout(5500);
+
+    await page.getByRole("menuitem", { name: "Archivo" }).click();
+    await page.getByRole("menuitem", { name: "Cerrar" }).click();
+    await expect(page.getByText("Elige una plantilla para tu documento")).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole("textbox", { name: "Documento de trabajo: Sección 1" })).toContainText(
+      "Contenido que debe sobrevivir",
+    );
+  });
+
   test("Editar > Insertar dato manual abre el mismo formulario que el botón de la sección", async ({ page }) => {
     await page.goto(APP_URL);
     await createFreeDocumentViaPicker(page);

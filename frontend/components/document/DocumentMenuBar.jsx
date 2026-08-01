@@ -10,6 +10,7 @@ import {
   PenLine,
   Redo2,
   Undo2,
+  X,
 } from "lucide-react";
 import {
   MenuBar,
@@ -57,7 +58,9 @@ function triggerBackupDownload(documentModel) {
  * `DocumentSections.jsx`). "Nuevo" y "Descargar" duplican, sin quitarlos,
  * el selector de plantillas inicial y el botón "Exportar en Word"
  * existentes — son accesos adicionales al mismo camino real, no una
- * reimplementación.
+ * reimplementación. "Cerrar" NO borra nada de `localStorage`: solo vuelve
+ * al selector de plantillas (`onCloseDocument`, ver `pages/app.js`); el
+ * documento sigue autoguardado y reaparece si se recarga la página.
  */
 export function DocumentMenuBar({
   documentModel,
@@ -65,6 +68,7 @@ export function DocumentMenuBar({
   editorActivityTick,
   exportButtonRef,
   onCreateDocument,
+  onCloseDocument,
   onFeedback,
 }) {
   const [pendingTemplateId, setPendingTemplateId] = useState(null);
@@ -121,6 +125,10 @@ export function DocumentMenuBar({
           <MenuDivider />
           <MenuItem icon={Download} onSelect={() => exportButtonRef?.current?.click()}>
             Descargar (.docx)
+          </MenuItem>
+          <MenuDivider />
+          <MenuItem icon={X} onSelect={() => onCloseDocument?.()}>
+            Cerrar
           </MenuItem>
         </Menu>
 
