@@ -117,6 +117,35 @@ cada criterio de aceptación necesita una ejecución real y su evidencia.
 `npm run test:e2e` genera `frontend/test-results/` (artefacto efímero de
 Playwright); está en `.gitignore` de la raíz y no debe versionarse.
 
+### Importación local de DOCX (DOCX-IMPORT-01)
+
+`Archivo → Importar documento (.docx)` abre un DOCX como documento nuevo de
+tipo libre. Esta capacidad es una extensión autorizada por el usuario,
+relacionada con RF-101, RF-102, RF-103 y RNF-011; no es un requisito original
+del SDD ni autoriza marcar automáticamente una tarea normativa como cumplida.
+
+La importación se ejecuta completamente en el navegador. El clic que abre el
+selector prepara un Worker de JavaScript same-origin; después de seleccionar
+el archivo, sus bytes solo se transfieren en memoria a ese Worker. No se usa el
+backend, Gemini, Socrata, Vercel Functions ni un recurso externo. Mammoth
+`1.12.0` —versión exacta— realiza la conversión OOXML y JSZip, ya presente,
+solo inspecciona límites y estructura antes de convertir. El HTML intermedio
+no se monta: se recorre con `DOMParser` para construir JSON validado del editor.
+
+Límites principales: solo `.docx`, máximo 10 MiB, firma y MIME compatibles,
+paquete ZIP acotado (entradas, expansión, archivo individual y razón de
+compresión), relaciones externas bloqueadas salvo hipervínculos HTTP/HTTPS y
+timeout cancelable de 20 segundos. Macros, cifrado, paquetes dudosos y recursos
+externos fallan de forma cerrada sin reemplazar el documento actual.
+
+Pruebas focalizadas reproducibles con fixtures sintéticos:
+
+```powershell
+npm run test -- tests/unit/document/docxImport.test.js
+npm run test -- tests/unit/document/DocxImportFlow.test.jsx tests/unit/document/docxImportClient.test.js
+node scripts/run-e2e.mjs tests/e2e/app-docx-import.spec.js --workers=1
+```
+
 ### Verificación reproducible del `.docx` exportado con Microsoft Word (F6-02B-R1)
 
 `scripts/verify-docx-word.ps1` abre en Word real, en solo lectura y sin

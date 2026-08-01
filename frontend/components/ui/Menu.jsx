@@ -45,7 +45,7 @@ export function MenuBar({ ariaLabel, className, children }) {
 
 /** Un menú de nivel superior (p. ej. "Archivo"). `children` son `MenuItem`,
  * `MenuCheckboxItem`, `MenuRadioItem`, `MenuGroup` o `MenuDivider`. */
-export function Menu({ label, children }) {
+export function Menu({ label, children, triggerRef: externalTriggerRef }) {
   const id = useId();
   const bar = useContext(MenuBarContext);
   const triggerRef = useRef(null);
@@ -139,7 +139,10 @@ export function Menu({ label, children }) {
   return (
     <div className="relative">
       <button
-        ref={triggerRef}
+        ref={(node) => {
+          triggerRef.current = node;
+          if (externalTriggerRef) externalTriggerRef.current = node;
+        }}
         id={`menu-trigger-${id}`}
         type="button"
         role="menuitem"

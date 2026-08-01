@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   AlignCenter,
   AlignJustify,
@@ -7,6 +7,7 @@ import {
   ClipboardPaste,
   Download,
   FilePlus2,
+  FileUp,
   PenLine,
   Redo2,
   Undo2,
@@ -25,6 +26,7 @@ import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { buildDocumentBackupPayload } from "../../lib/document/documentStorage";
 import { FREE_TEMPLATE_ID, MGA_TEMPLATE_ID, PLAN_DE_DESARROLLO_TEMPLATE_ID } from "../../lib/document/documentModel";
+import { DocxImportFlow } from "./DocxImportFlow";
 
 const NEW_DOCUMENT_TEMPLATES = [
   { templateId: FREE_TEMPLATE_ID, label: "Documento libre" },
@@ -68,10 +70,13 @@ export function DocumentMenuBar({
   editorActivityTick,
   exportButtonRef,
   onCreateDocument,
+  onImportDocument,
   onCloseDocument,
   onFeedback,
 }) {
   const [pendingTemplateId, setPendingTemplateId] = useState(null);
+  const importFlowRef = useRef(null);
+  const fileMenuTriggerRef = useRef(null);
 
   const activeEditor = documentSectionsRef.current?.getActiveEditor() ?? null;
   const isActive = (name, attrs) => activeEditor?.isActive(name, attrs) ?? false;
@@ -114,7 +119,7 @@ export function DocumentMenuBar({
   return (
     <>
       <MenuBar ariaLabel="Menú del documento" className="px-cdt-2 py-cdt-1">
-        <Menu label="Archivo">
+        <Menu label="Archivo" triggerRef={fileMenuTriggerRef}>
           <MenuGroup label="Nuevo">
             {NEW_DOCUMENT_TEMPLATES.map((template) => (
               <MenuItem key={template.templateId} icon={FilePlus2} onSelect={() => setPendingTemplateId(template.templateId)}>
@@ -122,6 +127,9 @@ export function DocumentMenuBar({
               </MenuItem>
             ))}
           </MenuGroup>
+          <MenuItem icon={FileUp} onSelect={() => importFlowRef.current?.selectFile()}>
+            Importar documento (.docx)
+          </MenuItem>
           <MenuDivider />
           <MenuItem icon={Download} onSelect={() => exportButtonRef?.current?.click()}>
             Descargar (.docx)
@@ -215,6 +223,14 @@ export function DocumentMenuBar({
           </MenuGroup>
         </Menu>
       </MenuBar>
+
+      <DocxImportFlow
+        ref={importFlowRef}
+        currentDocument={documentModel}
+        onImport={onImportDocument}
+        onFeedback={onFeedback}
+        returnFocusRef={fileMenuTriggerRef}
+      />
 
       <Modal
         open={pendingTemplateId !== null}

@@ -138,6 +138,7 @@ export default function AppPage() {
   // `handleCreateDocument` (disparado por la confirmación explícita del
   // usuario) puede sacar a `documentModel` de `null` en ese caso.
   const [documentModel, setDocumentModel] = useState(null);
+  const [documentGeneration, setDocumentGeneration] = useState(0);
   const autosave = useDocumentAutosave();
   // La restauración inicial desde `localStorage` debe sembrar `documentModel`
   // como MUCHO una vez por carga de página. Sin esta guarda, "Cerrar"
@@ -164,7 +165,18 @@ export default function AppPage() {
   // `localStorage` directamente.
   const handleCreateDocument = useCallback((templateId) => {
     hasSeededDocumentRef.current = true;
+    setDocumentGeneration((value) => value + 1);
     setDocumentModel(createTemplateDocument(templateId));
+  }, []);
+
+  // DOCX-IMPORT-01 (extensión autorizada de RF-101/RF-102/RF-103,
+  // RNF-011): el modelo ya llega validado desde el conversor local. Esta es
+  // la ÚNICA mutación del documento activo y solo se invoca después de la
+  // confirmación del resumen/advertencias en `DocxImportFlow`.
+  const handleImportDocument = useCallback((importedDocument) => {
+    hasSeededDocumentRef.current = true;
+    setDocumentGeneration((value) => value + 1);
+    setDocumentModel(importedDocument);
   }, []);
 
   // Archivo > Cerrar (RF-105): vuelve al selector de plantillas. NO borra
@@ -440,6 +452,7 @@ export default function AppPage() {
                 editorActivityTick={editorActivityTick}
                 exportButtonRef={exportButtonRef}
                 onCreateDocument={handleCreateDocument}
+                onImportDocument={handleImportDocument}
                 onCloseDocument={handleCloseDocument}
                 onFeedback={setDocumentFeedback}
               />
@@ -458,6 +471,7 @@ export default function AppPage() {
             </div>
 
             <DocumentSections
+              key={documentGeneration}
               ref={documentSectionsRef}
               document={documentModel}
               onSectionChange={handleSectionChange}
