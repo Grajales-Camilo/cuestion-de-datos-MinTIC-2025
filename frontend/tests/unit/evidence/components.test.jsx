@@ -243,9 +243,9 @@ describe("QualityBadge — contraste WCAG 2.2 AA real de las cinco combinaciones
   // fondo `blue-100`/texto `blue-900` para "media" no es una pareja ya
   // cubierta por esa suite genérica de F1-01.
   const TOKENS = {
-    "blue-900": "#0c2d57",
-    "blue-700": "#1d4e89",
-    "blue-100": "#dbeafe",
+    "blue-900": "#004e8c",
+    "blue-700": "#0068a8",
+    "blue-100": "#cde8ff",
     white: "#ffffff",
     "slate-600": "#475569",
     warning: "#b45309",

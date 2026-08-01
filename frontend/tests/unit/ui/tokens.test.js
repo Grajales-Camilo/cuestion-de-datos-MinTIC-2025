@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { CDT_BLUE_700 } from "../../../lib/design/colorTokens.js";
 
 // Los 12 tokens cromáticos exactos exigidos por el encargo F1-01
 // (idénticos a constitution.md Art. V y plan.md §7). Se leen directamente
@@ -15,11 +16,11 @@ function readVar(name) {
 }
 
 const EXPECTED_TOKENS = {
-  "--cdt-blue-900": "#0c2d57",
-  "--cdt-blue-700": "#1d4e89",
-  "--cdt-blue-500": "#2e7cd6",
-  "--cdt-blue-100": "#dbeafe",
-  "--cdt-blue-50": "#eff6ff",
+  "--cdt-blue-900": "#004e8c",
+  "--cdt-blue-700": "#0068a8",
+  "--cdt-blue-500": "#1f7ee0",
+  "--cdt-blue-100": "#cde8ff",
+  "--cdt-blue-50": "#f3f9ff",
   "--cdt-white": "#ffffff",
   "--cdt-slate-900": "#0f172a",
   "--cdt-slate-600": "#475569",
@@ -35,6 +36,10 @@ describe("tokens.css — fuente única de verdad", () => {
       const actual = readVar(name)?.toLowerCase();
       expect(actual, `${name} debería ser ${expected}`).toBe(expected);
     }
+  });
+
+  it("lib/design/colorTokens.js (espejo JS para Chart.js) nunca se desincroniza de --cdt-blue-700", () => {
+    expect(CDT_BLUE_700).toBe(readVar("--cdt-blue-700"));
   });
 
   it("expone exactamente dos pesos tipográficos: 400 y 700", () => {

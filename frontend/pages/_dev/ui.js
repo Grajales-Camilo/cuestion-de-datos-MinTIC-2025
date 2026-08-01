@@ -47,11 +47,11 @@ import { DEMO_SCENARIOS, makeDemoAgentClient } from "../../lib/gallery/agentDemo
  */
 
 const TOKENS = [
-  { name: "blue-900", hex: "#0C2D57", className: "bg-cdt-blue-900" },
-  { name: "blue-700", hex: "#1D4E89", className: "bg-cdt-blue-700" },
-  { name: "blue-500", hex: "#2E7CD6", className: "bg-cdt-blue-500" },
-  { name: "blue-100", hex: "#DBEAFE", className: "bg-cdt-blue-100" },
-  { name: "blue-50", hex: "#EFF6FF", className: "bg-cdt-blue-50" },
+  { name: "blue-900", hex: "#004E8C", className: "bg-cdt-blue-900" },
+  { name: "blue-700", hex: "#0068A8", className: "bg-cdt-blue-700" },
+  { name: "blue-500", hex: "#1F7EE0", className: "bg-cdt-blue-500" },
+  { name: "blue-100", hex: "#CDE8FF", className: "bg-cdt-blue-100" },
+  { name: "blue-50", hex: "#F3F9FF", className: "bg-cdt-blue-50" },
   { name: "white", hex: "#FFFFFF", className: "bg-cdt-white border border-cdt-blue-100" },
   { name: "slate-900", hex: "#0F172A", className: "bg-cdt-slate-900" },
   { name: "slate-600", hex: "#475569", className: "bg-cdt-slate-600" },

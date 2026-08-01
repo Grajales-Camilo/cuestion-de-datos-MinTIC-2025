@@ -7,11 +7,11 @@ import { describe, expect, it } from "vitest";
  * parejas que el código de `frontend/components/ui/` produce.
  */
 const TOKENS = {
-  "blue-900": "#0c2d57",
-  "blue-700": "#1d4e89",
-  "blue-500": "#2e7cd6",
-  "blue-100": "#dbeafe",
-  "blue-50": "#eff6ff",
+  "blue-900": "#004e8c",
+  "blue-700": "#0068a8",
+  "blue-500": "#1f7ee0",
+  "blue-100": "#cde8ff",
+  "blue-50": "#f3f9ff",
   white: "#ffffff",
   "slate-900": "#0f172a",
   "slate-600": "#475569",
@@ -53,6 +53,8 @@ const AA_NORMAL_TEXT = 4.5;
 // Cada pareja [texto, fondo] realmente usada en components/ui/*.jsx.
 const USED_PAIRS = [
   ["blue-700", "white"], // Button secundaria/quiet, enlaces
+  ["blue-700", "blue-50"], // Button secundaria en reposo (fondo propio, F1-05-R1)
+  ["blue-700", "blue-100"], // Button secundaria/quiet en hover
   ["blue-900", "white"], // Títulos, hover primaria
   ["slate-900", "white"], // Cuerpo de texto
   ["slate-600", "white"], // Texto secundario
@@ -74,6 +76,22 @@ describe("contraste WCAG 2.2 AA — parejas texto/fondo reales", () => {
   it("blue-500 sobre white NO cumple 4.5:1 para texto normal (por eso nunca es color de texto)", () => {
     const ratio = contrastRatio(TOKENS["blue-500"], TOKENS.white);
     expect(ratio).toBeLessThan(AA_NORMAL_TEXT);
+  });
+});
+
+const AA_NON_TEXT = 3;
+
+// blue-500 nunca es texto (ver arriba), pero SÍ es el color del anillo de
+// foco (`--cdt-focus-ring-color`) y del icono de paso activo — ambos son
+// componentes de interfaz, no texto: el umbral WCAG 1.4.11 aplicable es
+// 3:1, contra CUALQUIER fondo real donde un elemento enfocable pueda vivir
+// (lienzo blanco, cabeceras/zonas blue-50, tarjetas/chips blue-100).
+const FOCUS_RING_BACKGROUNDS = ["white", "blue-50", "blue-100"];
+
+describe("contraste WCAG 1.4.11 (no textual) — anillo de foco / icono activo sobre cualquier fondo real", () => {
+  it.each(FOCUS_RING_BACKGROUNDS)("blue-500 sobre %s cumple ≥3:1", (bgName) => {
+    const ratio = contrastRatio(TOKENS["blue-500"], TOKENS[bgName]);
+    expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT);
   });
 });
 

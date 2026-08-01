@@ -2,11 +2,11 @@
 name: Cuestión de Datos — Pulso por lo Público
 description: Sala de seguimiento de políticas públicas y sistema de orientación cívica; la investigación de datos abiertos se recorre como una ruta verificable, no se conversa con ella.
 colors:
-  blue-900: "#0C2D57"
-  blue-700: "#1D4E89"
-  blue-500: "#2E7CD6"
-  blue-100: "#DBEAFE"
-  blue-50: "#EFF6FF"
+  blue-900: "#004E8C"
+  blue-700: "#0068A8"
+  blue-500: "#1F7EE0"
+  blue-100: "#CDE8FF"
+  blue-50: "#F3F9FF"
   white: "#FFFFFF"
   slate-900: "#0F172A"
   slate-600: "#475569"
@@ -128,14 +128,24 @@ decisión de marca abierta. Fuente de verdad única en
 prefijo `cdt-` (`bg-cdt-blue-700`, etc.) para no chocar con la paleta por
 defecto de Tailwind que el frontend legacy sigue usando con otros valores.
 
+**Revisión de matices (posterior a DESIGN-01, aprobada explícitamente por
+el usuario):** los cinco tonos de azul se recalibraron con una paleta
+inspirada en el azul característico de VS Code, conservando exactamente la
+misma estructura monocromática (5 pasos, mismo rol de cada uno).
+`blue-900`, `blue-100` y `blue-50` son el valor VS Code sin ajustar;
+`blue-700` y `blue-500` se oscurecieron un paso frente al valor VS Code
+literal (`#007ACC`/`#3794FF`) porque fallaban contraste WCAG como
+texto/anillo de foco sobre `blue-50`/`blue-100` — ver
+`frontend/tests/unit/ui/contrast.test.js`, que hace cumplir esto en CI.
+
 ### Primary
-- **Azul profundo** (`#0C2D57`, `blue-900`): titulares, navegación, hover del botón primario. Es el ancla de autoridad — donde el ojo debe leer "esto es serio y verificado".
-- **Azul medio** (`#1D4E89`, `blue-700`): botones primarios, enlaces. El color de la acción disponible.
-- **Azul acento** (`#2E7CD6`, `blue-500`): foco, elementos activos del agente mientras investiga — el color del "esto está pasando ahora".
+- **Azul profundo** (`#004E8C`, `blue-900`): titulares, navegación, hover del botón primario. Es el ancla de autoridad — donde el ojo debe leer "esto es serio y verificado".
+- **Azul medio** (`#0068A8`, `blue-700`): botones primarios, enlaces. El color de la acción disponible.
+- **Azul acento** (`#1F7EE0`, `blue-500`): foco, elementos activos del agente mientras investiga — el color del "esto está pasando ahora".
 
 ### Neutral
-- **Fondo tarjeta de evidencia** (`#DBEAFE`, `blue-100`): fondos de tarjetas de evidencia y chips — nunca para texto.
-- **Fondo de sección** (`#EFF6FF`, `blue-50`): separación de zonas sin bordes duros.
+- **Fondo tarjeta de evidencia** (`#CDE8FF`, `blue-100`): fondos de tarjetas de evidencia y chips — nunca para texto.
+- **Fondo de sección** (`#F3F9FF`, `blue-50`): separación de zonas sin bordes duros.
 - **Blanco** (`#FFFFFF`): fondo base, el lienzo en reposo.
 - **Slate 900/600/400**: texto principal / secundario / deshabilitado.
 

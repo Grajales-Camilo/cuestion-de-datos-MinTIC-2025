@@ -12,12 +12,19 @@
  * inventan aquí, se transcriben.
  */
 :root {
-  /* Color — paleta azul monocromática + neutros + semánticos */
-  --cdt-blue-900: #0c2d57;
-  --cdt-blue-700: #1d4e89;
-  --cdt-blue-500: #2e7cd6;
-  --cdt-blue-100: #dbeafe;
-  --cdt-blue-50: #eff6ff;
+  /* Color — paleta azul monocromática + neutros + semánticos. Matices
+   * inspirados en el azul característico de VS Code (revisión de
+   * dirección posterior a DESIGN-01, sobre la misma estructura
+   * monocromática ya aprobada). blue-700 y blue-500 se oscurecieron un
+   * paso respecto al valor VS Code literal (#007acc/#3794ff) tras
+   * comprobación WCAG: ambos fallaban contraste como texto/foco sobre
+   * blue-50/blue-100 (ver tests/unit/ui/contrast.test.js). blue-900,
+   * blue-100 y blue-50 son el valor VS Code sin ajustar. */
+  --cdt-blue-900: #004e8c;
+  --cdt-blue-700: #0068a8;
+  --cdt-blue-500: #1f7ee0;
+  --cdt-blue-100: #cde8ff;
+  --cdt-blue-50: #f3f9ff;
   --cdt-white: #ffffff;
   --cdt-slate-900: #0f172a;
   --cdt-slate-600: #475569;
