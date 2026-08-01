@@ -411,6 +411,40 @@ describe("exportDocumentToDocx — mapeo mínimo de contenido (F6-02A, prueba 3)
     expect(/<w:rPr>[^]*?<w:b\s*\/>[^]*?<\/w:rPr>\s*<w:t[^>]*>texto en negrita/.test(documentXml)).toBe(true);
     expect(/<w:rPr>[^]*?<w:i\s*\/>[^]*?<\/w:rPr>\s*<w:t[^>]*>texto en cursiva/.test(documentXml)).toBe(true);
   });
+
+  it("DOCX-IMPORT-01: un enlace HTTP/HTTPS importado vuelve a exportarse como hipervínculo OOXML", async () => {
+    const content = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Fuente enlazada",
+              marks: [
+                {
+                  type: "link",
+                  attrs: { href: "https://example.test/recurso", target: "_blank", rel: "noopener noreferrer" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const result = await exportDocumentToDocx(
+      documentWithSections([{ sectionId: "contenido-importado", title: "Contenido importado", content }]),
+    );
+    expect(result.ok).toBe(true);
+    const zip = await unzipBlob(result.blob);
+    const documentXml = await xmlPart(zip, "word/document.xml");
+    const relationshipsXml = await xmlPart(zip, "word/_rels/document.xml.rels");
+    expect(documentXml).toContain("Fuente enlazada");
+    expect(documentXml).toContain("w:hyperlink");
+    expect(relationshipsXml).toContain("https://example.test/recurso");
+    expect(relationshipsXml).toContain('TargetMode="External"');
+  });
 });
 
 describe("exportDocumentToDocx — EvidenceCitation y notas al pie (F6-02A, pruebas 4-7 y 11-12, RF-103)", () => {

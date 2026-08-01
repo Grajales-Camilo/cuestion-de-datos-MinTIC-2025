@@ -4,6 +4,7 @@ import Superscript from "@tiptap/extension-superscript";
 import TextAlign from "@tiptap/extension-text-align";
 import { EvidenceCitationNodeBase } from "./evidenceCitationNode.js";
 import { ManualEntryNodeBase } from "./manualEntryNode.js";
+import { getSafeImportedLink } from "./safeImportedLink.js";
 
 const ALLOWED_HEADING_LEVELS = Object.freeze([2, 3, 4]);
 
@@ -61,8 +62,9 @@ const RestrictedHeading = Node.create({
 
 /**
  * Extensiones comunes del documento Tiptap de F5-01, sin el nodo de cita de
- * evidencia. No incluye Link, HTML arbitrario ni nodos de presentación
- * futuros. Compartida por la variante headless (este archivo) y la variante
+ * evidencia. Solo incluye Link para URI HTTP/HTTPS validadas; no admite HTML
+ * arbitrario ni nodos de presentación futuros. Compartida por la variante
+ * headless (este archivo) y la variante
  * visual (`components/canvas/editor/visualExtensions.js`), que le añade el
  * nodo de cita con su `NodeView` de React.
  */
@@ -76,7 +78,21 @@ export function createBaseDocumentExtensions() {
       hardBreak: false,
       heading: false,
       horizontalRule: false,
-      link: false,
+      // DOCX-IMPORT-01: los enlaces del texto aportado por el usuario son
+      // marcas normales de Tiptap, nunca EvidenceCitation. Se desactiva
+      // autolink/link-on-paste y cada URI pasa por la política HTTP/HTTPS
+      // absoluta antes de entrar o salir del esquema (RNF-011).
+      link: {
+        openOnClick: false,
+        autolink: false,
+        linkOnPaste: false,
+        protocols: ["http", "https"],
+        isAllowedUri: (url) => getSafeImportedLink(url) !== null,
+        HTMLAttributes: {
+          target: "_blank",
+          rel: "noopener noreferrer",
+        },
+      },
       strike: false,
       // trailingNode NO se deshabilita (a diferencia del resto de esta
       // lista): hallazgo de revisión manual F8-02 — con esta extensión

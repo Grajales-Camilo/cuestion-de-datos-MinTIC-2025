@@ -230,7 +230,10 @@ describe("EvidenceCitationNode (T-504, RF-103)", () => {
         "text",
       ].sort(),
     );
-    expect(Object.keys(editor.schema.marks).sort()).toEqual(["bold", "italic", "superscript"]);
+    // DOCX-IMPORT-01 añade únicamente la marca normal `link` para enlaces
+    // HTTP/HTTPS del texto del usuario; sigue siendo distinta del nodo
+    // EvidenceCitation y no amplía los atributos de evidencia.
+    expect(Object.keys(editor.schema.marks).sort()).toEqual(["bold", "italic", "link", "superscript"]);
     expect(editor.commands.setHeading({ level: 1 })).toBe(false);
     expect(editor.commands.setHeading({ level: 2 })).toBe(true);
   });
