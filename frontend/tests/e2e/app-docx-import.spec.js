@@ -47,14 +47,14 @@ test.describe("/app — DOCX-IMPORT-01 local y controlado", () => {
     page.on("websocket", (socket) => sockets.push(socket.url()));
 
     const fixture = await createRichSyntheticDocx();
-    await chooseDocxFromFileMenu(page, fixture, "informe-sintetico.docx", {
-      // Solo interesan solicitudes iniciadas DESPUÉS de seleccionar el DOCX.
-      // El chunk local del Worker se solicitó antes, sin acceso al archivo.
-      beforeSelection: () => { requests.length = 0; },
-    });
+    // El Worker se preparó al montar el lienzo. Medimos desde antes del clic
+    // de menú para demostrar cero solicitudes durante la acción completa.
+    requests.length = 0;
+    await chooseDocxFromFileMenu(page, fixture);
 
     const summary = page.getByRole("dialog", { name: "Resumen de importación" });
     await expect(summary).toBeVisible({ timeout: 20_000 });
+    expect(requests).toEqual([]);
     await expect(summary.getByText("informe-sintetico.docx")).toBeVisible();
     await expect(summary.getByText(/encabezados/)).toBeVisible();
     await expect(summary.getByText(/párrafos/)).toBeVisible();
@@ -68,10 +68,10 @@ test.describe("/app — DOCX-IMPORT-01 local y controlado", () => {
     await expect(currentEditor).toContainText("Documento anterior");
     await expect(page.getByRole("menuitem", { name: "Archivo" })).toBeFocused();
 
-    await chooseDocxFromFileMenu(page, fixture, "informe-sintetico.docx", {
-      beforeSelection: () => { requests.length = 0; },
-    });
+    requests.length = 0;
+    await chooseDocxFromFileMenu(page, fixture);
     await expect(summary).toBeVisible({ timeout: 20_000 });
+    expect(requests).toEqual([]);
     await summary.getByRole("button", { name: "Abrir como documento nuevo" }).click();
 
     const replace = page.getByRole("dialog", { name: "¿Reemplazar el documento actual?" });
@@ -128,9 +128,9 @@ test.describe("/app — DOCX-IMPORT-01 local y controlado", () => {
     expect(documentXml).toMatch(/<w:i\/?/u);
     expect(relationshipsXml).toContain("https://example.test/recurso");
 
-    // El contenido no genera fetch/XHR, POST, WebSocket ni contacto con
+    // La acción completa no genera fetch/XHR, POST, WebSocket ni contacto con
     // backend o dominio externo. La recarga posterior sí puede pedir activos
-    // internos de Next; quedan fuera del intervalo de importación.
+    // internos de Next; queda fuera del intervalo de importación.
     expect(requests.filter((request) => ["fetch", "xhr"].includes(request.type) && !request.url.includes("/_next/"))).toEqual([]);
     expect(requests.filter((request) => request.method !== "GET")).toEqual([]);
     expect(requests.filter((request) => request.url.includes("/v2/") || request.url.includes("example.test"))).toEqual([]);

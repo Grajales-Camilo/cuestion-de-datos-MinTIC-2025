@@ -124,9 +124,10 @@ tipo libre. Esta capacidad es una extensión autorizada por el usuario,
 relacionada con RF-101, RF-102, RF-103 y RNF-011; no es un requisito original
 del SDD ni autoriza marcar automáticamente una tarea normativa como cumplida.
 
-La importación se ejecuta completamente en el navegador. El clic que abre el
-selector prepara un Worker de JavaScript same-origin; después de seleccionar
-el archivo, sus bytes solo se transfieren en memoria a ese Worker. No se usa el
+La importación se ejecuta completamente en el navegador. Al abrir el lienzo se
+prepara un Worker de JavaScript same-origin, antes de cualquier acción o acceso
+a archivos; desde el clic en Importar no se inicia una solicitud de red. Al
+seleccionar el DOCX, sus bytes solo se transfieren en memoria a ese Worker. No se usa el
 backend, Gemini, Socrata, Vercel Functions ni un recurso externo. Mammoth
 `1.12.0` —versión exacta— realiza la conversión OOXML y JSZip, ya presente,
 solo inspecciona límites y estructura antes de convertir. El HTML intermedio

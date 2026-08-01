@@ -73,32 +73,43 @@ export const DocxImportFlow = forwardRef(function DocxImportFlow(
   const preparedWorkerRef = useRef(null);
   const [state, setState] = useState({ status: "idle", result: null, error: null });
 
+  const prepareWorker = useCallback(() => {
+    if (typeof Worker !== "undefined" && !preparedWorkerRef.current) {
+      preparedWorkerRef.current = createDocxImportWorker();
+    }
+  }, []);
+
   const reset = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
     preparedWorkerRef.current?.terminate();
     preparedWorkerRef.current = null;
+    prepareWorker();
     setState({ status: "idle", result: null, error: null });
-  }, []);
+  }, [prepareWorker]);
 
-  useEffect(() => () => {
-    abortRef.current?.abort();
-    preparedWorkerRef.current?.terminate();
-  }, []);
+  useEffect(() => {
+    // La descarga del código estático same-origin sucede al abrir el lienzo,
+    // antes de cualquier acción de importación o acceso a un archivo.
+    prepareWorker();
+    return () => {
+      abortRef.current?.abort();
+      preparedWorkerRef.current?.terminate();
+      preparedWorkerRef.current = null;
+    };
+  }, [prepareWorker]);
 
   useImperativeHandle(ref, () => ({
     selectFile() {
       if (!fileInputRef.current) return;
-      // El código estático del Worker se prepara antes de que el usuario
-      // seleccione el archivo. Desde `change` en adelante solo se transfieren
-      // bytes en memoria al Worker local: no se inicia ninguna solicitud.
-      if (typeof Worker !== "undefined" && !preparedWorkerRef.current) {
-        preparedWorkerRef.current = createDocxImportWorker();
-      }
+      // El Worker normalmente ya está preparado desde el montaje. Este
+      // fallback solo cubre navegadores que hayan terminado el Worker antes
+      // de abrir el selector; nunca recibe bytes hasta `change`.
+      prepareWorker();
       fileInputRef.current.value = "";
       fileInputRef.current.click();
     },
-  }));
+  }), [prepareWorker]);
 
   async function handleFileChange(event) {
     const file = event.target.files?.[0];
