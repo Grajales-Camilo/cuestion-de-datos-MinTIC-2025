@@ -5,7 +5,7 @@ import { cx } from "./cx";
 const VARIANT_CLASSES = {
   primary: "bg-cdt-blue-700 text-cdt-white hover:bg-cdt-blue-900 active:bg-cdt-blue-900",
   secondary:
-    "bg-cdt-white text-cdt-blue-700 border border-cdt-blue-100 hover:bg-cdt-blue-50 active:bg-cdt-blue-100",
+    "bg-cdt-blue-50 text-cdt-blue-700 border border-cdt-blue-100 hover:bg-cdt-blue-100 active:bg-cdt-blue-100",
   quiet: "bg-transparent text-cdt-blue-700 hover:bg-cdt-blue-50 active:bg-cdt-blue-100",
   destructive: "bg-cdt-error text-cdt-white hover:brightness-90 active:brightness-95",
 };

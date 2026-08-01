@@ -17,6 +17,8 @@
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
     "@tiptap/core": "^3.11.0",
+    "@tiptap/extension-superscript": "^3.11.0",
+    "@tiptap/extension-text-align": "^3.11.0",
     "@tiptap/pm": "^3.11.0",
     "@tiptap/react": "^3.11.0",
     "@tiptap/starter-kit": "^3.11.0",

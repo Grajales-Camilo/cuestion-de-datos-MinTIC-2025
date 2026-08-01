@@ -21,6 +21,7 @@ import {
   DocumentPersistenceStatus,
   ExportDocumentButton,
   TemplatePicker,
+  DocumentMenuBar,
 } from "../components/document";
 import { createTemplateDocument } from "../lib/document/documentModel";
 import { useDocumentAutosave } from "../hooks/useDocumentAutosave";
@@ -162,7 +163,16 @@ export default function AppPage() {
   const defaultSectionId = documentModel?.sections[0]?.sectionId ?? null;
   const [documentFeedback, setDocumentFeedback] = useState("");
   const documentSectionsRef = useRef(null);
+  const exportButtonRef = useRef(null);
   const prefillNonceRef = useRef(0);
+
+  // Ver `DocumentMenuBar.jsx`: el menú Archivo/Editar/Formato lee
+  // `documentSectionsRef.current.getActiveEditor()` directamente (no está
+  // en el árbol de estado de React), así que necesita un disparador propio
+  // para re-renderizar cuando cambia el foco/selección/contenido de
+  // CUALQUIER sección.
+  const [editorActivityTick, setEditorActivityTick] = useState(0);
+  const handleEditorActivity = useCallback(() => setEditorActivityTick((tick) => tick + 1), []);
 
   const isBusy = BUSY_STATUSES.has(agentRun.state.status);
 
@@ -360,7 +370,7 @@ export default function AppPage() {
         Saltar al contenido
       </a>
 
-      <header className="border-b border-cdt-blue-100 px-cdt-4 py-cdt-3">
+      <header className="border-b border-cdt-blue-100 bg-cdt-blue-50 px-cdt-4 py-cdt-3">
         <h1 className="text-cdt-lg font-cdt-bold text-cdt-blue-900">Cuestión de Datos</h1>
       </header>
 
@@ -403,6 +413,17 @@ export default function AppPage() {
           className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-cdt-6 p-cdt-4 lg:flex-row lg:items-start"
         >
           <div className="flex min-w-0 flex-1 flex-col gap-cdt-8">
+            <div className="rounded-cdt-lg border border-cdt-blue-100 bg-cdt-blue-50">
+              <DocumentMenuBar
+                documentModel={documentModel}
+                documentSectionsRef={documentSectionsRef}
+                editorActivityTick={editorActivityTick}
+                exportButtonRef={exportButtonRef}
+                onCreateDocument={handleCreateDocument}
+                onFeedback={setDocumentFeedback}
+              />
+            </div>
+
             <div className="flex flex-wrap items-start justify-between gap-cdt-3">
               <DocumentPersistenceStatus
                 status={autosave.status}
@@ -412,7 +433,7 @@ export default function AppPage() {
                 currentDocument={documentModel}
                 onDismissNotice={autosave.dismissNotice}
               />
-              <ExportDocumentButton documentModel={documentModel} />
+              <ExportDocumentButton ref={exportButtonRef} documentModel={documentModel} />
             </div>
 
             <DocumentSections
@@ -421,6 +442,7 @@ export default function AppPage() {
               onSectionChange={handleSectionChange}
               onInvestigateSection={handleSectionInvestigate}
               onManualEntryInserted={handleManualEntryInserted}
+              onEditorActivity={handleEditorActivity}
               disabled={isBusy}
             />
 

@@ -237,8 +237,11 @@ legacy).
 ### Buttons (`Button.jsx`, `IconButton.jsx`)
 - **Shape:** radio `md` (6px), alto mínimo 44px.
 - **Variantes (exactas, sin ampliar):** primaria (`blue-700`/blanco),
-  secundaria (blanco/`blue-700` con borde `blue-100`), silenciosa
-  (transparente/`blue-700`), destructiva (`error`/blanco).
+  secundaria (`blue-50`/`blue-700` con borde `blue-100` — fondo propio a
+  propósito: sobre el lienzo blanco en reposo, un botón sin relleno era
+  indistinguible), silenciosa (transparente/`blue-700`, uso reservado a
+  contextos ya tonalizados como la barra de formato), destructiva
+  (`error`/blanco).
 - **Estados:** hover (oscurece o `brightness-90`), focus-visible (anillo
   `blue-500` heredado de `.cdt-v2`), active, disabled (opacidad 50%,
   `pointer-events: none`), loading (`aria-busy`, ícono `Loader2` girando).
@@ -279,6 +282,22 @@ legacy).
 - Encabezados `<th scope="col">` sobre `blue-50`. Contenedor con
   `overflow-x-auto` propio — nunca desborda la página. Exige `caption` o
   nombre accesible.
+
+### MenuBar / Menu (`Menu.jsx`)
+- Patrón Menubar de WAI-ARIA APG (RF-105): `role="menubar"` con menús de
+  nivel superior (`role="menuitem"`, `aria-haspopup`/`aria-expanded`) y un
+  panel `role="menu"` por menú abierto, uno a la vez. Flechas
+  izquierda/derecha mueven el foco entre menús (tabindex progresivo);
+  arriba/abajo, Home/End navegan las opciones; Escape cierra y devuelve el
+  foco a su disparador; un clic fuera cierra sin mover el foco.
+- Tres tipos de opción: `MenuItem` (acción simple), `MenuCheckboxItem`
+  (`role="menuitemcheckbox"`, alterna un formato binario) y `MenuRadioItem`
+  (`role="menuitemradio"`, mutuamente excluyente dentro de un `MenuGroup`).
+  El estado marcado siempre refleja `editor.isActive(...)` real, nunca un
+  estado local propio del menú.
+- Primer uso real: menú "Archivo/Editar/Formato" de `/app`
+  (`DocumentMenuBar.jsx`), sobre el editor Tiptap de la sección con el foco
+  más reciente.
 
 ### LiveRegion (`LiveRegion.jsx`)
 - `role="status"` + `aria-live="polite"` + `aria-atomic="true"`, mensaje

@@ -8,7 +8,7 @@ import { DOCUMENT_AUTOSAVE_STATUS } from "../../hooks/useDocumentAutosave";
 const STATUS_LABEL = {
   [DOCUMENT_AUTOSAVE_STATUS.LOADING]: "Cargando tu documento…",
   [DOCUMENT_AUTOSAVE_STATUS.SAVING]: "Guardando…",
-  [DOCUMENT_AUTOSAVE_STATUS.SAVED]: "Guardado",
+  [DOCUMENT_AUTOSAVE_STATUS.SAVED]: "Guardado en este navegador",
 };
 
 // El aviso de descarga solo se concatena cuando el botón correspondiente

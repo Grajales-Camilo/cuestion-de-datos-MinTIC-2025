@@ -1,5 +1,7 @@
 import { Node } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
+import Superscript from "@tiptap/extension-superscript";
+import TextAlign from "@tiptap/extension-text-align";
 import { EvidenceCitationNodeBase } from "./evidenceCitationNode.js";
 import { ManualEntryNodeBase } from "./manualEntryNode.js";
 
@@ -89,9 +91,15 @@ export function createBaseDocumentExtensions() {
       // al escribir como al cargar un documento persistido que ya haya
       // quedado en ese estado.
       underline: false,
-      undoRedo: false,
+      // undoRedo se mantiene ACTIVO (a diferencia del resto de esta lista):
+      // es historial de edición puro de ProseMirror, no añade ningún nodo o
+      // marca al esquema cerrado y no tiene implicación de seguridad ni de
+      // validación — a diferencia de Link o el HTML arbitrario, que sí
+      // permanecen fuera.
     }),
     RestrictedHeading,
+    Superscript,
+    TextAlign.configure({ types: ["heading", "paragraph"] }),
   ];
 }
 

@@ -55,7 +55,7 @@ export default function Home() {
         Saltar al contenido
       </a>
 
-      <header className="flex items-center justify-between border-b border-cdt-blue-100 px-cdt-4 py-cdt-3 sm:px-cdt-8">
+      <header className="flex items-center justify-between border-b border-cdt-blue-100 bg-cdt-blue-50 px-cdt-4 py-cdt-3 sm:px-cdt-8">
         <h1 className="text-cdt-lg font-cdt-bold text-cdt-blue-900">Cuestión de Datos</h1>
         <Button as="a" href="/app" variant="primary">
           Abrir el lienzo
@@ -85,7 +85,7 @@ export default function Home() {
               <Button
                 as="a"
                 href="#como-funciona"
-                variant="quiet"
+                variant="secondary"
                 className="w-full sm:w-auto"
               >
                 Ver cómo funciona

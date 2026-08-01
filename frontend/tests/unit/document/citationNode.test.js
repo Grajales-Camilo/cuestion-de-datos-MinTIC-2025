@@ -230,7 +230,7 @@ describe("EvidenceCitationNode (T-504, RF-103)", () => {
         "text",
       ].sort(),
     );
-    expect(Object.keys(editor.schema.marks).sort()).toEqual(["bold", "italic"]);
+    expect(Object.keys(editor.schema.marks).sort()).toEqual(["bold", "italic", "superscript"]);
     expect(editor.commands.setHeading({ level: 1 })).toBe(false);
     expect(editor.commands.setHeading({ level: 2 })).toBe(true);
   });
