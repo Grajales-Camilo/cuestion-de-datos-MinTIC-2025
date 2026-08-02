@@ -2,11 +2,11 @@
 name: Cuestión de Datos — Pulso por lo Público
 description: Sala de seguimiento de políticas públicas y sistema de orientación cívica; la investigación de datos abiertos se recorre como una ruta verificable, no se conversa con ella.
 colors:
-  blue-900: "#004E8C"
-  blue-700: "#0068A8"
-  blue-500: "#1F7EE0"
-  blue-100: "#CDE8FF"
-  blue-50: "#F3F9FF"
+  blue-900: "#001C40"
+  blue-700: "#002451"
+  blue-500: "#0975FF"
+  blue-100: "#6B91C0"
+  blue-50: "#DEE5ED"
   white: "#FFFFFF"
   slate-900: "#0F172A"
   slate-600: "#475569"
@@ -128,24 +128,26 @@ decisión de marca abierta. Fuente de verdad única en
 prefijo `cdt-` (`bg-cdt-blue-700`, etc.) para no chocar con la paleta por
 defecto de Tailwind que el frontend legacy sigue usando con otros valores.
 
-**Revisión de matices (posterior a DESIGN-01, aprobada explícitamente por
-el usuario):** los cinco tonos de azul se recalibraron con una paleta
-inspirada en el azul característico de VS Code, conservando exactamente la
-misma estructura monocromática (5 pasos, mismo rol de cada uno).
-`blue-900`, `blue-100` y `blue-50` son el valor VS Code sin ajustar;
-`blue-700` y `blue-500` se oscurecieron un paso frente al valor VS Code
-literal (`#007ACC`/`#3794FF`) porque fallaban contraste WCAG como
-texto/anillo de foco sobre `blue-50`/`blue-100` — ver
-`frontend/tests/unit/ui/contrast.test.js`, que hace cumplir esto en CI.
+**PALETTE-02 (revisión vigente, reemplaza la revisión "VS Code" anterior):**
+la paleta anterior quedó demasiado clara sobre fondo blanco — bordes,
+divisores y el borde del lienzo perdían separación visual. `blue-900`
+(`#001C40`) y `blue-700` (`#002451`) son anclas exactas fijadas por el
+usuario; `blue-500`/`blue-100`/`blue-50` se derivaron del mismo matiz
+(H≈213.5°) mediante búsqueda binaria de luminancia relativa WCAG, no a
+simple vista. Cambio estructural notable: `blue-100` (= `--cdt-border-color`
+en todo el sistema) ahora supera 3:1 de contraste contra blanco por sí
+solo — antes era solo un tinte de fondo, nunca pensado para leerse como
+línea/borde independiente. Cada pareja real queda verificada en
+`frontend/tests/unit/ui/contrast.test.js`, que la hace cumplir en CI.
 
 ### Primary
-- **Azul profundo** (`#004E8C`, `blue-900`): titulares, navegación, hover del botón primario. Es el ancla de autoridad — donde el ojo debe leer "esto es serio y verificado".
-- **Azul medio** (`#0068A8`, `blue-700`): botones primarios, enlaces. El color de la acción disponible.
-- **Azul acento** (`#1F7EE0`, `blue-500`): foco, elementos activos del agente mientras investiga — el color del "esto está pasando ahora".
+- **Azul profundo** (`#001C40`, `blue-900`): titulares, navegación, hover del botón primario. Es el ancla de autoridad — donde el ojo debe leer "esto es serio y verificado".
+- **Azul medio** (`#002451`, `blue-700`): botones primarios, enlaces. El color de la acción disponible.
+- **Azul acento** (`#0975FF`, `blue-500`): foco, elementos activos del agente mientras investiga — el color del "esto está pasando ahora".
 
 ### Neutral
-- **Fondo tarjeta de evidencia** (`#CDE8FF`, `blue-100`): fondos de tarjetas de evidencia y chips — nunca para texto.
-- **Fondo de sección** (`#F3F9FF`, `blue-50`): separación de zonas sin bordes duros.
+- **Borde estructural / fondo de tarjeta de evidencia** (`#6B91C0`, `blue-100`): `--cdt-border-color` — bordes de tarjetas, tabla, borde del lienzo, divisores del menú y de la barra de formato; también fondos de chips/badges. Nunca para texto de cuerpo.
+- **Fondo de sección** (`#DEE5ED`, `blue-50`): separación de zonas sin bordes duros.
 - **Blanco** (`#FFFFFF`): fondo base, el lienzo en reposo.
 - **Slate 900/600/400**: texto principal / secundario / deshabilitado.
 
@@ -263,7 +265,11 @@ tipografía, foco visible y `prefers-reduced-motion` sin afectar al frontend
 legacy).
 
 ### Buttons (`Button.jsx`, `IconButton.jsx`)
-- **Shape:** radio `md` (6px), alto mínimo 44px.
+- **Shape:** esquinas rectas (`rounded-cdt-none`, PALETTE-02 — antes radio
+  `md`/6px), alto mínimo 44px. Exclusivo de botones y controles con
+  apariencia de botón (incluye los del menú Archivo/Editar/Formato,
+  `Menu.jsx`); tarjetas, modales, campos de texto, citas y badges
+  conservan su radio original — no es una regla general de "sin radios".
 - **Variantes (exactas, sin ampliar):** primaria (`blue-700`/blanco),
   secundaria (`blue-50`/`blue-700` con borde `blue-100` — fondo propio a
   propósito: sobre el lienzo blanco en reposo, un botón sin relleno era

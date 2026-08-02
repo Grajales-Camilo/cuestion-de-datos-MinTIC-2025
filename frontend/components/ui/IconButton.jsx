@@ -32,7 +32,7 @@ export const IconButton = forwardRef(function IconButton(
       aria-label={label}
       aria-busy={loading || undefined}
       className={cx(
-        "inline-flex items-center justify-center rounded-cdt-md",
+        "inline-flex items-center justify-center rounded-cdt-none",
         "h-cdt-tap w-cdt-tap",
         "transition-colors duration-cdt-base ease-cdt-standard",
         "disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none",

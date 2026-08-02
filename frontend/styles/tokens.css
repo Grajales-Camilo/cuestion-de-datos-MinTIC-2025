@@ -12,19 +12,31 @@
  * inventan aquí, se transcriben.
  */
 :root {
-  /* Color — paleta azul monocromática + neutros + semánticos. Matices
-   * inspirados en el azul característico de VS Code (revisión de
-   * dirección posterior a DESIGN-01, sobre la misma estructura
-   * monocromática ya aprobada). blue-700 y blue-500 se oscurecieron un
-   * paso respecto al valor VS Code literal (#007acc/#3794ff) tras
-   * comprobación WCAG: ambos fallaban contraste como texto/foco sobre
-   * blue-50/blue-100 (ver tests/unit/ui/contrast.test.js). blue-900,
-   * blue-100 y blue-50 son el valor VS Code sin ajustar. */
-  --cdt-blue-900: #004e8c;
-  --cdt-blue-700: #0068a8;
-  --cdt-blue-500: #1f7ee0;
-  --cdt-blue-100: #cde8ff;
-  --cdt-blue-50: #f3f9ff;
+  /* Color — paleta azul monocromática + neutros + semánticos.
+   * PALETTE-02: paleta oscurecida sobre la misma estructura monocromática
+   * de 5 pasos (reemplaza la revisión "VS Code" anterior, que quedó
+   * demasiado clara sobre blanco). blue-900 (#001C40) y blue-700 (#002451)
+   * son anclas exactas fijadas por el usuario. blue-500/blue-100/blue-50
+   * se derivaron del mismo matiz (H≈213.5°) mediante búsqueda binaria de
+   * luminancia relativa WCAG, no a simple vista — ver
+   * tests/unit/ui/contrast.test.js para cada pareja verificada:
+   * - blue-100 ahora cumple ≥3:1 contra blanco por sí solo: es el color
+   *   de `--cdt-border-color` (bordes/divisores/borde del lienzo en TODA
+   *   la interfaz), que antes (incluida la revisión VS Code) nunca pasaba
+   *   ese umbral por ser solo un tinte suave de fondo.
+   * - blue-500 se acotó a una ventana estrecha a propósito: debe superar
+   *   3:1 contra blanco Y contra blue-50 (visibilidad real del anillo de
+   *   foco/icono activo sobre cualquier fondo real), pero SIN alcanzar
+   *   4.5:1 contra blanco — cruzar ese umbral rompería en silencio "La
+   *   Regla del Acento Escaso" (blue-500 nunca es color de texto).
+   * - blue-50 se mantuvo más pálido de lo que un oscurecimiento ingenuo
+   *   sugeriría: es la única forma de dejarle a blue-500 margen real
+   *   frente a blue-50 sin romper la regla anterior. */
+  --cdt-blue-900: #001c40;
+  --cdt-blue-700: #002451;
+  --cdt-blue-500: #0975ff;
+  --cdt-blue-100: #6b91c0;
+  --cdt-blue-50: #dee5ed;
   --cdt-white: #ffffff;
   --cdt-slate-900: #0f172a;
   --cdt-slate-600: #475569;
@@ -60,7 +72,11 @@
   --cdt-space-12: 48px;
   --cdt-space-16: 64px;
 
-  /* Radios — pequeños y coherentes (constitución: "sin sombras duras") */
+  /* Radios — pequeños y coherentes (constitución: "sin sombras duras").
+   * PALETTE-02: `--cdt-radius-none` es exclusivamente para botones y
+   * controles con apariencia de botón (Button, IconButton, MenuItem*) —
+   * tarjetas, modales, campos de texto y citas conservan `sm/md/lg/full`. */
+  --cdt-radius-none: 0px;
   --cdt-radius-sm: 4px;
   --cdt-radius-md: 6px;
   --cdt-radius-lg: 10px;

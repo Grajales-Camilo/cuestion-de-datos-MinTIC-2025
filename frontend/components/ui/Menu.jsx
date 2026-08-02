@@ -152,7 +152,7 @@ export function Menu({ label, children, triggerRef: externalTriggerRef }) {
         onClick={() => bar.setOpenId(isOpen ? null : id)}
         onKeyDown={handleTriggerKeyDown}
         className={cx(
-          "min-h-cdt-tap rounded-cdt-md px-cdt-3 font-cdt-sans text-cdt-sm font-cdt-bold text-cdt-blue-900",
+          "min-h-cdt-tap rounded-cdt-none px-cdt-3 font-cdt-sans text-cdt-sm font-cdt-bold text-cdt-blue-900",
           "transition-colors duration-cdt-base ease-cdt-standard hover:bg-cdt-blue-100",
           isOpen && "bg-cdt-blue-100"
         )}
@@ -178,7 +178,7 @@ export function Menu({ label, children, triggerRef: externalTriggerRef }) {
 
 function baseItemClasses(disabled) {
   return cx(
-    "flex w-full min-h-cdt-tap items-center gap-cdt-2 rounded-cdt-md px-cdt-3 text-left font-cdt-sans text-cdt-sm text-cdt-slate-900",
+    "flex w-full min-h-cdt-tap items-center gap-cdt-2 rounded-cdt-none px-cdt-3 text-left font-cdt-sans text-cdt-sm text-cdt-slate-900",
     "transition-colors duration-cdt-base ease-cdt-standard",
     disabled ? "cursor-not-allowed opacity-50" : "hover:bg-cdt-blue-50"
   );

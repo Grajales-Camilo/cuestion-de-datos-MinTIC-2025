@@ -56,6 +56,7 @@ module.exports = {
         "cdt-tap": "var(--cdt-tap-min)",
       },
       borderRadius: {
+        "cdt-none": "var(--cdt-radius-none)",
         "cdt-sm": "var(--cdt-radius-sm)",
         "cdt-md": "var(--cdt-radius-md)",
         "cdt-lg": "var(--cdt-radius-lg)",
