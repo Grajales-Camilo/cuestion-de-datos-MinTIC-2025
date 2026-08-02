@@ -435,19 +435,9 @@ export default function AppPage() {
       </a>
 
       <header className="flex items-center justify-between gap-cdt-3 border-b border-cdt-blue-100 bg-cdt-blue-50 px-cdt-4 py-cdt-3">
-        <div className="flex items-center gap-cdt-2">
-          <h1 className="text-cdt-lg font-cdt-bold text-cdt-blue-900">Cuestión de Datos</h1>
-          {/* Decorativo: el nombre ya está en el `h1` de al lado, así que
-              `alt=""` evita que un lector de pantalla lo anuncie dos veces.
-              El logo se diseñó con arte claro sobre fondo transparente,
-              pensado para fondos oscuros: sobre `blue-50` casi no se ve. Un
-              chip `blue-900` (mismo token que ya usa el resto de la
-              interfaz, no un color nuevo) le da el fondo oscuro que
-              necesita sin tocar ninguna otra pieza. */}
-          <span className="flex items-center rounded-cdt-sm bg-cdt-blue-900 px-cdt-1 py-cdt-1">
-            <img src="/v2/logo.png" alt="" width={36} height={32} className="h-cdt-8 w-auto" />
-          </span>
-        </div>
+        <h1 className="text-cdt-lg font-cdt-bold text-cdt-blue-900">
+          Cuestión de Datos <span className="text-cdt-blue-700">- #AI for good</span>
+        </h1>
         {/* Control simétrico al botón de cierre de `CopilotPanel` (que en
             escritorio no renderiza nada cuando `open` es `false` — no hay
             ningún separador ni botón dentro del que agarrarse): sin esto,

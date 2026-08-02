@@ -56,7 +56,9 @@ export default function Home() {
       </a>
 
       <header className="flex items-center justify-between border-b border-cdt-blue-100 bg-cdt-blue-50 px-cdt-4 py-cdt-3 sm:px-cdt-8">
-        <h1 className="text-cdt-lg font-cdt-bold text-cdt-blue-900">Cuestión de Datos</h1>
+        <h1 className="text-cdt-lg font-cdt-bold text-cdt-blue-900">
+          Cuestión de Datos <span className="text-cdt-blue-700">- #AI for good</span>
+        </h1>
         <Button as="a" href="/app" variant="primary">
           Abrir el lienzo
         </Button>
