@@ -435,7 +435,12 @@ export default function AppPage() {
       </a>
 
       <header className="flex items-center justify-between gap-cdt-3 border-b border-cdt-blue-100 bg-cdt-blue-50 px-cdt-4 py-cdt-3">
-        <h1 className="text-cdt-lg font-cdt-bold text-cdt-blue-900">Cuestión de Datos</h1>
+        <div className="flex items-center gap-cdt-2">
+          <h1 className="text-cdt-lg font-cdt-bold text-cdt-blue-900">Cuestión de Datos</h1>
+          {/* Decorativo: el nombre ya está en el `h1` de al lado, así que
+              `alt=""` evita que un lector de pantalla lo anuncie dos veces. */}
+          <img src="/v2/logo.png" alt="" width={36} height={32} className="h-cdt-8 w-auto" />
+        </div>
         {/* Control simétrico al botón de cierre de `CopilotPanel` (que en
             escritorio no renderiza nada cuando `open` es `false` — no hay
             ningún separador ni botón dentro del que agarrarse): sin esto,
