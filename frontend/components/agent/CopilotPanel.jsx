@@ -7,7 +7,8 @@ const DESKTOP_QUERY = "(min-width: 1024px)";
 
 const MIN_COPILOT_WIDTH_PX = 320;
 const MAX_COPILOT_WIDTH_PX = 640;
-const DEFAULT_COPILOT_WIDTH_PX = 420;
+const FALLBACK_COPILOT_WIDTH_PX = 420;
+const COPILOT_DEFAULT_RATIO = 0.3; // 30% copiloto / 70% lienzo central, por defecto
 const KEYBOARD_RESIZE_STEP_PX = 24;
 
 function clampCopilotWidth(value) {
@@ -20,14 +21,32 @@ function clampCopilotWidth(value) {
  * borde IZQUIERDO del panel — `aria-valuenow` es el ancho actual en px;
  * flecha izquierda AGRANDA el copiloto (el borde se corre hacia la
  * izquierda, le quita espacio al lienzo central), flecha derecha lo
- * ACHICA; Home/End saltan a los extremos. El estado no persiste entre
- * sesiones a propósito — cada carga de página arranca en
- * `DEFAULT_COPILOT_WIDTH_PX`, no es una preferencia declarada por el
- * usuario.
+ * ACHICA; Home/End saltan a los extremos.
+ *
+ * Valor por defecto (RF-105-03): 70% lienzo central / 30% copiloto, medido
+ * UNA sola vez contra el ancho real del padre de `wrapperRef` (el `<main>`
+ * de 3 zonas) la primera vez que el panel se monta abierto en
+ * escritorio — no un porcentaje vivo que se recalcule con cada resize de
+ * ventana, ni un valor fijo en píxeles ajeno al viewport real. Después de
+ * esa primera medición, el ancho queda enteramente bajo control del
+ * usuario (arrastre/teclado) y sobrevive a cerrar/abrir el panel dentro de
+ * la misma carga de página — solo una recarga real vuelve a medir 70/30.
  */
-function useResizableCopilotWidth() {
-  const [widthPx, setWidthPx] = useState(DEFAULT_COPILOT_WIDTH_PX);
+function useResizableCopilotWidth(wrapperRef, { active }) {
+  const [widthPx, setWidthPx] = useState(FALLBACK_COPILOT_WIDTH_PX);
   const dragStateRef = useRef(null);
+  const hasMeasuredDefaultRef = useRef(false);
+
+  useEffect(() => {
+    if (hasMeasuredDefaultRef.current || !active) return;
+    // El ancho de referencia es el del PADRE (el `<main>` de 3 zonas), no
+    // el del propio wrapper: este wrapper todavía no tiene un ancho fijado
+    // en el primer render (medirse a sí mismo sería circular).
+    const containerWidth = wrapperRef.current?.parentElement?.getBoundingClientRect().width;
+    if (!containerWidth) return;
+    hasMeasuredDefaultRef.current = true;
+    setWidthPx(clampCopilotWidth(Math.round(containerWidth * COPILOT_DEFAULT_RATIO)));
+  }, [active, wrapperRef]);
 
   function handlePointerMove(event) {
     const dragState = dragStateRef.current;
@@ -107,7 +126,13 @@ function useIsDesktop() {
 export function CopilotPanel({ open, onClose, title = "Copiloto", children }) {
   const isDesktop = useIsDesktop();
   const previouslyFocusedRef = useRef(null);
-  const { widthPx, handlePointerDown, handleKeyDown } = useResizableCopilotWidth();
+  // Padre real (el `<main>` de 3 zonas) contra el que se mide el 70/30
+  // inicial: este wrapper es su hijo directo tanto en `app.js` como en la
+  // galería F3-7A de `_dev/ui.js`.
+  const outerRef = useRef(null);
+  const { widthPx, handlePointerDown, handleKeyDown } = useResizableCopilotWidth(outerRef, {
+    active: open && isDesktop,
+  });
 
   // Modo panel (≥1024px): no es modal, así que no atrapa foco, pero SÍ lo
   // restaura al cerrarse — mismo principio que Modal.jsx, aplicado aquí
@@ -133,7 +158,7 @@ export function CopilotPanel({ open, onClose, title = "Copiloto", children }) {
   if (!open) return null;
 
   return (
-    <div className="flex shrink-0">
+    <div ref={outerRef} className="flex shrink-0">
       <div
         role="separator"
         aria-orientation="vertical"

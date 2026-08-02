@@ -204,10 +204,13 @@ escalera de grosores.
 Layout de 3 zonas, ya fijado por `plan.md` §7: navegación mínima superior,
 lienzo central (documento de política), copiloto lateral (investigación en
 curso). El límite entre lienzo y copiloto es un divisor arrastrable y
-operable por teclado (`CopilotPanel.jsx`, RF-105-02) — el ancho del
-copiloto ya no es fijo. Responsive y reflujo sin scroll horizontal a 320 px
-son invariantes de aceptación, verificadas en F1-01 sobre la galería de
-primitivas (`frontend/pages/_dev/ui.js`).
+operable por teclado (`CopilotPanel.jsx`, RF-105-02/RF-105-03) — el ancho
+del copiloto ya no es fijo. Proporción por defecto: 70% lienzo central /
+30% copiloto, medida contra el ancho real del contenedor una sola vez al
+abrir el panel (nunca recalculada en vivo con el resize de la ventana);
+después queda enteramente bajo control del usuario. Responsive y reflujo
+sin scroll horizontal a 320 px son invariantes de aceptación, verificadas
+en F1-01 sobre la galería de primitivas (`frontend/pages/_dev/ui.js`).
 
 **Revisión RF-105-02 sobre DESIGN-01 (Variante A — Ruta central):** la
 implementación original organizaba los pasos como un recorrido vertical

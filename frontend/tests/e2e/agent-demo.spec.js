@@ -153,6 +153,24 @@ test.describe("Muestra funcional F3-7A — /_dev/ui#agent-demo", () => {
     expect(errors).toEqual([]);
   });
 
+  test("proporción por defecto 70% lienzo / 30% copiloto (RF-105-03)", async ({ page }) => {
+    await page.goto(GALLERY_URL);
+    await page.getByRole("button", { name: "Abrir copiloto" }).click();
+
+    const aside = page.getByLabel("Copiloto — muestra F3-7A");
+    const { asideWidth, containerWidth } = await aside.evaluate((el) => ({
+      asideWidth: el.getBoundingClientRect().width,
+      // El contenedor real: el padre del wrapper que envuelve separador+aside.
+      containerWidth: el.parentElement.parentElement.getBoundingClientRect().width,
+    }));
+
+    const ratio = asideWidth / containerWidth;
+    // Margen de tolerancia por redondeo a entero y por el propio ancho del
+    // separador (8px) que también vive dentro del contenedor medido.
+    expect(ratio).toBeGreaterThan(0.27);
+    expect(ratio).toBeLessThan(0.33);
+  });
+
   test("divisor arrastrable: teclado y puntero cambian el ancho real del copiloto (RF-105-02)", async ({ page }) => {
     await page.goto(GALLERY_URL);
     await page.getByRole("button", { name: "Abrir copiloto" }).click();
