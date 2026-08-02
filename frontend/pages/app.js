@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Head from "next/head";
+import { FileUp, PanelRightOpen } from "lucide-react";
 import { resolveBackendUrl } from "../lib/config/backendUrl";
 import { useAgentRun } from "../hooks/useAgentRun";
 import { useConsent } from "../hooks/useConsent";
@@ -16,6 +17,7 @@ import {
 import { ConsentDialog } from "../components/consent";
 import { HistoryList } from "../components/history";
 import { LiveRegion } from "../components/ui/LiveRegion";
+import { Button } from "../components/ui/Button";
 import {
   DocumentSections,
   DocumentPersistenceStatus,
@@ -196,6 +198,15 @@ export default function AppPage() {
   const [documentFeedback, setDocumentFeedback] = useState("");
   const documentSectionsRef = useRef(null);
   const exportButtonRef = useRef(null);
+  const importFlowRef = useRef(null);
+  // Destino explícito de restauración de foco al cerrar `DocxImportFlow`
+  // (ver `Modal.jsx`, prop `returnFocusRef`): hay DOS controles que pueden
+  // abrir el mismo flujo (el ítem "Importar documento (.docx)" del menú
+  // Archivo y el botón standalone junto a "Exportar en Word"), así que cada
+  // uno fija aquí, justo antes de invocar `selectFile()`, cuál de los dos
+  // debe recibir el foco de vuelta — nunca un valor fijo de antemano.
+  const importReturnFocusRef = useRef(null);
+  const importButtonRef = useRef(null);
   const prefillNonceRef = useRef(0);
 
   // Ver `DocumentMenuBar.jsx`: el menú Archivo/Editar/Formato lee
@@ -321,6 +332,27 @@ export default function AppPage() {
     history.resumeRun(agentRun.state.runId);
   }, [agentRun.state.runId, history]);
 
+  // `history.rerun`/`history.resumeRun` (a diferencia de `startInvestigation`)
+  // no abren el copiloto: llaman a `agentRun.start`/`agentRun.resume`
+  // directamente, sin pasar por este componente. Sin este envoltorio, "Reejecutar"
+  // y "Reanudar" disparaban una corrida real (el backend la terminaba) sin que
+  // hubiera ninguna forma de ver el resultado, porque el panel seguía cerrado.
+  const handleRerun = useCallback(
+    (runId) => {
+      setCopilotOpen(true);
+      history.rerun(runId);
+    },
+    [history]
+  );
+
+  const handleResumeRun = useCallback(
+    (runId) => {
+      setCopilotOpen(true);
+      return history.resumeRun(runId);
+    },
+    [history]
+  );
+
   const handleReformulate = useCallback(() => {
     setCopilotOpen(false);
   }, []);
@@ -390,7 +422,7 @@ export default function AppPage() {
   }, [documentFeedback]);
 
   return (
-    <div className="cdt-v2 flex min-h-screen flex-col bg-cdt-white">
+    <div className="cdt-v2 flex min-h-screen flex-col bg-cdt-slate-100">
       <Head>
         <title>Cuestión de Datos — Investigación</title>
       </Head>
@@ -402,8 +434,20 @@ export default function AppPage() {
         Saltar al contenido
       </a>
 
-      <header className="border-b border-cdt-blue-100 bg-cdt-blue-50 px-cdt-4 py-cdt-3">
+      <header className="flex items-center justify-between gap-cdt-3 border-b border-cdt-blue-100 bg-cdt-blue-50 px-cdt-4 py-cdt-3">
         <h1 className="text-cdt-lg font-cdt-bold text-cdt-blue-900">Cuestión de Datos</h1>
+        {/* Control simétrico al botón de cierre de `CopilotPanel` (que en
+            escritorio no renderiza nada cuando `open` es `false` — no hay
+            ningún separador ni botón dentro del que agarrarse): sin esto,
+            cerrar el panel mientras una investigación queda corriendo o
+            terminada (p. ej. tras "Reejecutar") no dejaba ninguna forma de
+            volver a verla salvo recargar la página. */}
+        {documentModel !== null && !copilotOpen ? (
+          <Button type="button" variant="secondary" onClick={() => setCopilotOpen(true)}>
+            <PanelRightOpen className="h-4 w-4" aria-hidden="true" focusable="false" />
+            Abrir copiloto
+          </Button>
+        ) : null}
       </header>
 
       <LiveRegion message={liveRegionMessage} />
@@ -451,6 +495,8 @@ export default function AppPage() {
                 documentSectionsRef={documentSectionsRef}
                 editorActivityTick={editorActivityTick}
                 exportButtonRef={exportButtonRef}
+                importFlowRef={importFlowRef}
+                importReturnFocusRef={importReturnFocusRef}
                 onCreateDocument={handleCreateDocument}
                 onImportDocument={handleImportDocument}
                 onCloseDocument={handleCloseDocument}
@@ -467,7 +513,21 @@ export default function AppPage() {
                 currentDocument={documentModel}
                 onDismissNotice={autosave.dismissNotice}
               />
-              <ExportDocumentButton ref={exportButtonRef} documentModel={documentModel} />
+              <div className="flex flex-wrap gap-cdt-2">
+                <Button
+                  ref={importButtonRef}
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    importReturnFocusRef.current = importButtonRef.current;
+                    importFlowRef.current?.selectFile();
+                  }}
+                >
+                  <FileUp className="h-4 w-4" aria-hidden="true" focusable="false" />
+                  Importar documento (.docx)
+                </Button>
+                <ExportDocumentButton ref={exportButtonRef} documentModel={documentModel} />
+              </div>
             </div>
 
             <DocumentSections
@@ -510,10 +570,10 @@ export default function AppPage() {
               </div>
               <HistoryList
                 runs={history.runs}
-                onRerun={history.rerun}
+                onRerun={handleRerun}
                 onRefine={handleRefine}
                 onDelete={handleDeleteRun}
-                onResume={history.resumeRun}
+                onResume={handleResumeRun}
                 isDeletingRun={history.isDeletingRun}
               />
             </section>

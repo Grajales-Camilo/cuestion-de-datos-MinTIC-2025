@@ -23,6 +23,7 @@ module.exports = {
         "cdt-slate-900": "var(--cdt-slate-900)",
         "cdt-slate-600": "var(--cdt-slate-600)",
         "cdt-slate-400": "var(--cdt-slate-400)",
+        "cdt-slate-100": "var(--cdt-slate-100)",
         "cdt-success": "var(--cdt-success)",
         "cdt-warning": "var(--cdt-warning)",
         "cdt-error": "var(--cdt-error)",

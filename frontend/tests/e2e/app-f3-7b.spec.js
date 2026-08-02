@@ -190,6 +190,52 @@ test.describe("/app — historial (RF-502)", () => {
     await expect.poll(() => postCalls.length).toBe(2);
   });
 
+  test("Reejecutar reabre el panel del copiloto aunque el usuario lo haya cerrado antes", async ({ page }) => {
+    // Regresión: `history.rerun` dispara una corrida real (el backend la
+    // termina) pero antes no pasaba por `setCopilotOpen(true)` — el panel
+    // quedaba cerrado sin ninguna forma de ver el resultado salvo recargar.
+    await mockBackend(page);
+    await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
+
+    await submitQuestion(page, "¿Cuál es la cobertura educativa en Antioquia?");
+    await page.getByRole("dialog").getByRole("button", { name: "Aceptar e investigar" }).click();
+    const copilot = page.getByRole("complementary", { name: "Investigación en curso" });
+    await expect(copilot).toBeVisible({ timeout: 10000 });
+
+    await copilot.getByRole("button", { name: "Cerrar copiloto" }).click();
+    await expect(copilot).not.toBeVisible();
+
+    await main(page).getByRole("button", { name: "Reejecutar" }).click();
+    await expect(copilot).toBeVisible();
+  });
+
+  test("el botón 'Abrir copiloto' del encabezado reabre el panel manualmente", async ({ page }) => {
+    await mockBackend(page);
+    await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
+
+    // Con un documento abierto y el copiloto todavía cerrado (no se ha hecho
+    // ninguna investigación), el control ya está disponible: no depende de
+    // que exista una corrida para ofrecer la forma de abrir el panel.
+    const openButtonBeforeAnyRun = page.getByRole("button", { name: "Abrir copiloto" });
+    await expect(openButtonBeforeAnyRun).toBeVisible();
+
+    await submitQuestion(page, "¿Cuál es la cobertura educativa en Antioquia?");
+    await page.getByRole("dialog").getByRole("button", { name: "Aceptar e investigar" }).click();
+    const copilot = page.getByRole("complementary", { name: "Investigación en curso" });
+    await expect(copilot).toBeVisible({ timeout: 10000 });
+
+    await copilot.getByRole("button", { name: "Cerrar copiloto" }).click();
+    await expect(copilot).not.toBeVisible();
+
+    const openButton = page.getByRole("button", { name: "Abrir copiloto" });
+    await expect(openButton).toBeVisible();
+    await openButton.click();
+    await expect(copilot).toBeVisible();
+    await expect(openButton).not.toBeVisible();
+  });
+
   test("Refinar precarga la pregunta en el composer para editar antes de enviar", async ({ page }) => {
     await mockBackend(page);
     await page.goto(APP_URL);

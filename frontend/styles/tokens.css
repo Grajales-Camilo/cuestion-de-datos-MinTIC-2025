@@ -41,6 +41,13 @@
   --cdt-slate-900: #0f172a;
   --cdt-slate-600: #475569;
   --cdt-slate-400: #94a3b8;
+  /* Gris frío neutro para el fondo de página (constitution.md Art. V.1
+   * permite explícitamente "grises fríos" además del blanco puro, no solo
+   * blue-50): separa visualmente la zona que NO es lienzo central ni panel
+   * del copiloto — ambos siguen fijando su propio `bg-cdt-white` explícito,
+   * así que este tono nunca los reemplaza ni los oculta, solo diferencia el
+   * "fondo de fondo" que los rodea (`/app`, ver `pages/app.js`). */
+  --cdt-slate-100: #f1f3f5;
   --cdt-success: #15803d;
   --cdt-warning: #b45309;
   --cdt-error: #b91c1c;

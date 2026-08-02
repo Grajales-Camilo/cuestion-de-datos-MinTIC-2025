@@ -25,6 +25,7 @@ const EXPECTED_TOKENS = {
   "--cdt-slate-900": "#0f172a",
   "--cdt-slate-600": "#475569",
   "--cdt-slate-400": "#94a3b8",
+  "--cdt-slate-100": "#f1f3f5",
   "--cdt-success": "#15803d",
   "--cdt-warning": "#b45309",
   "--cdt-error": "#b91c1c",

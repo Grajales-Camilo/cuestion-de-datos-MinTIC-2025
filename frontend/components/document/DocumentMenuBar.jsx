@@ -69,13 +69,14 @@ export function DocumentMenuBar({
   documentSectionsRef,
   editorActivityTick,
   exportButtonRef,
+  importFlowRef,
+  importReturnFocusRef,
   onCreateDocument,
   onImportDocument,
   onCloseDocument,
   onFeedback,
 }) {
   const [pendingTemplateId, setPendingTemplateId] = useState(null);
-  const importFlowRef = useRef(null);
   const fileMenuTriggerRef = useRef(null);
 
   const activeEditor = documentSectionsRef.current?.getActiveEditor() ?? null;
@@ -127,7 +128,19 @@ export function DocumentMenuBar({
               </MenuItem>
             ))}
           </MenuGroup>
-          <MenuItem icon={FileUp} onSelect={() => importFlowRef.current?.selectFile()}>
+          <MenuItem
+            icon={FileUp}
+            onSelect={() => {
+              // Ver comentario junto a `<DocxImportFlow returnFocusRef>` más
+              // abajo: sin fijar el destino explícito ANTES de abrir el
+              // selector nativo de archivos, el foco se restauraría a
+              // cualquier cosa que `document.activeElement` sea cuando el
+              // modal de resumen finalmente se monte — y para entonces el
+              // selector nativo de archivos ya movió el foco varias veces.
+              if (importReturnFocusRef) importReturnFocusRef.current = fileMenuTriggerRef.current;
+              importFlowRef.current?.selectFile();
+            }}
+          >
             Importar documento (.docx)
           </MenuItem>
           <MenuDivider />
@@ -229,7 +242,7 @@ export function DocumentMenuBar({
         currentDocument={documentModel}
         onImport={onImportDocument}
         onFeedback={onFeedback}
-        returnFocusRef={fileMenuTriggerRef}
+        returnFocusRef={importReturnFocusRef}
       />
 
       <Modal

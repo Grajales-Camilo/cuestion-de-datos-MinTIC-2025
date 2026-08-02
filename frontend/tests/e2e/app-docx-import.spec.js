@@ -155,4 +155,33 @@ test.describe("/app — DOCX-IMPORT-01 local y controlado", () => {
     await expect(page.getByRole("menuitem", { name: "Archivo" })).toBeFocused();
     await expect(editor).toContainText("Contenido que debe permanecer");
   });
+
+  test("el botón standalone 'Importar documento (.docx)' abre el mismo flujo y devuelve el foco a sí mismo", async ({
+    page,
+  }) => {
+    // El botón junto a "Exportar en Word (.docx)" (para que ese control no
+    // quede huérfano) reutiliza el mismo `DocxImportFlow` que el ítem del
+    // menú Archivo — nunca un segundo flujo. Al cerrar, el foco debe volver
+    // a ESTE botón, no al disparador del menú Archivo (esa es la razón de
+    // `importReturnFocusRef` en `pages/app.js`).
+    await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page);
+
+    const importButton = page.getByRole("button", { name: "Importar documento (.docx)" });
+    const chooserPromise = page.waitForEvent("filechooser");
+    await importButton.click();
+    const chooser = await chooserPromise;
+    await page.waitForTimeout(300);
+    await chooser.setFiles({
+      name: "corrupto.docx",
+      mimeType: DOCX_MIME,
+      buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]),
+    });
+
+    const errorDialog = page.getByRole("dialog", { name: "No se pudo importar el documento" });
+    await expect(errorDialog).toBeVisible({ timeout: 20_000 });
+    await page.keyboard.press("Escape");
+    await expect(errorDialog).toBeHidden();
+    await expect(importButton).toBeFocused();
+  });
 });

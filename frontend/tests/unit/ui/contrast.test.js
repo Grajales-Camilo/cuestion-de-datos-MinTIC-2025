@@ -16,6 +16,7 @@ const TOKENS = {
   "slate-900": "#0f172a",
   "slate-600": "#475569",
   "slate-400": "#94a3b8",
+  "slate-100": "#f1f3f5",
   success: "#15803d",
   warning: "#b45309",
   error: "#b91c1c",
@@ -65,6 +66,8 @@ const USED_PAIRS = [
   ["white", "error"], // Badge fallido, Button destructiva
   ["blue-900", "blue-50"], // Badge no_evidence (tratamiento neutral)
   ["slate-600", "blue-50"], // Texto secundario sobre fondo de sección
+  ["slate-900", "slate-100"], // Encabezados de /app sobre el fondo de página (pages/app.js)
+  ["slate-600", "slate-100"], // Etiqueta "Recordar mis investigaciones..." sobre el fondo de página
 ];
 
 describe("contraste WCAG 2.2 AA — parejas texto/fondo reales", () => {
