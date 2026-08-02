@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Head from "next/head";
 import { FileUp, PanelRightOpen } from "lucide-react";
 import { resolveBackendUrl } from "../lib/config/backendUrl";
+import { taglineFont } from "../lib/design/taglineFont";
 import { useAgentRun } from "../hooks/useAgentRun";
 import { useConsent } from "../hooks/useConsent";
 import { useRunHistory } from "../hooks/useRunHistory";
@@ -436,7 +437,10 @@ export default function AppPage() {
 
       <header className="flex items-center justify-between gap-cdt-3 border-b border-cdt-blue-100 bg-cdt-blue-50 px-cdt-4 py-cdt-3">
         <h1 className="text-cdt-lg font-cdt-bold text-cdt-blue-900">
-          Cuestión de Datos <span className="text-cdt-blue-700">- #AI for good</span>
+          Cuestión de Datos{" "}
+          <span className={`${taglineFont.className} text-cdt-xl text-cdt-blue-700 opacity-70`}>
+            - #AI for good
+          </span>
         </h1>
         {/* Control simétrico al botón de cierre de `CopilotPanel` (que en
             escritorio no renderiza nada cuando `open` es `false` — no hay
