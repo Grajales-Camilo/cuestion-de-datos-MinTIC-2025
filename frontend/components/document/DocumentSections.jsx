@@ -3,7 +3,11 @@ import { PenLine, Search } from "lucide-react";
 import { DocumentEditor } from "../canvas/editor/DocumentEditor";
 import { ManualDataEntry } from "../canvas/ManualDataEntry";
 import { Button } from "../ui/Button";
-import { deriveSectionContextHint, SECTION_CONTEXT_HINT_MAX_LENGTH } from "../../lib/document/sectionContextHint";
+import {
+  deriveContextHintFromText,
+  deriveSectionContextHint,
+  SECTION_CONTEXT_HINT_MAX_LENGTH,
+} from "../../lib/document/sectionContextHint";
 import { SectionInvestigateModal } from "./SectionInvestigateModal";
 import { normalizeExternalSources } from "../../lib/agent/externalSources.js";
 
@@ -27,7 +31,13 @@ export const DocumentSections = forwardRef(function DocumentSections(
   ref,
 ) {
   const editorRefs = useRef(new Map());
-  const [activeSectionId, setActiveSectionId] = useState(null);
+  // `contextHint` y `contextSource` se calculan UNA sola vez, en el momento
+  // del clic (`handleInvestigateClick`), y no se recalculan en cada render
+  // a partir de `section.content` — de lo contrario, una selección real en
+  // el editor nunca sobreviviría hasta el modal (la selección no vive en el
+  // JSON de la sección, así que un recálculo "en vivo" siempre volvería a
+  // ver la sección completa).
+  const [activeInvestigation, setActiveInvestigation] = useState(null);
   const [manualDialog, setManualDialog] = useState(null);
   const [emptySectionId, setEmptySectionId] = useState(null);
   // Sección con foco real de teclado/edición más reciente, DISTINTA de
@@ -89,12 +99,24 @@ export const DocumentSections = forwardRef(function DocumentSections(
 
   function handleInvestigateClick(section) {
     setEmptySectionId(null);
-    const hint = deriveSectionContextHint(section.content, { maxLength: SECTION_CONTEXT_HINT_MAX_LENGTH });
+    // Si hay una selección de texto real en ESTA sección en el momento del
+    // clic, esa selección —no la sección completa— es el contexto que se
+    // envía (RF-104). Sin selección (o con la selección colapsada a un
+    // cursor), el comportamiento previo se conserva sin cambios.
+    const selectedText = editorRefs.current.get(section.sectionId)?.getSelectedText() ?? "";
+    const hasSelection = selectedText.trim().length > 0;
+    const hint = hasSelection
+      ? deriveContextHintFromText(selectedText, { maxLength: SECTION_CONTEXT_HINT_MAX_LENGTH })
+      : deriveSectionContextHint(section.content, { maxLength: SECTION_CONTEXT_HINT_MAX_LENGTH });
     if (hint.isEmpty) {
       setEmptySectionId(section.sectionId);
       return;
     }
-    setActiveSectionId(section.sectionId);
+    setActiveInvestigation({
+      sectionId: section.sectionId,
+      contextHint: hint,
+      contextSource: hasSelection ? "selection" : "section",
+    });
   }
 
   function handleManualEntrySubmit(payload) {
@@ -113,9 +135,8 @@ export const DocumentSections = forwardRef(function DocumentSections(
     return true;
   }
 
-  const activeSection = document.sections.find((section) => section.sectionId === activeSectionId) ?? null;
-  const activeContextHint = activeSection
-    ? deriveSectionContextHint(activeSection.content, { maxLength: SECTION_CONTEXT_HINT_MAX_LENGTH })
+  const activeSection = activeInvestigation
+    ? document.sections.find((section) => section.sectionId === activeInvestigation.sectionId) ?? null
     : null;
 
   return (
@@ -182,12 +203,13 @@ export const DocumentSections = forwardRef(function DocumentSections(
       {activeSection ? (
         <SectionInvestigateModal
           sectionTitle={activeSection.title}
-          contextHint={activeContextHint}
-          onCancel={() => setActiveSectionId(null)}
+          contextHint={activeInvestigation.contextHint}
+          contextSource={activeInvestigation.contextSource}
+          onCancel={() => setActiveInvestigation(null)}
           onConfirm={(question) => {
             const sectionId = activeSection.sectionId;
-            const contextHint = activeContextHint.value;
-            setActiveSectionId(null);
+            const contextHint = activeInvestigation.contextHint.value;
+            setActiveInvestigation(null);
             onInvestigateSection?.({ question, contextHint }, sectionId);
           }}
         />

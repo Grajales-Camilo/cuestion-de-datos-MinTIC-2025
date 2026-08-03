@@ -44,8 +44,8 @@ describe("ConsentDialog — texto literal D-9", () => {
 });
 
 describe("ConsentDialog — truncamiento", () => {
-  it("un contextHint > 1000 caracteres muestra el aviso de truncamiento", async () => {
-    const long = "palabra ".repeat(200);
+  it("un contextHint > 2000 caracteres muestra el aviso de truncamiento", async () => {
+    const long = "palabra ".repeat(300);
     renderDialog({ draft: { question: "¿Pregunta válida y suficientemente larga?", contextHint: long } });
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     expect(screen.getByRole("status")).toHaveTextContent("se acortó");

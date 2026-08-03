@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SECTION_CONTEXT_HINT_MAX_LENGTH,
+  deriveContextHintFromText,
   deriveSectionContextHint,
   extractSectionText,
 } from "../../../lib/document/sectionContextHint";
@@ -104,13 +105,32 @@ describe("deriveSectionContextHint — F5-03A, RF-104", () => {
     expect(result).toEqual({ value: "Diagnóstico corto de la sección.", truncated: false, isEmpty: false });
   });
 
-  it("trunca a <=1000 caracteres respetando límite de palabra, sin cortar a mitad", () => {
-    const longWord = "palabra ".repeat(200); // > 1000 caracteres, con espacios frecuentes
+  it("trunca a <=2000 caracteres respetando límite de palabra, sin cortar a mitad", () => {
+    const longWord = "palabra ".repeat(300); // > 2000 caracteres, con espacios frecuentes
     const doc = { type: "doc", content: [paragraph(longWord)] };
     const result = deriveSectionContextHint(doc, { maxLength: SECTION_CONTEXT_HINT_MAX_LENGTH });
     expect(result.value.length).toBeLessThanOrEqual(SECTION_CONTEXT_HINT_MAX_LENGTH);
     expect(result.truncated).toBe(true);
     expect(result.value.endsWith("palabra")).toBe(true); // no corta a mitad de palabra
     expect(result.isEmpty).toBe(false);
+  });
+});
+
+describe("deriveContextHintFromText — selección real de texto (F5-03A, RF-104)", () => {
+  it("normaliza espacios de una selección igual que deriveSectionContextHint", () => {
+    const result = deriveContextHintFromText("  cobertura   educativa  ");
+    expect(result).toEqual({ value: "cobertura educativa", truncated: false, isEmpty: false });
+  });
+
+  it("isEmpty es true cuando la selección es solo espacio", () => {
+    expect(deriveContextHintFromText("   ")).toEqual({ value: "", truncated: false, isEmpty: true });
+  });
+
+  it("trunca al mismo límite y con la misma regla de corte por palabra", () => {
+    const longSelection = "palabra ".repeat(300);
+    const result = deriveContextHintFromText(longSelection, { maxLength: SECTION_CONTEXT_HINT_MAX_LENGTH });
+    expect(result.value.length).toBeLessThanOrEqual(SECTION_CONTEXT_HINT_MAX_LENGTH);
+    expect(result.truncated).toBe(true);
+    expect(result.value.endsWith("palabra")).toBe(true);
   });
 });

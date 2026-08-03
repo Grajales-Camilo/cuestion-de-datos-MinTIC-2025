@@ -71,6 +71,18 @@ const ReadyDocumentEditor = forwardRef(function ReadyDocumentEditor(
       focus() {
         return editor?.commands.focus("end") ?? false;
       },
+      // "Investigar esta sección" (F5-03A/RF-104): si el usuario tiene texto
+      // seleccionado en ESTA sección al hacer clic, ese fragmento —no la
+      // sección completa— es el que debe llenar el contexto. `textBetween`
+      // ya inserta el mismo separador de bloque ("\n") que
+      // `extractSectionText` usa para nodos de bloque, así que el texto
+      // resultante es consistente con el de la sección completa.
+      getSelectedText() {
+        if (!editor) return "";
+        const { from, to, empty } = editor.state.selection;
+        if (empty) return "";
+        return editor.state.doc.textBetween(from, to, "\n", "\n");
+      },
       // Escape hatch deliberado para el menú global Archivo/Editar/Formato
       // (RF-105): expone el editor Tiptap real de ESTA sección para que un
       // control fuera del árbol de esta sección pueda ejecutar comandos

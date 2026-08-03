@@ -2,7 +2,9 @@
 
 ## Estado
 
-Aceptado.
+Reemplazado por [ADR-0006](./ADR-0006-texto-literal-de-consentimiento-v2.md)
+(2026-08-03). Se conserva íntegro como registro histórico de la versión 1;
+no representa el texto vigente.
 
 ## Contexto y fuerzas en tensión
 
@@ -91,5 +93,7 @@ prueba de texto literal en `frontend/tests/unit/consent/ConsentDialog.test.jsx`.
 
 ## Sucesor
 
-Ninguno. Una futura versión 2 del texto reemplazará este ADR o se
-registrará como ADR sucesor, según corresponda cuando se apruebe.
+[ADR-0006 — Texto literal de consentimiento v2](./ADR-0006-texto-literal-de-consentimiento-v2.md)
+(2026-08-03): sube el límite de `context_hint` de 1.000 a 2.000 caracteres
+(RF-104) y actualiza la única cifra afectada del cuerpo del texto;
+`consentVersion` sube de 1 a 2.

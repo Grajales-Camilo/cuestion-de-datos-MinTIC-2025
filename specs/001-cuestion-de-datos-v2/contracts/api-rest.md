@@ -44,7 +44,7 @@ Inicia una corrida del agente (RF-201). Respuesta inmediata con `run_id`; el pro
 }
 ```
 - `question`: obligatorio, 10–2.000 caracteres.
-- `context_hint`: opcional, ≤ 1.000 caracteres (RF-104).
+- `context_hint`: opcional, ≤ 2.000 caracteres (RF-104).
 - `options.llm_*`: opcional; solo se respeta si `EVAL_MODE=true` en el servidor (uso del investigador ACT-03). Usuarios normales siempre reciben la configuración por defecto.
 - Este endpoint público SIEMPRE crea `retention_class = "user"`. No acepta `retention_class` en JSON. Las corridas `eval` se crean únicamente por el runner OE3 mediante servicio interno del backend.
 

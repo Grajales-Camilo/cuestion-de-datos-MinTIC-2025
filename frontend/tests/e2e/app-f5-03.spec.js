@@ -169,6 +169,63 @@ test.describe("/app — F5-03A secciones e investigación contextual (RF-104)", 
     await expect(sectionEditor.getByRole("group", { name: /Cita de evidencia:/ })).toHaveCount(1);
   });
 
+  test("con una selección de texto real en la sección, el contexto enviado es solo esa selección", async ({
+    page,
+  }) => {
+    const { queryRequestBodies } = await mockBackend(page);
+    await page.goto(APP_URL);
+    await createFreeDocumentViaPicker(page); // RF-101-02-R1: storage vacío, sin addInitScript
+
+    await typeIntoSection(page, SECTION_TEXT);
+
+    // Selección REAL de texto vía la Selection API nativa del navegador
+    // (dispara `selectionchange`, el mismo evento que un arrastre de mouse
+    // real produciría; ProseMirror sincroniza su propio estado a partir de
+    // ese evento nativo, no de un evento sintético de React).
+    const selectedFragment = "cobertura educativa";
+    await page.evaluate((needle) => {
+      const editor = document.querySelector('[aria-label="Documento de trabajo: Sección 1"]');
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        const idx = node.textContent.indexOf(needle);
+        if (idx !== -1) {
+          const range = document.createRange();
+          range.setStart(node, idx);
+          range.setEnd(node, idx + needle.length);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          return;
+        }
+      }
+      throw new Error(`No se encontró "${needle}" en el editor`);
+    }, selectedFragment);
+
+    await page.getByRole("button", { name: "Investigar esta sección" }).click();
+    const dialog = page.getByRole("dialog", { name: "Investigar esta sección: Sección 1" });
+    await expect(dialog).toBeVisible();
+    const preview = dialog.getByRole("region", { name: "Contexto que se enviará (texto seleccionado en la sección)" });
+    await expect(preview).toHaveText(selectedFragment);
+
+    await dialog.getByLabel("Pregunta para investigar").fill("¿Qué dice esta selección sobre cobertura?");
+    await dialog.getByRole("button", { name: "Investigar con este contexto" }).click();
+    await page
+      .getByRole("dialog", { name: "Antes de iniciar tu primera investigación" })
+      .getByRole("button", { name: "Aceptar e investigar" })
+      .click();
+
+    await expect(page.getByLabel("Investigación en curso").getByText("La investigación terminó con evidencia verificada.")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    expect(queryRequestBodies).toHaveLength(1);
+    expect(queryRequestBodies[0]).toMatchObject({
+      question: "¿Qué dice esta selección sobre cobertura?",
+      context_hint: selectedFragment,
+    });
+  });
+
   test("la pregunta libre sigue funcionando sin context_hint forzado, como flujo independiente", async ({ page }) => {
     const { queryRequestBodies } = await mockBackend(page);
     await page.goto(APP_URL);

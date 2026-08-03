@@ -3,15 +3,16 @@ import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { normalizeContextHint } from "../../lib/agent/contextHint";
 
-const MAX_CONTEXT_HINT_LENGTH = 1000;
+const MAX_CONTEXT_HINT_LENGTH = 2000;
 
-/** Título y cuerpo literales de D-9, aprobados por Juan Camilo Grajales B.
- * (`docs/frontend-v2/adr/`). No parafrasear ni resumir: es texto legal de
- * consentimiento, se muestra exactamente como fue aprobado. */
+/** Título y cuerpo literales de D-9/D-10, aprobados por Juan Camilo Grajales
+ * B. (`docs/frontend-v2/adr/ADR-0006-...md`, sucesor de ADR-0003 tras subir
+ * el límite de contexto a 2.000 caracteres). No parafrasear ni resumir: es
+ * texto legal de consentimiento, se muestra exactamente como fue aprobado. */
 export const CONSENT_TITLE = "Antes de iniciar tu primera investigación";
 
 const CONSENT_PARAGRAPHS = [
-  "Cuestión de Datos enviará y almacenará tu pregunta y, si la incluyes, un fragmento editable de contexto de máximo 1.000 caracteres. También conservará los pasos de la investigación, las trazas técnicas, las evidencias y el resultado para prestar el servicio y evaluar técnicamente su funcionamiento.",
+  "Cuestión de Datos enviará y almacenará tu pregunta y, si la incluyes, un fragmento editable de contexto de máximo 2.000 caracteres. También conservará los pasos de la investigación, las trazas técnicas, las evidencias y el resultado para prestar el servicio y evaluar técnicamente su funcionamiento.",
   "Las investigaciones de usuario se conservan hasta 90 días y después se eliminan. Mientras una investigación aparezca en tu historial, puedes borrarla de forma completa e irreversible con la opción «Borrar esta investigación».",
   "El documento completo en el que trabajas no se envía al servidor.",
 ];

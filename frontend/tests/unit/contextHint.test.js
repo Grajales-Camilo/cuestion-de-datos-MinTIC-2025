@@ -9,44 +9,44 @@ describe("normalizeContextHint", () => {
 
   it("corte por palabra: no parte una palabra a la mitad", () => {
     const word = "palabra ";
-    const text = word.repeat(200); // 1600 caracteres, muchos espacios
+    const text = word.repeat(300); // 2400 caracteres, muchos espacios
     const result = normalizeContextHint(text);
 
     expect(result.truncated).toBe(true);
-    expect(result.value.length).toBeLessThanOrEqual(1000);
+    expect(result.value.length).toBeLessThanOrEqual(2000);
     expect(result.value.endsWith("palabra")).toBe(true);
     expect(text.startsWith(result.value)).toBe(true);
   });
 
   it("palabra única extensa sin límite razonable: corte duro seguro", () => {
-    const text = "a".repeat(1500); // una sola "palabra", sin espacios
+    const text = "a".repeat(2500); // una sola "palabra", sin espacios
     const result = normalizeContextHint(text);
 
     expect(result.truncated).toBe(true);
-    expect(result.value).toBe("a".repeat(1000));
-    expect(result.value.length).toBe(1000);
+    expect(result.value).toBe("a".repeat(2000));
+    expect(result.value.length).toBe(2000);
   });
 
-  it("entrada inicial excesiva (initialContextHint > 1000): se normaliza igual que el contexto editado", () => {
-    const initialContextHint = "Sección ".repeat(300); // > 1000 caracteres
+  it("entrada inicial excesiva (initialContextHint > 2000): se normaliza igual que el contexto editado", () => {
+    const initialContextHint = "Sección ".repeat(300); // > 2000 caracteres
     const result = normalizeContextHint(initialContextHint);
 
     expect(result.truncated).toBe(true);
-    expect(result.value.length).toBeLessThanOrEqual(1000);
+    expect(result.value.length).toBeLessThanOrEqual(2000);
   });
 
   it("nunca produce un valor que exceda maxLength (ausencia de 422 evitable)", () => {
     const text = "x".repeat(5000);
     const result = normalizeContextHint(text);
-    expect(result.value.length).toBeLessThanOrEqual(1000);
+    expect(result.value.length).toBeLessThanOrEqual(2000);
   });
 
   it("un espacio temprano no produce un corte casi vacío", () => {
-    const text = "a " + "b".repeat(2000);
+    const text = "a " + "b".repeat(3000);
     const result = normalizeContextHint(text);
     // El único espacio está en la posición 1: muy por debajo del 50% del
     // límite, así que se prefiere el corte duro sobre un fragmento de "a".
-    expect(result.value.length).toBe(1000);
+    expect(result.value.length).toBe(2000);
   });
 
   it("entrada vacía o no-string: no lanza, no se trunca", () => {

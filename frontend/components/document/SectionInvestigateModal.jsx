@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { MAX_QUESTION_LENGTH, MIN_QUESTION_LENGTH, validateQuestion } from "../../lib/agent/questionValidation";
+import { SECTION_CONTEXT_HINT_MAX_LENGTH } from "../../lib/document/sectionContextHint";
 
 /**
  * Vista previa y confirmación de "Investigar esta sección" (F5-03A,
@@ -14,7 +15,7 @@ import { MAX_QUESTION_LENGTH, MIN_QUESTION_LENGTH, validateQuestion } from "../.
  * pregunta en el propio formulario. "Cancelar" (o Escape/cerrar) nunca la
  * invoca.
  */
-export function SectionInvestigateModal({ sectionTitle, contextHint, onCancel, onConfirm }) {
+export function SectionInvestigateModal({ sectionTitle, contextHint, contextSource = "section", onCancel, onConfirm }) {
   const questionId = useId();
   const [question, setQuestion] = useState("");
   const [touched, setTouched] = useState(false);
@@ -37,7 +38,9 @@ export function SectionInvestigateModal({ sectionTitle, contextHint, onCancel, o
 
         <div>
           <p id={`${questionId}-context-label`} className="mb-cdt-1 text-cdt-sm font-cdt-bold text-cdt-slate-900">
-            Contexto que se enviará (texto literal de la sección)
+            {contextSource === "selection"
+              ? "Contexto que se enviará (texto seleccionado en la sección)"
+              : "Contexto que se enviará (texto literal de la sección)"}
           </p>
           <div
             role="region"
@@ -46,10 +49,12 @@ export function SectionInvestigateModal({ sectionTitle, contextHint, onCancel, o
           >
             {contextHint.value}
           </div>
-          <p className="mt-cdt-1 text-cdt-xs text-cdt-slate-600">{contextHint.value.length}/1000 caracteres</p>
+          <p className="mt-cdt-1 text-cdt-xs text-cdt-slate-600">
+            {contextHint.value.length}/{SECTION_CONTEXT_HINT_MAX_LENGTH} caracteres
+          </p>
           {contextHint.truncated ? (
             <p role="status" className="mt-cdt-1 text-cdt-xs text-cdt-warning">
-              El contexto de esta sección se acortó a 1000 caracteres.
+              El contexto de esta sección se acortó a {SECTION_CONTEXT_HINT_MAX_LENGTH} caracteres.
             </p>
           ) : null}
         </div>

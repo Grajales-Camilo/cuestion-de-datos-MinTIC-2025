@@ -176,7 +176,7 @@ Forma real de un claim (RF-212 ya implementado en T-617C): `claim_id, claim, cla
 | **RF-101** Lienzo por secciones, plantillas (libre, MGA, plan de desarrollo) + editor enriquecido | **Implementado y verificado 2026-07-30** | `lib/document/documentModel.js`, `components/document/TemplatePicker.jsx`, `components/document/DocumentSections.jsx`, `components/canvas/editor/DocumentEditor.jsx` | Sin brecha para el mínimo normativo; “Nuevo documento” con reemplazo seguro queda fuera de RF-101 | F1, F5 | Commits `1ddc25f` + `199fa1e`; 930 unitarias y 95 E2E funcionales verdes; CI `30543431200` |
 | **RF-102** Autoguardado ≤5 s + exportación ofimática | **No existe** | ninguno | Autoguardado, esquema versionado, migración, export `.docx` | F6 | Prueba de temporizador ≤5 s; `.docx` abierto en Word |
 | **RF-103** Cita completa preservada + exportada | **No existe** | ninguno | Nodo Tiptap `evidenceCitation` con los 6 campos de Art. I.2 | F5, F6 | Prueba: nodo sin cita → inserción rechazada; `.docx` con nota al pie |
-| **RF-104** Investigar desde una sección con su contexto | Parcial: `handleAskCopilot` arma un prompt gigante | `PolicyCanvasMain.js:63-87` | Debe mapear a `context_hint` ≤1000 chars, no a un prompt | F3 | Prueba unitaria de truncado + payload real |
+| **RF-104** Investigar desde una sección con su contexto | Parcial: `handleAskCopilot` arma un prompt gigante | `PolicyCanvasMain.js:63-87` | Debe mapear a `context_hint` ≤2000 chars, no a un prompt | F3 | Prueba unitaria de truncado + payload real |
 | **RF-204** Pasos en vivo, lenguaje claro + detalle técnico | **No existe** | — | Cliente SSE + diccionario es-CO (H3) | F2, F3 | E2E: timeline en español, `detail` expandible |
 | **RF-209** Reanudación `Last-Event-ID`, terminales | **No existe** | — | Reconexión con backoff, dedupe, estados `interrupted`/`failed` | F2 | Prueba de corte de red sin duplicados |
 | **RF-401/402** Calidad visible (score + clasificación) | **No existe** | — | Badge + panel de 4 dimensiones | F4 | E2E ESC-05 |
@@ -506,7 +506,7 @@ Usuario                UI                     Cliente                 Backend
 | Borrar | DELETE | `/v2/agent/runs/{run_id}` | `Authorization` | 204 | 401, 404 (idempotente: se trata como éxito para la UI) |
 | Catálogo (opcional, F9) | GET | `/v2/catalog/search?q&k` | — | 200 | 422 si `k>25` |
 
-**Validación previa en cliente (evita 422 innecesarios):** `question` 10–2000 caracteres tras `trim`; `context_hint` ≤1000 (se trunca por límite de palabra, no a mitad de palabra, y se avisa visualmente que se recortó).
+**Validación previa en cliente (evita 422 innecesarios):** `question` 10–2000 caracteres tras `trim`; `context_hint` ≤2000 (se trunca por límite de palabra, no a mitad de palabra, y se avisa visualmente que se recortó).
 
 **CORS:** el backend permite `GET, POST, DELETE` y los encabezados `Authorization, Content-Type, Last-Event-ID, X-Admin-Token` (`main.py:321-325`), con origen `http://localhost:3000` por defecto (`config.py:61`). El frontend **no debe** enviar encabezados personalizados fuera de esa lista: cualquier encabezado extra provoca un preflight fallido.
 
@@ -666,7 +666,7 @@ Mínimo normativo: **libre**, **MGA**, **plan de desarrollo**. Las tres están i
 - **XSS:** sin `dangerouslySetInnerHTML` en todo el código nuevo (regla ESLint que lo prohíbe). Todo el contenido del backend se renderiza como texto. Las URLs de `source_url`/`external_sources` se validan (`https:` únicamente) antes de renderizar un `<a>`, siempre con `rel="noopener noreferrer"`.
 - **Consentimiento (RF-802):** modal **antes del primer `POST`** de la sesión, con: qué se guarda (pregunta, contexto acotado, trazas y evidencias), para qué (funcionamiento y evaluación técnica), cuánto (90 días, `RETENTION_USER_DAYS`) y cómo borrarlo (botón por corrida). Versionado: `consentVersion` en el almacén; si sube, se vuelve a pedir.
 - **Borrado (RF-803):** confirmación explícita ("esta acción no se puede deshacer"), `DELETE`, y limpieza del registro local **solo tras** 204 o 404.
-- **Privacidad del documento:** el documento del usuario **nunca** se envía al backend. `context_hint` es un extracto acotado (≤1000 chars) y el usuario puede **ver exactamente qué se va a enviar** antes de confirmar, con opción de editarlo.
+- **Privacidad del documento:** el documento del usuario **nunca** se envía al backend. `context_hint` es un extracto acotado (≤2000 chars) y el usuario puede **ver exactamente qué se va a enviar** antes de confirmar, con opción de editarlo.
 
 ---
 

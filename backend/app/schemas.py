@@ -101,7 +101,7 @@ class AgentQueryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(min_length=10, max_length=2000)
-    context_hint: str | None = Field(default=None, max_length=1000)
+    context_hint: str | None = Field(default=None, max_length=2000)
     options: AgentQueryOptions | None = None
 
 

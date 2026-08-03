@@ -1,7 +1,7 @@
 import { createRef, useState } from "react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { DocumentSections } from "../../../components/document";
@@ -164,6 +164,74 @@ describe("DocumentSections — F5-03A, RF-104", () => {
       "s1",
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("con una selección de texto real en la sección, el contexto enviado es solo esa selección", async () => {
+    const user = userEvent.setup();
+    const onInvestigateSection = vi.fn();
+    const ref = createRef();
+    render(
+      <Harness initialDocument={twoSectionDocument()} onInvestigateSection={onInvestigateSection} sectionsRef={ref} />,
+    );
+
+    const sectionOneEditor = await screen.findByRole("textbox", { name: "Documento de trabajo: Sección Uno" });
+    const sectionText = "Diagnostico de cobertura educativa en el municipio.";
+    await user.click(sectionOneEditor);
+    await user.type(sectionOneEditor, sectionText);
+
+    // Selecciona solo "cobertura educativa" mediante el comando real de
+    // ProseMirror (mismo patrón que `tests/unit/document/exportDocx.test.js`):
+    // jsdom no implementa la geometría de texto que un arrastre de mouse
+    // necesitaría para una selección realista.
+    const selectedFragment = "cobertura educativa";
+    const from = sectionText.indexOf(selectedFragment) + 1; // +1: posición 1 = inicio del texto dentro del párrafo
+    const to = from + selectedFragment.length;
+    act(() => {
+      ref.current.getActiveEditor().commands.setTextSelection({ from, to });
+    });
+
+    const [firstButton] = screen.getAllByRole("button", { name: "Investigar esta sección" });
+    await user.click(firstButton);
+
+    const dialog = await screen.findByRole("dialog", { name: "Investigar esta sección: Sección Uno" });
+    const preview = screen.getByRole("region", { name: "Contexto que se enviará (texto seleccionado en la sección)" });
+    expect(preview.textContent).toBe(selectedFragment);
+
+    await user.type(screen.getByLabelText("Pregunta para investigar"), "¿Cuál fue la cobertura reportada?");
+    await user.click(screen.getByRole("button", { name: "Investigar con este contexto" }));
+
+    expect(onInvestigateSection).toHaveBeenCalledWith(
+      { question: "¿Cuál fue la cobertura reportada?", contextHint: selectedFragment },
+      "s1",
+    );
+    expect(dialog).not.toBeInTheDocument();
+  });
+
+  it("sin selección (solo cursor), el comportamiento previo se conserva: se envía la sección completa", async () => {
+    const user = userEvent.setup();
+    const onInvestigateSection = vi.fn();
+    const ref = createRef();
+    render(
+      <Harness initialDocument={twoSectionDocument()} onInvestigateSection={onInvestigateSection} sectionsRef={ref} />,
+    );
+
+    const sectionOneEditor = await screen.findByRole("textbox", { name: "Documento de trabajo: Sección Uno" });
+    const sectionText = "Diagnostico de cobertura educativa en el municipio.";
+    await user.click(sectionOneEditor);
+    await user.type(sectionOneEditor, sectionText);
+
+    // Cursor colapsado al final de la escritura (`from === to`): no cuenta
+    // como selección real.
+    act(() => {
+      const editor = ref.current.getActiveEditor();
+      editor.commands.setTextSelection(editor.state.doc.content.size);
+    });
+
+    const [firstButton] = screen.getAllByRole("button", { name: "Investigar esta sección" });
+    await user.click(firstButton);
+
+    const preview = screen.getByRole("region", { name: "Contexto que se enviará (texto literal de la sección)" });
+    expect(preview.textContent).toBe(sectionText);
   });
 
   it("insertEvidenceCitation inserta solo en la sección indicada, nunca en otra", async () => {

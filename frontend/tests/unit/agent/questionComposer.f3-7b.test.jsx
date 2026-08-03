@@ -5,12 +5,12 @@ import userEvent from "@testing-library/user-event";
 import { QuestionComposer } from "../../../components/agent/QuestionComposer";
 
 describe("QuestionComposer — normalización de contextHint (§3)", () => {
-  it("initialContextHint > 1000 caracteres: se normaliza y muestra el aviso de truncamiento", () => {
-    const long = "Sección ".repeat(200); // > 1000 caracteres
+  it("initialContextHint > 2000 caracteres: se normaliza y muestra el aviso de truncamiento", () => {
+    const long = "Sección ".repeat(300); // > 2000 caracteres
     render(<QuestionComposer onSubmit={vi.fn()} consentGranted initialContextHint={long} />);
 
     const textarea = screen.getByLabelText("Contexto de la sección (editable)");
-    expect(textarea.value.length).toBeLessThanOrEqual(1000);
+    expect(textarea.value.length).toBeLessThanOrEqual(2000);
     expect(screen.getByRole("status")).toHaveTextContent("se acortó");
   });
 

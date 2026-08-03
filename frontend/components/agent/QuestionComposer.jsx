@@ -3,10 +3,10 @@ import { Button } from "../ui/Button";
 import { normalizeContextHint } from "../../lib/agent/contextHint";
 import { MAX_QUESTION_LENGTH, MIN_QUESTION_LENGTH, validateQuestion } from "../../lib/agent/questionValidation";
 
-// Límite del contrato (`contracts/api-rest.md` §2): context_hint <=1000
+// Límite del contrato (`contracts/api-rest.md` §2): context_hint <=2000
 // caracteres. Los límites de `question` viven en `questionValidation.js`,
 // compartidos con el flujo de "Investigar esta sección" (F5-03A).
-const MAX_CONTEXT_HINT_LENGTH = 1000;
+const MAX_CONTEXT_HINT_LENGTH = 2000;
 
 function normalize(text) {
   return normalizeContextHint(text ?? "", { maxLength: MAX_CONTEXT_HINT_LENGTH });

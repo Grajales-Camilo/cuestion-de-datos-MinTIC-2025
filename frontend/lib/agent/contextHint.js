@@ -1,6 +1,6 @@
 /**
  * Normalización pura de `contextHint` al límite del contrato
- * (`contracts/api-rest.md` §2: `context_hint` <= 1000 caracteres). Sin
+ * (`contracts/api-rest.md` §2: `context_hint` <= 2000 caracteres). Sin
  * React, sin `fetch`, sin acceso a `document`/almacenamiento.
  *
  * Corrige la pérdida de F3-7A: el valor que el usuario ve y edita en el
@@ -9,7 +9,7 @@
  * (`maxLength` del `<textarea>` corta a mitad de palabra sin avisar).
  */
 
-const DEFAULT_MAX_LENGTH = 1000;
+const DEFAULT_MAX_LENGTH = 2000;
 
 /**
  * Un corte se considera "razonable" solo si conserva al menos la mitad del

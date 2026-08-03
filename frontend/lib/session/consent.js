@@ -13,8 +13,9 @@ import { isolateCorrupt, safeReadJson, safeRemove, safeWriteJson } from "./stora
 export const CONSENT_STORAGE_KEY = "cdd.consent.v1";
 export const CONSENT_SCHEMA_VERSION = 1;
 
-/** Versión vigente del texto de consentimiento (D-9). */
-export const CURRENT_CONSENT_VERSION = 1;
+/** Versión vigente del texto de consentimiento (D-9/D-10, ADR-0006: subió a
+ * 2 cuando el límite de `context_hint` pasó de 1.000 a 2.000 caracteres). */
+export const CURRENT_CONSENT_VERSION = 2;
 
 function isValidConsentDoc(doc) {
   return Boolean(

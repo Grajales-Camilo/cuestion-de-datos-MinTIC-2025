@@ -10,7 +10,7 @@
 
 import { normalizeContextHint } from "../agent/contextHint";
 
-export const SECTION_CONTEXT_HINT_MAX_LENGTH = 1000;
+export const SECTION_CONTEXT_HINT_MAX_LENGTH = 2000;
 
 // Tipos de nodo cuyos hijos son bloques (párrafos, otros bloques) y deben
 // separarse con un salto de línea para no fusionar palabras de bloques
@@ -44,12 +44,21 @@ export function extractSectionText(sectionContent) {
 }
 
 /**
+ * @param {string} rawText - texto plano ya extraído (p. ej. de una
+ *   selección real del editor, ver `DocumentEditor.getSelectedText()`).
+ * @param {{maxLength?: number}} [options]
+ * @returns {{value: string, truncated: boolean, isEmpty: boolean}}
+ */
+export function deriveContextHintFromText(rawText, { maxLength = SECTION_CONTEXT_HINT_MAX_LENGTH } = {}) {
+  const normalized = normalizeContextHint(collapseWhitespace(rawText), { maxLength });
+  return { ...normalized, isEmpty: normalized.value.trim().length === 0 };
+}
+
+/**
  * @param {unknown} sectionContent
  * @param {{maxLength?: number}} [options]
  * @returns {{value: string, truncated: boolean, isEmpty: boolean}}
  */
 export function deriveSectionContextHint(sectionContent, { maxLength = SECTION_CONTEXT_HINT_MAX_LENGTH } = {}) {
-  const rawText = extractSectionText(sectionContent);
-  const normalized = normalizeContextHint(rawText, { maxLength });
-  return { ...normalized, isEmpty: normalized.value.trim().length === 0 };
+  return deriveContextHintFromText(extractSectionText(sectionContent), { maxLength });
 }

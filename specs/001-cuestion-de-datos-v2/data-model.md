@@ -165,7 +165,7 @@ Una investigación completa (RF-703). **No almacena el documento del usuario** (
 |---|---|---|
 | `id` | uuid PK | Devuelto al cliente como `run_id`. |
 | `question` | text NOT NULL | Pregunta efectiva enviada al agente. |
-| `context_hint` | text | Fragmento de sección del lienzo (≤ 1.000 chars) si vino de RF-104. |
+| `context_hint` | text | Fragmento de sección del lienzo (≤ 2.000 chars) si vino de RF-104. |
 | `status` | text NOT NULL | CHECK IN (`running`, `completed`, `no_evidence`, `failed`, `interrupted`). Transiciones solo hacia adelante. `interrupted`: reinicio, heartbeat vencido o worker desaparecido. `failed`: error definitivo o `RUN_TIMEOUT`. No existe `cancelled` en v2.0; el borrado solicitado por usuario elimina la fila. |
 | `worker_instance_id` | text FK → worker_instances | Instancia del backend que tomó la corrida; se usa para cierre idempotente al arrancar. |
 | `heartbeat_at` | timestamptz | Actualizado periódicamente por la corrida activa; base de la detección de huérfanas. |
