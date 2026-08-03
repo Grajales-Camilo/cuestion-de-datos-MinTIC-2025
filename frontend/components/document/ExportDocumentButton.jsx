@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { FileDown } from "lucide-react";
 import { Button } from "../ui/Button";
 import { LiveRegion } from "../ui/LiveRegion";
@@ -44,7 +44,13 @@ function triggerDocxDownload(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-export function ExportDocumentButton({ documentModel }) {
+/**
+ * `ref` expone únicamente `click()` (RF-105): el menú global Archivo >
+ * Descargar dispara el mismo botón real en vez de reimplementar el
+ * `import()` dinámico y el manejo de errores — un solo camino de
+ * exportación, dos formas de llegar a él.
+ */
+export const ExportDocumentButton = forwardRef(function ExportDocumentButton({ documentModel }, ref) {
   const [state, setState] = useState({ status: STATUS.IDLE, errorCode: null });
   // Guarda INMEDIATA (además de `disabled` vía `loading`): un segundo clic
   // en el mismo tick, antes de que React aplique el nuevo render, no debe
@@ -52,6 +58,12 @@ export function ExportDocumentButton({ documentModel }) {
   const isExportingRef = useRef(false);
   const mountedRef = useRef(true);
   const buttonRef = useRef(null);
+
+  useImperativeHandle(ref, () => ({
+    click() {
+      buttonRef.current?.click();
+    },
+  }));
 
   useEffect(() => {
     mountedRef.current = true;
@@ -109,4 +121,6 @@ export function ExportDocumentButton({ documentModel }) {
       ) : null}
     </div>
   );
-}
+});
+
+ExportDocumentButton.displayName = "ExportDocumentButton";

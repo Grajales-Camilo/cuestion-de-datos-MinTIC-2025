@@ -107,10 +107,16 @@ test.describe("/app — ESC-01 integral, fixture real completo (F8-01)", () => {
     await expect.poll(() => postRequestBodies.length).toBe(1);
     expect(postRequestBodies[0]).toMatchObject({ question: QUESTION, context_hint: SECTION_TEXT });
 
-    // 4) Pasos SSE visibles en vivo, en una región `aria-live` agrupada, sin
-    // que el terminal aparezca antes de tiempo.
-    const timeline = page.getByRole("list", { name: "Pasos de la investigación" });
-    await expect(timeline.getByRole("listitem")).toHaveCount(STEP_EVENT_COUNT, { timeout: 15_000 });
+    // 4) Pasos SSE visibles en vivo, sin que el terminal aparezca antes de
+    // tiempo. RF-105-02: la tarjeta condensada ya no lista cada paso — se
+    // abre el modal "Ver detalle técnico" (se actualiza en vivo, ver
+    // `StepDetailModal.jsx`) y se espera ahí el conteo completo antes de
+    // cerrarlo y seguir con el desenlace.
+    await page.getByRole("button", { name: "Ver detalle técnico", exact: true }).click();
+    const detailModal = page.getByRole("dialog", { name: "Detalle técnico de la investigación" });
+    await expect(detailModal.getByRole("listitem")).toHaveCount(STEP_EVENT_COUNT, { timeout: 15_000 });
+    await page.keyboard.press("Escape");
+    await expect(detailModal).not.toBeVisible();
 
     // 5) Terminal `completed`, con evidencia/claims/calidad visibles.
     await expect(page.getByLabel("Investigación en curso").getByText("La investigación terminó con evidencia verificada.")).toBeVisible({

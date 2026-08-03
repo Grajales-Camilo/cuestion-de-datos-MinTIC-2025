@@ -47,47 +47,6 @@
  * FIN SISTEMA VISUAL V2
  * ============================================================ */
 
-/* Estilos personalizados para la sección de recursos (LEGACY — usados por
- * pages/index.js y componentes legacy; no se retiran ni se tocan en F1). */
-.shadow-glow {
-  box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
-  transition: box-shadow 0.3s ease-in-out;
-}
-
-.shadow-glow:hover {
-  box-shadow: 0 0 25px rgba(255, 255, 255, 0.7);
-}
-
-/* Animación para elementos flotantes */
-@keyframes float {
-  0% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
-  100% {
-    transform: translateY(0px);
-  }
-}
-
-.float {
-  animation: float 6s ease-in-out infinite;
-}
-
-.float-delay-1 {
-  animation-delay: 1s;
-}
-
-.float-delay-2 {
-  animation-delay: 2s;
-}
-
-/* Efecto de brillo para elementos interactivos */
-.glow-on-hover:hover {
-  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.6));
-}
-
 /* Estilos de accesibilidad */
 @media (prefers-reduced-motion: reduce) {
   * {
@@ -95,10 +54,6 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-  }
-  
-  .float, .float-delay-1, .float-delay-2 {
-    animation: none !important;
   }
 }
 

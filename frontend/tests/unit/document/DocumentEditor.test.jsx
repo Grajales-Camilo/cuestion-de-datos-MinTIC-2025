@@ -70,7 +70,13 @@ describe("DocumentEditor — F5-02, RF-103/RNF-007", () => {
 
     await screen.findByRole("textbox", { name: "Documento de trabajo" });
     await waitFor(() => expect(ref.current).not.toBeNull());
-    expect(ref.current.getJSON()).toEqual(initialContent);
+    // `TextAlign` añade `attrs.textAlign` (por defecto `null`) a todo
+    // párrafo/encabezado del esquema — round-trip fiel, no un cambio de
+    // contenido real.
+    expect(ref.current.getJSON()).toEqual({
+      ...initialContent,
+      content: [{ ...initialContent.content[0], attrs: { textAlign: null } }],
+    });
     expect(container.textContent).toContain("Contenido válido");
     expect(container.querySelector("[data-document-json]")).toBeNull();
   });

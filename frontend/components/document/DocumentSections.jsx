@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import { PenLine, Search } from "lucide-react";
 import { DocumentEditor } from "../canvas/editor/DocumentEditor";
 import { ManualDataEntry } from "../canvas/ManualDataEntry";
@@ -23,13 +23,23 @@ import { normalizeExternalSources } from "../../lib/agent/externalSources.js";
  * - `focusSection(sectionId)`
  */
 export const DocumentSections = forwardRef(function DocumentSections(
-  { document, onSectionChange, onInvestigateSection, onManualEntryInserted, disabled = false },
+  { document, onSectionChange, onInvestigateSection, onManualEntryInserted, onEditorActivity, disabled = false },
   ref,
 ) {
   const editorRefs = useRef(new Map());
   const [activeSectionId, setActiveSectionId] = useState(null);
   const [manualDialog, setManualDialog] = useState(null);
   const [emptySectionId, setEmptySectionId] = useState(null);
+  // Sección con foco real de teclado/edición más reciente, DISTINTA de
+  // `activeSectionId` (esa es la sección objetivo del modal "Investigar
+  // esta sección"). El menú global Archivo/Editar/Formato (RF-105) opera
+  // sobre la sección enfocada, no sobre ninguna investigación en curso.
+  const [focusedSectionId, setFocusedSectionId] = useState(null);
+
+  const resolveActiveSectionId = useCallback(() => {
+    if (focusedSectionId && editorRefs.current.has(focusedSectionId)) return focusedSectionId;
+    return document.sections[0]?.sectionId ?? null;
+  }, [focusedSectionId, document.sections]);
 
   useImperativeHandle(
     ref,
@@ -49,6 +59,14 @@ export const DocumentSections = forwardRef(function DocumentSections(
       },
       openManualEntry(sectionId, initialValues) {
         if (!editorRefs.current.has(sectionId)) return false;
+        // `null` es "sin prellenado" explícito (botón "Agregar dato manual"
+        // de la sección, RF-105 "Insertar dato manual" del menú global):
+        // válido por sí mismo, no pasa por `normalizeExternalSources` — esa
+        // función exige una sugerencia real no vacía, y aquí no hay ninguna.
+        if (initialValues === null) {
+          setManualDialog({ sectionId, initialValues: null });
+          return true;
+        }
         const [safeInitialValues] = normalizeExternalSources([initialValues]);
         if (!safeInitialValues) return false;
         setManualDialog({ sectionId, initialValues: safeInitialValues });
@@ -57,8 +75,16 @@ export const DocumentSections = forwardRef(function DocumentSections(
       focusSection(sectionId) {
         return editorRefs.current.get(sectionId)?.focus() ?? false;
       },
+      getActiveSectionId() {
+        return resolveActiveSectionId();
+      },
+      getActiveEditor() {
+        const sectionId = resolveActiveSectionId();
+        if (!sectionId) return null;
+        return editorRefs.current.get(sectionId)?.getEditor() ?? null;
+      },
     }),
-    [],
+    [resolveActiveSectionId],
   );
 
   function handleInvestigateClick(section) {
@@ -146,6 +172,8 @@ export const DocumentSections = forwardRef(function DocumentSections(
               description={section.description}
               ariaLabel={`Documento de trabajo: ${section.title}`}
               onChange={(json) => onSectionChange?.(section.sectionId, json)}
+              onFocus={() => setFocusedSectionId(section.sectionId)}
+              onActivity={onEditorActivity}
             />
           </div>
         );

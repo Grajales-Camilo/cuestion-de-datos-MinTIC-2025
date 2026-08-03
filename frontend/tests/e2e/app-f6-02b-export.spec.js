@@ -158,7 +158,7 @@ test.describe("/app — F6-02B exportación DOCX real (RF-102/RF-103, ESC-08)", 
     // cabecera nunca es un destino de tabulación, así que esto solo quita
     // el foco de lo último clicado por `typeInvestigateAndInsert`, sin
     // moverlo programáticamente a ningún control concreto).
-    await page.getByRole("heading", { name: "Cuestión de Datos", exact: true }).click();
+    await page.getByRole("heading", { name: /^Cuestión de Datos/ }).click();
 
     // Navegación real por TECLADO: solo `Tab`, en un bucle acotado, hasta
     // que el propio orden de tabulación de la página alcance el botón —
@@ -269,7 +269,7 @@ test.describe("/app — F6-02B exportación DOCX real (RF-102/RF-103, ESC-08)", 
 
     // Foco neutro real, luego navegación real por TECLADO (solo `Tab`, bucle
     // acotado) — nunca `.focus()`, nunca `page.evaluate()` para mover el foco.
-    await page.getByRole("heading", { name: "Cuestión de Datos", exact: true }).click();
+    await page.getByRole("heading", { name: /^Cuestión de Datos/ }).click();
     await tabUntil(page, (el) => el.text.includes("Exportar en Word"), "botón Exportar en Word (.docx)");
     await expect(exportButton).toBeFocused();
 

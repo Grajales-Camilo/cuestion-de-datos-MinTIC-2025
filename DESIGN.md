@@ -2,11 +2,11 @@
 name: Cuestión de Datos — Pulso por lo Público
 description: Sala de seguimiento de políticas públicas y sistema de orientación cívica; la investigación de datos abiertos se recorre como una ruta verificable, no se conversa con ella.
 colors:
-  blue-900: "#0C2D57"
-  blue-700: "#1D4E89"
-  blue-500: "#2E7CD6"
-  blue-100: "#DBEAFE"
-  blue-50: "#EFF6FF"
+  blue-900: "#001C40"
+  blue-700: "#002451"
+  blue-500: "#0975FF"
+  blue-100: "#6B91C0"
+  blue-50: "#DEE5ED"
   white: "#FFFFFF"
   slate-900: "#0F172A"
   slate-600: "#475569"
@@ -128,14 +128,26 @@ decisión de marca abierta. Fuente de verdad única en
 prefijo `cdt-` (`bg-cdt-blue-700`, etc.) para no chocar con la paleta por
 defecto de Tailwind que el frontend legacy sigue usando con otros valores.
 
+**PALETTE-02 (revisión vigente, reemplaza la revisión "VS Code" anterior):**
+la paleta anterior quedó demasiado clara sobre fondo blanco — bordes,
+divisores y el borde del lienzo perdían separación visual. `blue-900`
+(`#001C40`) y `blue-700` (`#002451`) son anclas exactas fijadas por el
+usuario; `blue-500`/`blue-100`/`blue-50` se derivaron del mismo matiz
+(H≈213.5°) mediante búsqueda binaria de luminancia relativa WCAG, no a
+simple vista. Cambio estructural notable: `blue-100` (= `--cdt-border-color`
+en todo el sistema) ahora supera 3:1 de contraste contra blanco por sí
+solo — antes era solo un tinte de fondo, nunca pensado para leerse como
+línea/borde independiente. Cada pareja real queda verificada en
+`frontend/tests/unit/ui/contrast.test.js`, que la hace cumplir en CI.
+
 ### Primary
-- **Azul profundo** (`#0C2D57`, `blue-900`): titulares, navegación, hover del botón primario. Es el ancla de autoridad — donde el ojo debe leer "esto es serio y verificado".
-- **Azul medio** (`#1D4E89`, `blue-700`): botones primarios, enlaces. El color de la acción disponible.
-- **Azul acento** (`#2E7CD6`, `blue-500`): foco, elementos activos del agente mientras investiga — el color del "esto está pasando ahora".
+- **Azul profundo** (`#001C40`, `blue-900`): titulares, navegación, hover del botón primario. Es el ancla de autoridad — donde el ojo debe leer "esto es serio y verificado".
+- **Azul medio** (`#002451`, `blue-700`): botones primarios, enlaces. El color de la acción disponible.
+- **Azul acento** (`#0975FF`, `blue-500`): foco, elementos activos del agente mientras investiga — el color del "esto está pasando ahora".
 
 ### Neutral
-- **Fondo tarjeta de evidencia** (`#DBEAFE`, `blue-100`): fondos de tarjetas de evidencia y chips — nunca para texto.
-- **Fondo de sección** (`#EFF6FF`, `blue-50`): separación de zonas sin bordes duros.
+- **Borde estructural / fondo de tarjeta de evidencia** (`#6B91C0`, `blue-100`): `--cdt-border-color` — bordes de tarjetas, tabla, borde del lienzo, divisores del menú y de la barra de formato; también fondos de chips/badges. Nunca para texto de cuerpo.
+- **Fondo de sección** (`#DEE5ED`, `blue-50`): separación de zonas sin bordes duros.
 - **Blanco** (`#FFFFFF`): fondo base, el lienzo en reposo.
 - **Slate 900/600/400**: texto principal / secundario / deshabilitado.
 
@@ -192,13 +204,31 @@ escalera de grosores.
 ## Layout
 
 Layout de 3 zonas, ya fijado por `plan.md` §7: navegación mínima superior,
-lienzo central (documento de política), copiloto lateral colapsable
-(investigación en curso). La Variante A — Ruta central (aprobada en
-DESIGN-01) organiza la investigación dentro del copiloto como un recorrido
-vertical continuo con línea conectora, donde la evidencia final se funde
-como el último punto de la ruta. Responsive y reflujo sin scroll horizontal
-a 320 px son invariantes de aceptación, verificadas en F1-01 sobre la
-galería de primitivas (`frontend/pages/_dev/ui.js`).
+lienzo central (documento de política), copiloto lateral (investigación en
+curso). El límite entre lienzo y copiloto es un divisor arrastrable y
+operable por teclado (`CopilotPanel.jsx`, RF-105-02/RF-105-03) — el ancho
+del copiloto ya no es fijo. Proporción por defecto: 70% lienzo central /
+30% copiloto, medida contra el ancho real del contenedor una sola vez al
+abrir el panel (nunca recalculada en vivo con el resize de la ventana);
+después queda enteramente bajo control del usuario. Responsive y reflujo
+sin scroll horizontal a 320 px son invariantes de aceptación, verificadas
+en F1-01 sobre la galería de primitivas (`frontend/pages/_dev/ui.js`).
+
+**Revisión RF-105-02 sobre DESIGN-01 (Variante A — Ruta central):** la
+implementación original organizaba los pasos como un recorrido vertical
+continuo con línea conectora, un `<li>` por paso. Con investigaciones
+largas obligaba a desplazarse hasta el final para ver el estado actual.
+Ahora `RunTimeline` muestra una sola tarjeta condensada con el ÚLTIMO paso
+recibido (icono de actividad sutil, sin contador de pasos ni porcentaje
+inventado); el historial completo con su detalle técnico sigue disponible,
+sin perder nada, en `StepDetailModal` ("Ver detalle técnico") — un
+selector donde el usuario elige QUÉ paso desplegar, actualizado en vivo
+mientras la investigación sigue corriendo. La evidencia final ya no se
+funde como último punto de la ruta: es un bloque propio (`TerminalPanel`)
+debajo de la tarjeta de estado. La idea de "investigación como ruta
+verificable" se conserva a nivel de producto (cada paso sigue siendo
+observable y auditable); lo que cambia es que la ruta completa se consulta
+bajo demanda en vez de estar siempre expandida.
 
 Espaciado: escala 4/8 px (`--cdt-space-1` … `--cdt-space-16`, de 4px a
 64px). Tamaño táctil mínimo: 44×44 px (`--cdt-tap-min`), aplicado a todo
@@ -235,10 +265,17 @@ tipografía, foco visible y `prefers-reduced-motion` sin afectar al frontend
 legacy).
 
 ### Buttons (`Button.jsx`, `IconButton.jsx`)
-- **Shape:** radio `md` (6px), alto mínimo 44px.
+- **Shape:** esquinas rectas (`rounded-cdt-none`, PALETTE-02 — antes radio
+  `md`/6px), alto mínimo 44px. Exclusivo de botones y controles con
+  apariencia de botón (incluye los del menú Archivo/Editar/Formato,
+  `Menu.jsx`); tarjetas, modales, campos de texto, citas y badges
+  conservan su radio original — no es una regla general de "sin radios".
 - **Variantes (exactas, sin ampliar):** primaria (`blue-700`/blanco),
-  secundaria (blanco/`blue-700` con borde `blue-100`), silenciosa
-  (transparente/`blue-700`), destructiva (`error`/blanco).
+  secundaria (`blue-50`/`blue-700` con borde `blue-100` — fondo propio a
+  propósito: sobre el lienzo blanco en reposo, un botón sin relleno era
+  indistinguible), silenciosa (transparente/`blue-700`, uso reservado a
+  contextos ya tonalizados como la barra de formato), destructiva
+  (`error`/blanco).
 - **Estados:** hover (oscurece o `brightness-90`), focus-visible (anillo
   `blue-500` heredado de `.cdt-v2`), active, disabled (opacidad 50%,
   `pointer-events: none`), loading (`aria-busy`, ícono `Loader2` girando).
@@ -280,6 +317,22 @@ legacy).
   `overflow-x-auto` propio — nunca desborda la página. Exige `caption` o
   nombre accesible.
 
+### MenuBar / Menu (`Menu.jsx`)
+- Patrón Menubar de WAI-ARIA APG (RF-105): `role="menubar"` con menús de
+  nivel superior (`role="menuitem"`, `aria-haspopup`/`aria-expanded`) y un
+  panel `role="menu"` por menú abierto, uno a la vez. Flechas
+  izquierda/derecha mueven el foco entre menús (tabindex progresivo);
+  arriba/abajo, Home/End navegan las opciones; Escape cierra y devuelve el
+  foco a su disparador; un clic fuera cierra sin mover el foco.
+- Tres tipos de opción: `MenuItem` (acción simple), `MenuCheckboxItem`
+  (`role="menuitemcheckbox"`, alterna un formato binario) y `MenuRadioItem`
+  (`role="menuitemradio"`, mutuamente excluyente dentro de un `MenuGroup`).
+  El estado marcado siempre refleja `editor.isActive(...)` real, nunca un
+  estado local propio del menú.
+- Primer uso real: menú "Archivo/Editar/Formato" de `/app`
+  (`DocumentMenuBar.jsx`), sobre el editor Tiptap de la sección con el foco
+  más reciente.
+
 ### LiveRegion (`LiveRegion.jsx`)
 - `role="status"` + `aria-live="polite"` + `aria-atomic="true"`, mensaje
   único sustituido (no acumulado), visualmente oculto por defecto.
@@ -296,9 +349,10 @@ legacy).
 ## Do's and Don'ts
 
 ### Do:
-- **Do** presentar cada paso del agente como un punto verificable en una
-  ruta (texto de estado en español claro + posibilidad de expandir detalle
-  técnico), nunca como un mensaje de chat entrante.
+- **Do** presentar el paso actual del agente en español claro, con acceso a
+  su historial completo y detalle técnico bajo demanda (`StepDetailModal`),
+  nunca como un mensaje de chat entrante ni como una lista que obligue a
+  desplazarse para ver el estado más reciente.
 - **Do** mostrar la cadena dataset → entidad → consulta → validación → cifra
   de forma visible y citable en cada pieza de evidencia.
 - **Do** dejar la interfaz visualmente en reposo cuando no hay investigación

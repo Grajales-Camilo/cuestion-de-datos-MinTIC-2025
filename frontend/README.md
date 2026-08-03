@@ -1,8 +1,9 @@
 # Frontend — Cuestión de Datos V2
 
-Este directorio contiene el frontend existente de Cuestión de Datos y será la
-base del nuevo frontend v2. La aplicación v2 consume directamente el backend
-FastAPI del núcleo determinista mediante REST y SSE.
+Este directorio contiene el frontend v2 operativo de Cuestión de Datos. La
+aplicación consume directamente el backend FastAPI del núcleo determinista
+mediante REST y SSE. El endpoint y las utilidades del agente v1 fueron
+retirados en T-704; no existe fallback funcional al runtime legacy.
 
 Este README es operativo: explica cómo instalar, ejecutar y verificar el
 frontend. El plan completo, la jerarquía documental y el enrutamiento por fases
@@ -21,9 +22,9 @@ Al crear este documento, el andamiaje existente usa:
 - Tiptap 3.
 - Chart.js y PapaParse.
 
-El código de aplicación visible en `pages/`, `components/` y `utils/` pertenece
-principalmente al frontend legacy. Su existencia no significa que cumpla los
-contratos ni los criterios del runtime determinista.
+Las rutas públicas son `/` (portada) y `/app` (aplicación funcional). Ambas
+comparten el sistema visual v2; `/app` es la única superficie que inicia
+corridas del agente y siempre usa `NEXT_PUBLIC_BACKEND_URL` y `/v2/*`.
 
 Scripts confirmados en `package.json` (verificados con ejecución real, F0):
 
@@ -40,13 +41,10 @@ Scripts confirmados en `package.json` (verificados con ejecución real, F0):
 | `npm run test:e2e:prod` | Verificación E2E contra build de producción real (`playwright.prod.config.js`) | Disponible; verde |
 | `npm run audit:bundle` | Auditoría de secretos en `.next/static/` (RNF-011, `scripts/audit-client-bundle.mjs`) — ejecutar después de `npm run build` | Disponible; verde (0 hallazgos). Ver `docs/frontend-v2/release/f8-01-automated-gates.md` §7 |
 
-**Alcance de lint (F0).** `react/no-danger` es error en todo el código, nuevo y
-legacy (cero usos de `dangerouslySetInnerHTML` verificados en el baseline).
-`react/no-unescaped-entities` se rebajó a advertencia únicamente en tres
-archivos legacy preexistentes con errores de escape de comillas
-(`components/common/OnboardingTour.js`, `components/wizard/ApiStep.js`,
-`components/wizard/DatabaseStep.js`) — visibles en la salida de `npm run
-lint`, no ocultos. No se hizo refactor del legacy para satisfacer lint.
+**Alcance de lint.** `react/no-danger` es error en todo el código y la auditoría
+de bundle comprueba que no se publiquen patrones de secretos. Las excepciones
+temporales asociadas al wizard y al onboarding v1 dejaron de ser necesarias
+al retirar esos módulos.
 
 ## Requisitos locales
 
@@ -116,6 +114,36 @@ cada criterio de aceptación necesita una ejecución real y su evidencia.
 
 `npm run test:e2e` genera `frontend/test-results/` (artefacto efímero de
 Playwright); está en `.gitignore` de la raíz y no debe versionarse.
+
+### Importación local de DOCX (DOCX-IMPORT-01)
+
+`Archivo → Importar documento (.docx)` abre un DOCX como documento nuevo de
+tipo libre. Esta capacidad es una extensión autorizada por el usuario,
+relacionada con RF-101, RF-102, RF-103 y RNF-011; no es un requisito original
+del SDD ni autoriza marcar automáticamente una tarea normativa como cumplida.
+
+La importación se ejecuta completamente en el navegador. Al abrir el lienzo se
+prepara un Worker de JavaScript same-origin, antes de cualquier acción o acceso
+a archivos; desde el clic en Importar no se inicia una solicitud de red. Al
+seleccionar el DOCX, sus bytes solo se transfieren en memoria a ese Worker. No se usa el
+backend, Gemini, Socrata, Vercel Functions ni un recurso externo. Mammoth
+`1.12.0` —versión exacta— realiza la conversión OOXML y JSZip, ya presente,
+solo inspecciona límites y estructura antes de convertir. El HTML intermedio
+no se monta: se recorre con `DOMParser` para construir JSON validado del editor.
+
+Límites principales: solo `.docx`, máximo 10 MiB, firma y MIME compatibles,
+paquete ZIP acotado (entradas, expansión, archivo individual y razón de
+compresión), relaciones externas bloqueadas salvo hipervínculos HTTP/HTTPS y
+timeout cancelable de 20 segundos. Macros, cifrado, paquetes dudosos y recursos
+externos fallan de forma cerrada sin reemplazar el documento actual.
+
+Pruebas focalizadas reproducibles con fixtures sintéticos:
+
+```powershell
+npm run test -- tests/unit/document/docxImport.test.js
+npm run test -- tests/unit/document/DocxImportFlow.test.jsx tests/unit/document/docxImportClient.test.js
+node scripts/run-e2e.mjs tests/e2e/app-docx-import.spec.js --workers=1
+```
 
 ### Verificación reproducible del `.docx` exportado con Microsoft Word (F6-02B-R1)
 

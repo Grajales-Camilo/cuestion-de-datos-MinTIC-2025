@@ -1,4 +1,8 @@
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
   Bold,
   Heading2,
   Heading3,
@@ -36,7 +40,7 @@ export function EditorToolbar({ editor }) {
     <div
       role="toolbar"
       aria-label="Formato del documento"
-      className="flex flex-wrap items-center gap-cdt-1 border-b border-cdt-blue-100 bg-cdt-blue-50 p-cdt-2"
+      className="flex flex-wrap items-center gap-cdt-1 border-b border-cdt-blue-100 bg-cdt-white p-cdt-2"
     >
       <FormatButton
         label="Encabezado nivel 2"
@@ -101,6 +105,39 @@ export function EditorToolbar({ editor }) {
         disabled={disabled}
       >
         <Quote className="h-5 w-5" />
+      </FormatButton>
+      <div className="mx-cdt-1 h-cdt-6 w-px bg-cdt-blue-100" aria-hidden="true" />
+      <FormatButton
+        label="Alinear a la izquierda"
+        pressed={editor?.isActive({ textAlign: "left" }) ?? false}
+        onClick={() => run((chain) => chain.setTextAlign("left"))}
+        disabled={disabled}
+      >
+        <AlignLeft className="h-5 w-5" />
+      </FormatButton>
+      <FormatButton
+        label="Centrar"
+        pressed={editor?.isActive({ textAlign: "center" }) ?? false}
+        onClick={() => run((chain) => chain.setTextAlign("center"))}
+        disabled={disabled}
+      >
+        <AlignCenter className="h-5 w-5" />
+      </FormatButton>
+      <FormatButton
+        label="Alinear a la derecha"
+        pressed={editor?.isActive({ textAlign: "right" }) ?? false}
+        onClick={() => run((chain) => chain.setTextAlign("right"))}
+        disabled={disabled}
+      >
+        <AlignRight className="h-5 w-5" />
+      </FormatButton>
+      <FormatButton
+        label="Justificar"
+        pressed={editor?.isActive({ textAlign: "justify" }) ?? false}
+        onClick={() => run((chain) => chain.setTextAlign("justify"))}
+        disabled={disabled}
+      >
+        <AlignJustify className="h-5 w-5" />
       </FormatButton>
     </div>
   );
