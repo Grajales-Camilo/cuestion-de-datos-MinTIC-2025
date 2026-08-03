@@ -2,12 +2,13 @@
 
 ## Veredicto
 
-**Staging operativo; PREVIEW-01 ejecutado con hallazgos y conciliación R1.** No es certificación del backend, no cierra T-617 y no habilita T-701, T-702 ni T-703. PREVIEW-01I queda pendiente de PASS hasta que esta R1 se valide y se acepte en Git.
+**Staging operativo; PREVIEW-01 ejecutado con hallazgos y conciliación R1 cerrada mediante la PR #30.** No es certificación del backend, no cierra T-617 y no habilita T-701, T-702 ni T-703. PREVIEW-01I queda en PASS exclusivamente documental por la integración de esta evidencia.
 
 ## Revalidación
 
-- `origin/v2`: `34b3473112fbd0f6dd6e187cb4182e64960d60db`.
-- PR #28: fusionado mediante ese merge commit.
+- Línea base histórica de las corridas: `origin/v2` `34b3473112fbd0f6dd6e187cb4182e64960d60db`.
+- Base vigente antes de fusionar esta conciliación: `origin/v2` `90ddbf01b10caa48e6dc243e784048dd24d6a175`.
+- PR #28: fusionado mediante el commit histórico `34b3473112fbd0f6dd6e187cb4182e64960d60db`.
 - CI `30548219279`: Backend y Frontend `success`.
 - T-617: abierta/BLOCKED; T-701, T-702 y T-703: abiertas.
 - Backend Render: `srv-d9m4cfb7uimc739jpnlg`, `https://cdd-preview01-stg-api.onrender.com`.
@@ -19,11 +20,13 @@ Health respondió HTTP 200 con `database=ok`, `llm_provider=ok`, `catalog_index=
 
 ## Frontend Vercel
 
-El Preview Ready es `dpl_9UMFKVdVv5zWAfG7mBAkZTAAWP5j` en `https://cdd-preview01-staging-b4kspr0a5.vercel.app`. Está protegido con Vercel Authentication y no usa dominios productivos. El proyecto usa framework Next.js, Node 20, defaults compatibles con `npm run build` y `NEXT_PUBLIC_BACKEND_URL=https://cdd-preview01-stg-api.onrender.com` limitado al Preview.
+La fotografía inicial de R1 corresponde al deployment manual `dpl_9UMFKVdVv5zWAfG7mBAkZTAAWP5j` en `https://cdd-preview01-staging-b4kspr0a5.vercel.app`. Estaba protegido con Vercel Authentication y no usaba dominios productivos. El proyecto usa framework Next.js, Node 20, defaults compatibles con `npm run build` y `NEXT_PUBLIC_BACKEND_URL=https://cdd-preview01-stg-api.onrender.com` limitado al Preview.
 
-El proyecto no está conectado a Git. El Preview fue creado mediante `vercel deploy`; por tanto, Vercel no certifica un SHA. Aunque los archivos rastreados de `frontend/` coincidían con `origin/v2`, el upload incluyó `.impeccable/`, `test-results/`, `next-dev.log` y `next-dev.err.log` locales. No es un artefacto limpio ni un deployment exacto del commit. El deployment `dpl_GbGv4nctot8iwnqCBFban8aBStow` falló por Output Directory `dist` inexistente dentro del proyecto aislado; no afectó dominios ni producción de Cuestión de Datos.
+En ese momento el proyecto no estaba conectado a Git. El Preview se creó mediante `vercel deploy`; por tanto, Vercel no certificaba un SHA. Aunque los archivos rastreados de `frontend/` coincidían con `origin/v2`, el upload incluyó `.impeccable/`, `test-results/`, `next-dev.log` y `next-dev.err.log` locales. No se considera un artefacto limpio ni un deployment exacto del commit. El deployment `dpl_GbGv4nctot8iwnqCBFban8aBStow` falló por Output Directory `dist` inexistente dentro del proyecto aislado; no afectó dominios ni producción de Cuestión de Datos.
 
-El panel autenticado confirmó el proyecto, su ID, la ausencia de Git y la protección. El conector API de Vercel no resolvió este proyecto ni los deployment IDs, por lo que esa vía no certifica los IDs en R1; no se realizó ninguna modificación para resolver esa discrepancia.
+El panel autenticado confirmó entonces el proyecto, su ID, la ausencia de Git y la protección. El conector API de Vercel no resolvió el proyecto ni los deployment IDs durante esa revisión; esa limitación pertenece a la fotografía histórica de R1.
+
+En la conciliación final del 2026-08-03, la API de Vercel sí confirmó el proyecto `cdd-preview01-staging` y el deployment `dpl_5GLi5bai8yAd74UtSQF3pzUypQV2`: estado `READY`, fuente `git`, rama `v2`, commit verificado `90ddbf01b10caa48e6dc243e784048dd24d6a175`. Sus alias incluyen `https://preview.cuestiondedatos.com` y `https://cdd-preview01-git-3154eb-juan-camilo-grajales-bedoyas-projects.vercel.app`. Por tanto, la falta de integración Git ya no es un bloqueo vigente.
 
 ## Corridas controladas y costos
 
@@ -47,6 +50,6 @@ La evidencia ejecutada conserva DELETE 204 y GET posterior 404: cero corridas pe
 
 Todos los `run_id` del manifiesto están excluidos explícitamente de T-703. No se realizaron cambios en Render, Vercel, CORS, dominios o variables durante R1.
 
-## Recomendación
+## Cierre y operación posterior
 
-Autorizar en un incremento separado conectar `cdd-preview01-staging` a Git y desplegar futuras ramas desde commits verificables. Esta recomendación no autoriza nuevas corridas, despliegues, infraestructura ni promoción.
+La integración Git de `cdd-preview01-staging` ya está activa y los deployments futuros deben conservar trazabilidad de rama y commit. La aceptación de esta R1 cierra PREVIEW-01I solo como conciliación documental. No autoriza nuevas corridas, infraestructura, T-701, T-702, T-703 ni promoción a producción.
