@@ -5,7 +5,7 @@ import { cx } from "./cx";
 const VARIANT_CLASSES = {
   primary: "bg-cdt-blue-700 text-cdt-white hover:bg-cdt-blue-900 active:bg-cdt-blue-900",
   secondary:
-    "bg-cdt-white text-cdt-blue-700 border border-cdt-blue-100 hover:bg-cdt-blue-50 active:bg-cdt-blue-100",
+    "bg-cdt-blue-50 text-cdt-blue-700 border border-cdt-blue-100 hover:bg-cdt-blue-100 active:bg-cdt-blue-100",
   quiet: "bg-transparent text-cdt-blue-700 hover:bg-cdt-blue-50 active:bg-cdt-blue-100",
   destructive: "bg-cdt-error text-cdt-white hover:brightness-90 active:brightness-95",
 };
@@ -32,7 +32,7 @@ export const IconButton = forwardRef(function IconButton(
       aria-label={label}
       aria-busy={loading || undefined}
       className={cx(
-        "inline-flex items-center justify-center rounded-cdt-md",
+        "inline-flex items-center justify-center rounded-cdt-none",
         "h-cdt-tap w-cdt-tap",
         "transition-colors duration-cdt-base ease-cdt-standard",
         "disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none",

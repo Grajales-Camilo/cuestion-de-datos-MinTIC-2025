@@ -5,6 +5,7 @@ export { Card, CardHeader, CardBody, CardFooter } from "./Card";
 export { Disclosure } from "./Disclosure";
 export { Modal } from "./Modal";
 export { Tabs } from "./Tabs";
+export { MenuBar, Menu, MenuItem, MenuCheckboxItem, MenuRadioItem, MenuGroup, MenuDivider } from "./Menu";
 export { Table } from "./Table";
 export { LiveRegion } from "./LiveRegion";
 export { Skeleton } from "./Skeleton";

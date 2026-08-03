@@ -12,16 +12,42 @@
  * inventan aquí, se transcriben.
  */
 :root {
-  /* Color — paleta azul monocromática + neutros + semánticos */
-  --cdt-blue-900: #0c2d57;
-  --cdt-blue-700: #1d4e89;
-  --cdt-blue-500: #2e7cd6;
-  --cdt-blue-100: #dbeafe;
-  --cdt-blue-50: #eff6ff;
+  /* Color — paleta azul monocromática + neutros + semánticos.
+   * PALETTE-02: paleta oscurecida sobre la misma estructura monocromática
+   * de 5 pasos (reemplaza la revisión "VS Code" anterior, que quedó
+   * demasiado clara sobre blanco). blue-900 (#001C40) y blue-700 (#002451)
+   * son anclas exactas fijadas por el usuario. blue-500/blue-100/blue-50
+   * se derivaron del mismo matiz (H≈213.5°) mediante búsqueda binaria de
+   * luminancia relativa WCAG, no a simple vista — ver
+   * tests/unit/ui/contrast.test.js para cada pareja verificada:
+   * - blue-100 ahora cumple ≥3:1 contra blanco por sí solo: es el color
+   *   de `--cdt-border-color` (bordes/divisores/borde del lienzo en TODA
+   *   la interfaz), que antes (incluida la revisión VS Code) nunca pasaba
+   *   ese umbral por ser solo un tinte suave de fondo.
+   * - blue-500 se acotó a una ventana estrecha a propósito: debe superar
+   *   3:1 contra blanco Y contra blue-50 (visibilidad real del anillo de
+   *   foco/icono activo sobre cualquier fondo real), pero SIN alcanzar
+   *   4.5:1 contra blanco — cruzar ese umbral rompería en silencio "La
+   *   Regla del Acento Escaso" (blue-500 nunca es color de texto).
+   * - blue-50 se mantuvo más pálido de lo que un oscurecimiento ingenuo
+   *   sugeriría: es la única forma de dejarle a blue-500 margen real
+   *   frente a blue-50 sin romper la regla anterior. */
+  --cdt-blue-900: #001c40;
+  --cdt-blue-700: #002451;
+  --cdt-blue-500: #0975ff;
+  --cdt-blue-100: #6b91c0;
+  --cdt-blue-50: #dee5ed;
   --cdt-white: #ffffff;
   --cdt-slate-900: #0f172a;
   --cdt-slate-600: #475569;
   --cdt-slate-400: #94a3b8;
+  /* Gris frío neutro para el fondo de página (constitution.md Art. V.1
+   * permite explícitamente "grises fríos" además del blanco puro, no solo
+   * blue-50): separa visualmente la zona que NO es lienzo central ni panel
+   * del copiloto — ambos siguen fijando su propio `bg-cdt-white` explícito,
+   * así que este tono nunca los reemplaza ni los oculta, solo diferencia el
+   * "fondo de fondo" que los rodea (`/app`, ver `pages/app.js`). */
+  --cdt-slate-100: #f1f3f5;
   --cdt-success: #15803d;
   --cdt-warning: #b45309;
   --cdt-error: #b91c1c;
@@ -53,7 +79,11 @@
   --cdt-space-12: 48px;
   --cdt-space-16: 64px;
 
-  /* Radios — pequeños y coherentes (constitución: "sin sombras duras") */
+  /* Radios — pequeños y coherentes (constitución: "sin sombras duras").
+   * PALETTE-02: `--cdt-radius-none` es exclusivamente para botones y
+   * controles con apariencia de botón (Button, IconButton, MenuItem*) —
+   * tarjetas, modales, campos de texto y citas conservan `sm/md/lg/full`. */
+  --cdt-radius-none: 0px;
   --cdt-radius-sm: 4px;
   --cdt-radius-md: 6px;
   --cdt-radius-lg: 10px;

@@ -12,7 +12,7 @@ import { EditorToolbar } from "./EditorToolbar";
 export { EMPTY_DOCUMENT_JSON, validateDocumentEditorJson };
 
 const ReadyDocumentEditor = forwardRef(function ReadyDocumentEditor(
-  { initialContent, onChange, headingId, heading, description, ariaLabel },
+  { initialContent, onChange, onFocus, onActivity, headingId, heading, description, ariaLabel },
   ref,
 ) {
   const [, setToolbarRevision] = useState(0);
@@ -38,9 +38,15 @@ const ReadyDocumentEditor = forwardRef(function ReadyDocumentEditor(
       const json = currentEditor.getJSON();
       if (validateDocumentEditorJson(json).ok) onChange?.(json);
       setToolbarRevision((value) => value + 1);
+      onActivity?.();
     },
     onSelectionUpdate() {
       setToolbarRevision((value) => value + 1);
+      onActivity?.();
+    },
+    onFocus() {
+      onFocus?.();
+      onActivity?.();
     },
   });
 
@@ -64,6 +70,15 @@ const ReadyDocumentEditor = forwardRef(function ReadyDocumentEditor(
       },
       focus() {
         return editor?.commands.focus("end") ?? false;
+      },
+      // Escape hatch deliberado para el menú global Archivo/Editar/Formato
+      // (RF-105): expone el editor Tiptap real de ESTA sección para que un
+      // control fuera del árbol de esta sección pueda ejecutar comandos
+      // (negrita, alinear, deshacer…) y leer `isActive()`/`can()` sobre la
+      // sección que tiene el foco. Nunca se usa para leer/mutar el
+      // documento fuera de los métodos ya expuestos arriba.
+      getEditor() {
+        return editor ?? null;
       },
     }),
     [editor, initialContent],
@@ -108,6 +123,8 @@ export const DocumentEditor = forwardRef(function DocumentEditor(
   {
     initialContent = EMPTY_DOCUMENT_JSON,
     onChange,
+    onFocus,
+    onActivity,
     headingId = DEFAULT_HEADING_ID,
     heading = DEFAULT_HEADING,
     description = DEFAULT_DESCRIPTION,
@@ -138,6 +155,8 @@ export const DocumentEditor = forwardRef(function DocumentEditor(
       ref={ref}
       initialContent={initialContent}
       onChange={onChange}
+      onFocus={onFocus}
+      onActivity={onActivity}
       headingId={headingId}
       heading={heading}
       description={description}

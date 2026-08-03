@@ -25,7 +25,10 @@ test.describe("Muestra funcional F3-7A — /_dev/ui#agent-demo", () => {
     await page.getByRole("button", { name: "Investigar", exact: true }).click();
     await expect(page.getByLabel("Copiloto — muestra F3-7A").getByText("Preparando la investigación…")).toBeVisible();
 
-    await expect(page.getByRole("list", { name: "Pasos de la investigación" }).getByRole("listitem").first()).toBeVisible({
+    // RF-105-02: los pasos ya no se apilan en una lista visible; la tarjeta
+    // condensada de `RunTimeline` aparece en cuanto llega el primer evento
+    // real, señalada por el botón que abre el detalle técnico completo.
+    await expect(page.getByRole("button", { name: "Ver detalle técnico", exact: true })).toBeVisible({
       timeout: 2000,
     });
 
@@ -57,10 +60,13 @@ test.describe("Muestra funcional F3-7A — /_dev/ui#agent-demo", () => {
     await expect(page.getByLabel("Copiloto — muestra F3-7A").getByText("Verificado").first()).toBeVisible({ timeout: 20000 });
 
     // Los pasos reales de este fixture (`select_candidate`, `profile_dataset`
-    // repetidos entre otras cosas) no deben aparecer duplicados en el DOM
-    // pese a que el escenario reenvía un tramo solapado a propósito.
-    const timeline = page.getByRole("list", { name: "Pasos de la investigación" });
-    const items = timeline.getByRole("listitem");
+    // repetidos entre otras cosas) no deben aparecer duplicados pese a que
+    // el escenario reenvía un tramo solapado a propósito. RF-105-02: ese
+    // conteo ya no vive en una lista siempre visible — se verifica dentro
+    // del modal "Ver detalle técnico", que sigue mostrando cada paso real.
+    await page.getByRole("button", { name: "Ver detalle técnico", exact: true }).click();
+    const modal = page.getByRole("dialog", { name: "Detalle técnico de la investigación" });
+    const items = modal.getByRole("listitem");
     const count = await items.count();
     const texts = await items.allTextContents();
     expect(new Set(texts).size).toBe(count); // ningún texto de paso repetido
@@ -145,5 +151,68 @@ test.describe("Muestra funcional F3-7A — /_dev/ui#agent-demo", () => {
     await expect(page.getByLabel("Copiloto — muestra F3-7A").getByText("Verificado").first()).toBeVisible({ timeout: 15000 });
 
     expect(errors).toEqual([]);
+  });
+
+  test("proporción por defecto 70% lienzo / 30% copiloto (RF-105-03)", async ({ page }) => {
+    await page.goto(GALLERY_URL);
+    await page.getByRole("button", { name: "Abrir copiloto" }).click();
+
+    const aside = page.getByLabel("Copiloto — muestra F3-7A");
+    const { asideWidth, containerWidth } = await aside.evaluate((el) => ({
+      asideWidth: el.getBoundingClientRect().width,
+      // El contenedor real: el padre del wrapper que envuelve separador+aside.
+      containerWidth: el.parentElement.parentElement.getBoundingClientRect().width,
+    }));
+
+    const ratio = asideWidth / containerWidth;
+    // Margen de tolerancia por redondeo a entero y por el propio ancho del
+    // separador (8px) que también vive dentro del contenedor medido.
+    expect(ratio).toBeGreaterThan(0.27);
+    expect(ratio).toBeLessThan(0.33);
+  });
+
+  test("divisor arrastrable: teclado y puntero cambian el ancho real del copiloto (RF-105-02)", async ({ page }) => {
+    await page.goto(GALLERY_URL);
+    await page.getByRole("button", { name: "Abrir copiloto" }).click();
+
+    const separator = page.getByRole("separator", { name: "Cambiar ancho del panel del copiloto" });
+    const aside = page.getByLabel("Copiloto — muestra F3-7A");
+
+    const initialWidth = await aside.evaluate((el) => el.getBoundingClientRect().width);
+    expect(await separator.getAttribute("aria-valuenow")).toBe(String(Math.round(initialWidth)));
+
+    // Teclado: flecha izquierda agranda, flecha derecha achica (documentado
+    // en `CopilotPanel.jsx`).
+    await separator.focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    const widerWidth = await aside.evaluate((el) => el.getBoundingClientRect().width);
+    expect(widerWidth).toBeGreaterThan(initialWidth);
+    expect(await separator.getAttribute("aria-valuenow")).toBe(String(Math.round(widerWidth)));
+
+    await page.keyboard.press("ArrowRight");
+    const narrowerWidth = await aside.evaluate((el) => el.getBoundingClientRect().width);
+    expect(narrowerWidth).toBeLessThan(widerWidth);
+
+    await page.keyboard.press("End"); // salta al mínimo
+    const minWidth = await aside.evaluate((el) => el.getBoundingClientRect().width);
+    expect(await separator.getAttribute("aria-valuenow")).toBe(String(Math.round(minWidth)));
+    expect(minWidth).toBeLessThan(narrowerWidth);
+
+    await page.keyboard.press("Home"); // salta al máximo
+    const maxWidth = await aside.evaluate((el) => el.getBoundingClientRect().width);
+    expect(maxWidth).toBeGreaterThan(minWidth);
+
+    // Puntero real: arrastrar el separador hacia la izquierda debe agrandar
+    // el copiloto (mismo sentido que la flecha izquierda del teclado).
+    await page.keyboard.press("End"); // vuelve al mínimo para tener margen de arrastre
+    const beforeDragWidth = await aside.evaluate((el) => el.getBoundingClientRect().width);
+    const box = await separator.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 - 80, box.y + box.height / 2, { steps: 8 });
+    await page.mouse.up();
+    const afterDragWidth = await aside.evaluate((el) => el.getBoundingClientRect().width);
+    expect(afterDragWidth).toBeGreaterThan(beforeDragWidth);
   });
 });

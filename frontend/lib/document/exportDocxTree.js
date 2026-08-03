@@ -26,6 +26,7 @@ import {
 } from "docx";
 import { getSafeExternalUrl } from "../evidence/safeExternalUrl.js";
 import { validateManualEntryAttrs } from "./manualEntry.js";
+import { getSafeImportedLink } from "./safeImportedLink.js";
 
 const HEADING_LEVELS = Object.freeze({
   2: HeadingLevel.HEADING_2,
@@ -58,11 +59,18 @@ function runsFromInline(content) {
       throw new UnsupportedContentError(`inline_node:${node?.type ?? "unknown"}`);
     }
     const marks = Array.isArray(node.marks) ? node.marks : [];
-    return new TextRun({
+    const linkMark = marks.find((mark) => mark?.type === "link");
+    const textRun = new TextRun({
       text: node.text,
       bold: marks.some((mark) => mark?.type === "bold"),
       italics: marks.some((mark) => mark?.type === "italic"),
+      style: linkMark ? "Hyperlink" : undefined,
     });
+    if (!linkMark) return textRun;
+
+    const safeUrl = getSafeImportedLink(linkMark.attrs?.href);
+    if (safeUrl === null) throw new UnsupportedContentError("unsafe_imported_link");
+    return new ExternalHyperlink({ children: [textRun], link: safeUrl });
   });
 }
 

@@ -9,6 +9,7 @@ import {
 } from "chart.js";
 import { Bar, Line } from "react-chartjs-2";
 import { resolveEvidenceColumns, buildEvidenceChartSpec } from "../../lib/evidence";
+import { CDT_BLUE_700 } from "../../lib/design/colorTokens";
 
 // Registro mínimo: solo los elementos que los dos tipos soportados por
 // `chartSpec.js` (`bar`/`line`) necesitan — nunca `chart.js/auto`, que
@@ -45,8 +46,8 @@ export function EvidenceChart({ evidence, claims }) {
       {
         label: spec.yLabel,
         data: spec.values,
-        backgroundColor: "#1d4e89",
-        borderColor: "#1d4e89",
+        backgroundColor: CDT_BLUE_700,
+        borderColor: CDT_BLUE_700,
       },
     ],
   };

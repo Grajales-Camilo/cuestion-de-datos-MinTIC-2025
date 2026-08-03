@@ -22,7 +22,16 @@ function shouldRestoreFocus(restoreFocusRef) {
  * SSR-seguro (no toca `document` hasta que el componente ya está montado
  * en el cliente).
  */
-export function Modal({ open, onClose, title, children, initialFocusRef, className, restoreFocusRef }) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  initialFocusRef,
+  className,
+  restoreFocusRef,
+  returnFocusRef,
+}) {
   const titleId = useId();
   const dialogRef = useRef(null);
   const previouslyFocusedRef = useRef(null);
@@ -33,7 +42,8 @@ export function Modal({ open, onClose, title, children, initialFocusRef, classNa
   }, []);
 
   useEffect(() => {
-    // `mounted` es una dependencia deliberada, no solo `open`: cuando
+    // `mounted` y `title` son dependencias deliberadas, no solo `open`:
+    // cuando
     // `open` ya es `true` en el primer render (montaje con el modal ya
     // abierto), este efecto se dispara junto con el de `setMounted` en el
     // mismo commit, pero el portal todavía no existe (`dialogRef.current`
@@ -41,10 +51,13 @@ export function Modal({ open, onClose, title, children, initialFocusRef, classNa
     // `mounted === false`). Sin `mounted` en las dependencias, el efecto
     // corre una sola vez, antes de que el diálogo exista, y el foco
     // inicial nunca se aplica. Con `mounted` aquí, el efecto se repite en
-    // cuanto el portal ya está montado.
+    // cuanto el portal ya está montado. Si un flujo cambia de etapa dentro
+    // del mismo modal (y con ello cambia `title`), el control anterior puede
+    // desmontarse; repetir este efecto mantiene el foco dentro del diálogo.
     if (!open || !mounted) return undefined;
 
     previouslyFocusedRef.current = document.activeElement;
+    const explicitReturnFocus = returnFocusRef?.current;
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -82,9 +95,11 @@ export function Modal({ open, onClose, title, children, initialFocusRef, classNa
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = originalOverflow;
-      if (shouldRestoreFocus(restoreFocusRef)) previouslyFocusedRef.current?.focus?.();
+      if (shouldRestoreFocus(restoreFocusRef)) {
+        (explicitReturnFocus ?? previouslyFocusedRef.current)?.focus?.();
+      }
     };
-  }, [open, mounted, onClose, initialFocusRef, restoreFocusRef]);
+  }, [open, mounted, title, onClose, initialFocusRef, restoreFocusRef, returnFocusRef]);
 
   if (!mounted || !open) return null;
 
