@@ -1,8 +1,9 @@
 # Frontend — Cuestión de Datos V2
 
-Este directorio contiene el frontend existente de Cuestión de Datos y será la
-base del nuevo frontend v2. La aplicación v2 consume directamente el backend
-FastAPI del núcleo determinista mediante REST y SSE.
+Este directorio contiene el frontend v2 operativo de Cuestión de Datos. La
+aplicación consume directamente el backend FastAPI del núcleo determinista
+mediante REST y SSE. El endpoint y las utilidades del agente v1 fueron
+retirados en T-704; no existe fallback funcional al runtime legacy.
 
 Este README es operativo: explica cómo instalar, ejecutar y verificar el
 frontend. El plan completo, la jerarquía documental y el enrutamiento por fases
@@ -21,9 +22,9 @@ Al crear este documento, el andamiaje existente usa:
 - Tiptap 3.
 - Chart.js y PapaParse.
 
-El código de aplicación visible en `pages/`, `components/` y `utils/` pertenece
-principalmente al frontend legacy. Su existencia no significa que cumpla los
-contratos ni los criterios del runtime determinista.
+Las rutas públicas son `/` (portada) y `/app` (aplicación funcional). Ambas
+comparten el sistema visual v2; `/app` es la única superficie que inicia
+corridas del agente y siempre usa `NEXT_PUBLIC_BACKEND_URL` y `/v2/*`.
 
 Scripts confirmados en `package.json` (verificados con ejecución real, F0):
 
@@ -40,13 +41,10 @@ Scripts confirmados en `package.json` (verificados con ejecución real, F0):
 | `npm run test:e2e:prod` | Verificación E2E contra build de producción real (`playwright.prod.config.js`) | Disponible; verde |
 | `npm run audit:bundle` | Auditoría de secretos en `.next/static/` (RNF-011, `scripts/audit-client-bundle.mjs`) — ejecutar después de `npm run build` | Disponible; verde (0 hallazgos). Ver `docs/frontend-v2/release/f8-01-automated-gates.md` §7 |
 
-**Alcance de lint (F0).** `react/no-danger` es error en todo el código, nuevo y
-legacy (cero usos de `dangerouslySetInnerHTML` verificados en el baseline).
-`react/no-unescaped-entities` se rebajó a advertencia únicamente en tres
-archivos legacy preexistentes con errores de escape de comillas
-(`components/common/OnboardingTour.js`, `components/wizard/ApiStep.js`,
-`components/wizard/DatabaseStep.js`) — visibles en la salida de `npm run
-lint`, no ocultos. No se hizo refactor del legacy para satisfacer lint.
+**Alcance de lint.** `react/no-danger` es error en todo el código y la auditoría
+de bundle comprueba que no se publiquen patrones de secretos. Las excepciones
+temporales asociadas al wizard y al onboarding v1 dejaron de ser necesarias
+al retirar esos módulos.
 
 ## Requisitos locales
 
