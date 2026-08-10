@@ -71,7 +71,7 @@ flowchart TD
     Runner -->|Inicializa dependencias| Deps["app/agent/deterministic_dependencies.py"]
     Runner -->|Ejecuta ciclo paso a paso| Runtime["app/agent/deterministic_runtime.py"]
 
-    Runtime -->|Orquesta las 6 etapas (T1-T6)| Pipeline["app/agent/deterministic_pipeline.py"]
+    Runtime -->|"Orquesta las 6 etapas (T1-T6)"| Pipeline["app/agent/deterministic_pipeline.py"]
     Runtime -->|Persiste streaming y eventos| Durability["app/agent/durability.py"]
 
     subgraph Pipeline6Stages ["Pipeline Determinista (6 Etapas T1 - T6)"]
