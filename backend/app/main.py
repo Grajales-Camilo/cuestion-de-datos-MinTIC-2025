@@ -119,36 +119,42 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     await setup_checkpointer(settings)
 
-    catalog_resources = None
-    if (
-        settings.google_api_key is not None
-        and settings.google_api_key.get_secret_value()
-        and settings.embedding_model is not None
-    ):
-        catalog_resources = await create_catalog_search_resources(settings)
-    app.state.catalog_search_resources = catalog_resources
-    app.state.catalog_search_resources_lock = asyncio.Lock()
+    # RF-702/RNF-006: un solo pool de base de datos por proceso evita crear
+    # motores y listeners en cada health check y en cada barrido periodico.
+    database_engine = create_app_async_engine(settings.sqlalchemy_database_url, pool_pre_ping=True)
+    app.state.database_engine = database_engine
 
+    catalog_resources = None
     try:
+        if (
+            settings.google_api_key is not None
+            and settings.google_api_key.get_secret_value()
+            and settings.embedding_model is not None
+        ):
+            catalog_resources = await create_catalog_search_resources(settings)
+        app.state.catalog_search_resources = catalog_resources
+        app.state.catalog_search_resources_lock = asyncio.Lock()
+
         worker_instance_id, _closed_on_startup = await _startup_worker_lifecycle_with_platform_loop(
-            settings.sqlalchemy_database_url, settings.worker_lease_ttl_s
+            database_engine, settings.worker_lease_ttl_s
         )
     except BaseException:
-        if catalog_resources is not None:
-            await catalog_resources.close()
+        try:
+            if catalog_resources is not None:
+                await catalog_resources.close()
+        finally:
+            await database_engine.dispose()
         raise
     app.state.worker_instance_id = worker_instance_id
     app.state.run_creation_lock = asyncio.Lock()
 
     background_tasks = [
         asyncio.create_task(
-            _lease_renewal_loop(
-                settings.sqlalchemy_database_url, worker_instance_id, settings.worker_lease_ttl_s
-            )
+            _lease_renewal_loop(database_engine, worker_instance_id, settings.worker_lease_ttl_s)
         ),
         asyncio.create_task(
             _heartbeat_sweep_loop(
-                settings.sqlalchemy_database_url,
+                database_engine,
                 worker_instance_id,
                 settings.run_heartbeat_timeout_s,
                 settings.run_max_duration_s,
@@ -166,22 +172,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         try:
-            await _mark_worker_shutdown_with_platform_loop(
-                settings.sqlalchemy_database_url, worker_instance_id
-            )
+            await _mark_worker_shutdown_with_platform_loop(database_engine, worker_instance_id)
         finally:
-            if catalog_resources is not None:
-                await catalog_resources.close()
+            try:
+                if catalog_resources is not None:
+                    await catalog_resources.close()
+            finally:
+                await database_engine.dispose()
 
 
 async def _startup_worker_lifecycle_with_platform_loop(
-    database_url: str, lease_ttl_s: int
+    database: str | AsyncEngine, lease_ttl_s: int
 ) -> tuple[str, int]:
+    if not isinstance(database, str):
+        worker_instance_id = await worker_lease.register_worker_instance(database, lease_ttl_s)
+        closed = await worker_lease.close_stale_running_runs(database, worker_instance_id)
+        return worker_instance_id, closed
     if sys.platform == "win32":
         return await asyncio.to_thread(
-            _run_startup_worker_lifecycle_with_selector, database_url, lease_ttl_s
+            _run_startup_worker_lifecycle_with_selector, database, lease_ttl_s
         )
-    return await _startup_worker_lifecycle_async(database_url, lease_ttl_s)
+    return await _startup_worker_lifecycle_async(database, lease_ttl_s)
 
 
 def _run_startup_worker_lifecycle_with_selector(
@@ -207,14 +218,15 @@ async def _startup_worker_lifecycle_async(database_url: str, lease_ttl_s: int) -
 
 
 async def _renew_lease_with_platform_loop(
-    database_url: str, worker_instance_id: str, ttl_s: int
+    database: str | AsyncEngine, worker_instance_id: str, ttl_s: int
 ) -> None:
+    if not isinstance(database, str):
+        await worker_lease.renew_lease(database, worker_instance_id, ttl_s)
+        return
     if sys.platform == "win32":
-        await asyncio.to_thread(
-            _run_renew_lease_with_selector, database_url, worker_instance_id, ttl_s
-        )
+        await asyncio.to_thread(_run_renew_lease_with_selector, database, worker_instance_id, ttl_s)
     else:
-        await _renew_lease_async(database_url, worker_instance_id, ttl_s)
+        await _renew_lease_async(database, worker_instance_id, ttl_s)
 
 
 def _run_renew_lease_with_selector(database_url: str, worker_instance_id: str, ttl_s: int) -> None:
@@ -233,12 +245,15 @@ async def _renew_lease_async(database_url: str, worker_instance_id: str, ttl_s: 
 
 
 async def _mark_worker_shutdown_with_platform_loop(
-    database_url: str, worker_instance_id: str
+    database: str | AsyncEngine, worker_instance_id: str
 ) -> None:
+    if not isinstance(database, str):
+        await worker_lease.mark_worker_shutdown(database, worker_instance_id)
+        return
     if sys.platform == "win32":
-        await asyncio.to_thread(_run_mark_shutdown_with_selector, database_url, worker_instance_id)
+        await asyncio.to_thread(_run_mark_shutdown_with_selector, database, worker_instance_id)
     else:
-        await _mark_worker_shutdown_async(database_url, worker_instance_id)
+        await _mark_worker_shutdown_async(database, worker_instance_id)
 
 
 def _run_mark_shutdown_with_selector(database_url: str, worker_instance_id: str) -> None:
@@ -257,18 +272,29 @@ async def _mark_worker_shutdown_async(database_url: str, worker_instance_id: str
 
 
 async def _sweep_with_platform_loop(
-    database_url: str, worker_instance_id: str, heartbeat_timeout_s: int, max_duration_s: int
+    database: str | AsyncEngine,
+    worker_instance_id: str,
+    heartbeat_timeout_s: int,
+    max_duration_s: int,
 ) -> None:
+    if not isinstance(database, str):
+        await heartbeat_sweep.sweep_orphaned_runs(
+            database,
+            own_worker_instance_id=worker_instance_id,
+            heartbeat_timeout_s=heartbeat_timeout_s,
+            max_duration_s=max_duration_s,
+        )
+        return
     if sys.platform == "win32":
         await asyncio.to_thread(
             _run_sweep_with_selector,
-            database_url,
+            database,
             worker_instance_id,
             heartbeat_timeout_s,
             max_duration_s,
         )
     else:
-        await _sweep_async(database_url, worker_instance_id, heartbeat_timeout_s, max_duration_s)
+        await _sweep_async(database, worker_instance_id, heartbeat_timeout_s, max_duration_s)
 
 
 def _run_sweep_with_selector(
@@ -295,22 +321,27 @@ async def _sweep_async(
         await engine.dispose()
 
 
-async def _lease_renewal_loop(database_url: str, worker_instance_id: str, ttl_s: int) -> None:
+async def _lease_renewal_loop(
+    database: str | AsyncEngine, worker_instance_id: str, ttl_s: int
+) -> None:
     """Renueva heartbeat/lease cada tercio del TTL (plan.md §11)."""
 
     interval = max(ttl_s / 3, POC_LEASE_RENEWAL_MIN_INTERVAL_S)
     while True:
         await asyncio.sleep(interval)
-        await _renew_lease_with_platform_loop(database_url, worker_instance_id, ttl_s)
+        await _renew_lease_with_platform_loop(database, worker_instance_id, ttl_s)
 
 
 async def _heartbeat_sweep_loop(
-    database_url: str, worker_instance_id: str, heartbeat_timeout_s: int, max_duration_s: int
+    database: str | AsyncEngine,
+    worker_instance_id: str,
+    heartbeat_timeout_s: int,
+    max_duration_s: int,
 ) -> None:
     while True:
         await asyncio.sleep(POC_SWEEP_INTERVAL_S)
         await _sweep_with_platform_loop(
-            database_url, worker_instance_id, heartbeat_timeout_s, max_duration_s
+            database, worker_instance_id, heartbeat_timeout_s, max_duration_s
         )
 
 
@@ -368,13 +399,13 @@ def require_admin_token(
 
 
 @app.get("/v2/health", response_model=HealthResponse, responses={503: {"model": HealthResponse}})
-async def health(response: Response) -> HealthResponse:
+async def health(request: Request, response: Response) -> HealthResponse:
     """RF-702: health con HealthResponse en 200 y 503."""
 
     settings = app.state.settings
     checks: dict[str, object] = {}
 
-    database_ok, catalog_index = await check_database_and_catalog(settings.sqlalchemy_database_url)
+    database_ok, catalog_index = await check_database_and_catalog(request.app.state.database_engine)
 
     checks["database"] = "ok" if database_ok else "degraded"
     checks["catalog_index"] = catalog_index
@@ -398,10 +429,14 @@ async def health(response: Response) -> HealthResponse:
     return HealthResponse(status=global_status, checks=checks, version=APP_VERSION)
 
 
-async def check_database_and_catalog(database_url: str) -> tuple[bool, CatalogIndexCheck]:
+async def check_database_and_catalog(
+    database: str | AsyncEngine,
+) -> tuple[bool, CatalogIndexCheck]:
+    if not isinstance(database, str):
+        return await _check_database_and_catalog_with_engine(database)
     if sys.platform == "win32":
-        return await asyncio.to_thread(_run_catalog_check_with_selector, database_url)
-    return await _check_database_and_catalog_async(database_url)
+        return await asyncio.to_thread(_run_catalog_check_with_selector, database)
+    return await _check_database_and_catalog_async(database)
 
 
 def _run_catalog_check_with_selector(database_url: str) -> tuple[bool, CatalogIndexCheck]:
@@ -413,6 +448,15 @@ def _run_catalog_check_with_selector(database_url: str) -> tuple[bool, CatalogIn
 
 async def _check_database_and_catalog_async(database_url: str) -> tuple[bool, CatalogIndexCheck]:
     engine = create_app_async_engine(database_url, pool_pre_ping=True)
+    try:
+        return await _check_database_and_catalog_with_engine(engine)
+    finally:
+        await engine.dispose()
+
+
+async def _check_database_and_catalog_with_engine(
+    engine: AsyncEngine,
+) -> tuple[bool, CatalogIndexCheck]:
     catalog_index = CatalogIndexCheck(status="degraded", detail="not_initialized")
     try:
         async with engine.connect() as connection:
@@ -440,8 +484,6 @@ async def _check_database_and_catalog_async(database_url: str) -> tuple[bool, Ca
             return True, catalog_index
     except Exception:
         return False, catalog_index
-    finally:
-        await engine.dispose()
 
 
 @app.post(
